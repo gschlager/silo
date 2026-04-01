@@ -2,6 +2,7 @@ package incus
 
 import (
 	"fmt"
+	"time"
 
 	incuscli "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/shared/api"
@@ -88,6 +89,21 @@ func Delete(server incuscli.InstanceServer, name string) error {
 		return fmt.Errorf("deleting container %q: %w", name, err)
 	}
 	return op.Wait()
+}
+
+// WaitForNetwork polls until DNS resolution works inside the container.
+func WaitForNetwork(server incuscli.InstanceServer, name string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		_, err := Exec(server, name, ExecOpts{}, []string{
+			"getent", "hosts", "mirrors.fedoraproject.org",
+		})
+		if err == nil {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return fmt.Errorf("container %q: network not ready after %s", name, timeout)
 }
 
 // Exists checks if a container with the given name exists.

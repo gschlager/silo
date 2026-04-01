@@ -42,9 +42,7 @@ With a daemon name, tails logs for that specific daemon.`,
 
 			return incus.ExecInteractive(server, cfg.ContainerName, incus.ExecOpts{
 				User: 1000,
-			}, []string{
-				"su", "-", cfg.User, "-c", journalCmd,
-			})
+			}, []string{"/bin/sh", "-lc", journalCmd})
 		},
 	}
 }

@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
 )
@@ -27,14 +25,10 @@ func newEnterCmd() *cobra.Command {
 				return err
 			}
 
-			shell := cfg.Shell
 			return incus.ExecInteractive(server, cfg.ContainerName, incus.ExecOpts{
 				User:    1000,
 				WorkDir: "/workspace",
-			}, []string{
-				"su", "-", cfg.User, "-c",
-				fmt.Sprintf("cd /workspace && exec %s", shell),
-			})
+			}, []string{"/bin/" + cfg.Shell, "-l"})
 		},
 	}
 }

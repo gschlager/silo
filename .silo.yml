@@ -1,0 +1,30 @@
+# silo development environment
+image: fedora/43
+
+# Bootstrap: install Go toolchain and build dependencies.
+setup:
+  - sudo dnf copr enable -y @go-sig/golang-rawhide
+  - sudo dnf install -y golang
+
+# Incremental sync: rebuild after code changes.
+sync:
+  - go mod download
+  - go build -o /usr/local/bin/silo ./cmd/silo
+
+# Reset targets.
+reset:
+  deps:
+    - go mod download
+  build:
+    - go build -o /usr/local/bin/silo ./cmd/silo
+
+# System-level updates.
+update:
+  - dnf update -y
+
+env:
+  GOFLAGS: ""
+
+agents:
+  claude:
+    mode: oauth

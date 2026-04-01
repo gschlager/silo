@@ -36,7 +36,7 @@ func newSyncCmd() *cobra.Command {
 			for _, cmd := range cfg.Sync {
 				fmt.Fprintf(os.Stderr, "==> %s\n", cmd)
 				if err := incus.ExecStreaming(server, cfg.ContainerName, opts,
-					[]string{"su", "-", cfg.User, "-c", "cd /workspace && " + cmd},
+					[]string{"/bin/sh", "-lc", "cd /workspace && " + cmd},
 					os.Stdout, os.Stderr); err != nil {
 					return fmt.Errorf("sync command %q: %w", cmd, err)
 				}

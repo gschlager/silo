@@ -49,10 +49,11 @@ type MergedConfig struct {
 
 // MergedAgentConfig combines global and project agent settings.
 type MergedAgentConfig struct {
-	Mode string
-	Home string
-	Seed AgentSeedConfig
-	Env  map[string]string
+	Install string
+	Mode    string
+	Home    string
+	Seed    AgentSeedConfig
+	Env     map[string]string
 }
 
 // Merge combines global and project configs into a single resolved config.
@@ -120,9 +121,10 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 	m.Agents = make(map[string]MergedAgentConfig)
 	for name, ga := range global.Agents {
 		m.Agents[name] = MergedAgentConfig{
-			Mode: ga.Mode,
-			Home: ga.Home,
-			Seed: ga.Seed,
+			Install: ga.Install,
+			Mode:    ga.Mode,
+			Home:    ga.Home,
+			Seed:    ga.Seed,
 		}
 	}
 	if project != nil {
@@ -131,8 +133,9 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 				Mode: pa.Mode,
 				Env:  pa.Env,
 			}
-			// Keep home and seed from global if this agent exists there.
+			// Keep install, home and seed from global if this agent exists there.
 			if ga, ok := global.Agents[name]; ok {
+				merged.Install = ga.Install
 				merged.Home = ga.Home
 				merged.Seed = ga.Seed
 			}

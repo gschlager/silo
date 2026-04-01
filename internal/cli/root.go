@@ -38,6 +38,8 @@ and port forwarding.`,
 		},
 	}
 
+	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Show command output during provisioning")
+
 	rootCmd.AddCommand(
 		newVersionCmd(),
 		newUpCmd(),

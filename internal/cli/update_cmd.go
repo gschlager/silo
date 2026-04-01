@@ -36,7 +36,7 @@ func newUpdateCmd() *cobra.Command {
 			for _, updateCmd := range cfg.Update {
 				fmt.Fprintf(os.Stderr, "==> %s\n", updateCmd)
 				if err := incus.ExecStreaming(server, cfg.ContainerName, opts,
-					[]string{"su", "-", cfg.User, "-c", "cd /workspace && " + updateCmd},
+					[]string{"/bin/sh", "-lc", "cd /workspace && " + updateCmd},
 					os.Stdout, os.Stderr); err != nil {
 					return fmt.Errorf("update command %q: %w", updateCmd, err)
 				}

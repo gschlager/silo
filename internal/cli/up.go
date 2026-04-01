@@ -30,9 +30,11 @@ Subsequent: start the stopped container (~1 second).`,
 
 			name := cfg.ContainerName
 
+			verbose, _ := cmd.Flags().GetBool("verbose")
+
 			if !incus.Exists(server, name) {
 				// First run: full provisioning.
-				return provision.Provision(server, cfg)
+				return provision.Provision(server, cfg, verbose)
 			}
 
 			if incus.IsRunning(server, name) {
@@ -47,7 +49,7 @@ Subsequent: start the stopped container (~1 second).`,
 				if err := incus.Delete(server, name); err != nil {
 					return err
 				}
-				return provision.Provision(server, cfg)
+				return provision.Provision(server, cfg, verbose)
 			}
 
 			// Resume: just start the container.
@@ -62,7 +64,7 @@ Subsequent: start the stopped container (~1 second).`,
 				if err := incus.ExecStreaming(server, name, incus.ExecOpts{
 					User: 1000, WorkDir: "/workspace",
 				}, []string{
-					"su", "-", cfg.User, "-c",
+					"/bin/sh", "-lc",
 					"cd /workspace && docker compose -f " + cfg.Compose + " up -d",
 				}, os.Stdout, os.Stderr); err != nil {
 					fmt.Fprintf(os.Stderr, "Warning: compose up failed: %v\n", err)

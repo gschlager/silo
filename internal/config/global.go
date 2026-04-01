@@ -1,12 +1,24 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
+
+// MarshalYAML marshals a value to YAML with 2-space indentation.
+func MarshalYAML(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
 
 // GlobalConfig represents ~/.config/silo/config.yml.
 type GlobalConfig struct {
@@ -22,9 +34,10 @@ type GlobalConfig struct {
 
 // AgentGlobalConfig holds global agent settings.
 type AgentGlobalConfig struct {
-	Mode string         `yaml:"mode"`
-	Home string         `yaml:"home"`
-	Seed AgentSeedConfig `yaml:"seed"`
+	Install string         `yaml:"install"`
+	Mode    string         `yaml:"mode"`
+	Home    string         `yaml:"home"`
+	Seed    AgentSeedConfig `yaml:"seed"`
 }
 
 // AgentSeedConfig lists files to seed into agent data directories.
@@ -77,7 +90,7 @@ func EnsureGlobalConfig() error {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
-	data, err := yaml.Marshal(defaultGlobalConfig())
+	data, err := MarshalYAML(defaultGlobalConfig())
 	if err != nil {
 		return fmt.Errorf("marshaling default config: %w", err)
 	}
@@ -99,8 +112,9 @@ func defaultGlobalConfig() *GlobalConfig {
 		Git:   map[string]string{},
 		Agents: map[string]AgentGlobalConfig{
 			"claude": {
-				Mode: "oauth",
-				Home: "/home/dev/.claude",
+				Install: "curl -fsSL https://claude.ai/install.sh | bash",
+				Mode:    "oauth",
+				Home:    "/home/dev/.claude",
 				Seed: AgentSeedConfig{
 					Always: []string{
 						"~/.claude/.credentials.json",

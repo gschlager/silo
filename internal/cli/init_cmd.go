@@ -9,7 +9,6 @@ import (
 
 	"github.com/gschlager/silo/internal/config"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 func newInitCmd() *cobra.Command {
@@ -75,7 +74,7 @@ func newInitCmd() *cobra.Command {
 			}
 
 			// Write .silo.yml.
-			data, err := yaml.Marshal(&cfg)
+			data, err := config.MarshalYAML(&cfg)
 			if err != nil {
 				return fmt.Errorf("marshaling config: %w", err)
 			}

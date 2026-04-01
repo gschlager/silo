@@ -17,6 +17,23 @@ func DataDir(agent, projectName string) string {
 	return filepath.Join(config.GlobalConfigDir(), "agents", agent, projectName)
 }
 
+// InstallAgents runs the install command for each agent that has one configured.
+func InstallAgents(server incuscli.InstanceServer, container string, agents map[string]config.MergedAgentConfig) error {
+	userOpts := incus.ExecOpts{User: 1000, WorkDir: "/workspace"}
+	for name, agent := range agents {
+		if agent.Install == "" {
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "==> Installing %s...\n", name)
+		if _, err := incus.Exec(server, container, userOpts, []string{
+			"/bin/sh", "-lc", agent.Install,
+		}); err != nil {
+			return fmt.Errorf("installing agent %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
 // SetupAgentDirs creates agent data directories on the host, seeds files,
 // and adds Incus disk devices to mount them into the container.
 func SetupAgentDirs(server incuscli.InstanceServer, container, projectName string, agents map[string]config.MergedAgentConfig) error {
