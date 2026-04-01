@@ -2,8 +2,8 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
 )
@@ -31,7 +31,7 @@ With a daemon name, restarts that specific daemon.`,
 				if err := requireRunning(server, cfg.ContainerName); err != nil {
 					return err
 				}
-				fmt.Fprintf(os.Stderr, "Restarting %s...\n", cfg.ContainerName)
+				color.Status("Restarting %s...", cfg.ContainerName)
 				return incus.Restart(server, cfg.ContainerName)
 			}
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
 )
@@ -31,7 +32,7 @@ func newPullCmd() *cobra.Command {
 			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 
 			// Run git pull.
-			fmt.Fprintf(os.Stderr, "==> git pull\n")
+			color.Status("git pull")
 			if err := incus.ExecStreaming(server, cfg.ContainerName, opts,
 				cfg.LoginCmd("cd /workspace && git pull"),
 				os.Stdout, os.Stderr); err != nil {
@@ -41,7 +42,7 @@ func newPullCmd() *cobra.Command {
 			// Run sync commands.
 			if len(cfg.Sync) > 0 {
 				for _, syncCmd := range cfg.Sync {
-					fmt.Fprintf(os.Stderr, "==> %s\n", syncCmd)
+					color.Status("%s", syncCmd)
 					if err := incus.ExecStreaming(server, cfg.ContainerName, opts,
 						cfg.LoginCmd("cd /workspace && "+syncCmd),
 						os.Stdout, os.Stderr); err != nil {

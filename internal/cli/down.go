@@ -2,8 +2,8 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/gschlager/silo/internal/provision"
 	"github.com/spf13/cobra"
@@ -32,11 +32,11 @@ func newDownCmd() *cobra.Command {
 			}
 
 			if !incus.IsRunning(server, name) {
-				fmt.Fprintf(os.Stderr, "Container %s is already stopped.\n", name)
+				color.Info("Container %s is already stopped.", name)
 				return nil
 			}
 
-			fmt.Fprintf(os.Stderr, "Stopping %s...\n", name)
+			color.Status("Stopping %s...", name)
 			if err := incus.Stop(server, name); err != nil {
 				return err
 			}

@@ -1,9 +1,9 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/gschlager/silo/internal/provision"
 	"github.com/spf13/cobra"
@@ -38,14 +38,14 @@ Subsequent: start the stopped container (~1 second).`,
 			}
 
 			if incus.IsRunning(server, name) {
-				fmt.Fprintf(os.Stderr, "Container %s is already running.\n", name)
+				color.Info("Container %s is already running.", name)
 				return nil
 			}
 
 			// Check if initialized.
 			if !provision.IsInitialized(server, name, cfg.User) {
 				// Container exists but not initialized — reprovision.
-				fmt.Fprintf(os.Stderr, "Container %s exists but is not initialized. Removing and reprovisioning...\n", name)
+				color.Warn("Container %s exists but is not initialized. Removing and reprovisioning...", name)
 				if err := incus.Delete(server, name); err != nil {
 					return err
 				}
@@ -53,23 +53,23 @@ Subsequent: start the stopped container (~1 second).`,
 			}
 
 			// Resume: just start the container.
-			fmt.Fprintf(os.Stderr, "Starting %s...\n", name)
+			color.Status("Starting %s...", name)
 			if err := incus.Start(server, name); err != nil {
 				return err
 			}
 
 			// Run docker compose on every start if configured.
 			if cfg.Compose != "" {
-				fmt.Fprintf(os.Stderr, "Starting compose services...\n")
+				color.Status("Starting compose services...")
 				if err := incus.ExecStreaming(server, name,
 					incus.UserOpts(cfg.UserHome(), "/workspace"),
 					cfg.LoginCmd("cd /workspace && docker compose -f "+cfg.Compose+" up -d"),
 					os.Stdout, os.Stderr); err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: compose up failed: %v\n", err)
+					color.Warn("compose up failed: %v", err)
 				}
 			}
 
-			fmt.Fprintf(os.Stderr, "Environment ready!\n")
+			color.Success("Environment ready!")
 			return nil
 		},
 	}

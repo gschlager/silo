@@ -9,6 +9,7 @@ import (
 
 	incuscli "github.com/lxc/incus/v6/client"
 	"github.com/gschlager/silo/internal/agents"
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
 )
@@ -132,7 +133,7 @@ func Provision(server incuscli.InstanceServer, cfg *config.MergedConfig, verbose
 	// Step 12: Set timezone and locale.
 	status("Configuring timezone and locale...")
 	if err := configureTimezoneAndLocale(server, name); err != nil {
-		fmt.Fprintf(os.Stderr, "  Warning: could not set timezone/locale: %v\n", err)
+		color.Warn("could not set timezone/locale: %v", err)
 	}
 
 	// Step 13: Set environment variables.
@@ -164,7 +165,7 @@ func Provision(server incuscli.InstanceServer, cfg *config.MergedConfig, verbose
 	if cfg.Notifications {
 		status("Setting up notifications...")
 		if err := SetupNotifications(server, name, cfg.User); err != nil {
-			fmt.Fprintf(os.Stderr, "  Warning: could not set up notifications: %v\n", err)
+			color.Warn("could not set up notifications: %v", err)
 		}
 	}
 
@@ -179,7 +180,7 @@ func Provision(server incuscli.InstanceServer, cfg *config.MergedConfig, verbose
 	// Step 18: Take initial snapshot.
 	status("Taking initial snapshot...")
 	if err := incus.CreateSnapshot(server, name, "initial"); err != nil {
-		fmt.Fprintf(os.Stderr, "  Warning: could not create initial snapshot: %v\n", err)
+		color.Warn("could not create initial snapshot: %v", err)
 	}
 
 	status("Environment ready!")
@@ -199,7 +200,7 @@ var verboseOutput bool
 func runCommands(server incuscli.InstanceServer, container string, opts incus.ExecOpts, commands []string) error {
 	for _, cmd := range commands {
 		if verboseOutput {
-			fmt.Fprintf(os.Stderr, "  $ %s\n", cmd)
+			color.Command(cmd)
 			if err := incus.ExecStreaming(server, container, opts, []string{"sh", "-c", cmd}, os.Stdout, os.Stderr); err != nil {
 				return fmt.Errorf("command %q: %w", cmd, err)
 			}
@@ -332,5 +333,5 @@ func parseMountSpec(spec string) (source, target string, readonly bool, err erro
 }
 
 func status(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "==> "+format+"\n", args...)
+	color.Status(format, args...)
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
 )
@@ -42,7 +43,7 @@ func newResetCmd() *cobra.Command {
 
 			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 			for _, resetCmd := range commands {
-				fmt.Fprintf(os.Stderr, "==> %s\n", resetCmd)
+				color.Status("%s", resetCmd)
 				if err := incus.ExecStreaming(server, cfg.ContainerName, opts,
 					cfg.LoginCmd("cd /workspace && "+resetCmd),
 					os.Stdout, os.Stderr); err != nil {

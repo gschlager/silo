@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	incuscli "github.com/lxc/incus/v6/client"
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
 )
@@ -24,7 +25,7 @@ func InstallAgents(server incuscli.InstanceServer, container, username, shell st
 		if agent.Install == "" {
 			continue
 		}
-		fmt.Fprintf(os.Stderr, "==> Installing %s...\n", name)
+		color.Status("Installing %s...", name)
 		if _, err := incus.Exec(server, container, userOpts, []string{
 			"/bin/" + shell, "-lc", agent.Install,
 		}); err != nil {
@@ -50,14 +51,14 @@ func SetupAgentDirs(server incuscli.InstanceServer, container, projectName strin
 		// Seed "once" files (only if they don't already exist in the data dir).
 		for _, src := range agent.Seed.Once {
 			if err := seedFile(src, dataDir, false); err != nil {
-				fmt.Fprintf(os.Stderr, "  Warning: could not seed %q for %s: %v\n", src, name, err)
+				color.Warn("could not seed %q for %s: %v", src, name, err)
 			}
 		}
 
 		// Seed "always" files.
 		for _, src := range agent.Seed.Always {
 			if err := seedFile(src, dataDir, true); err != nil {
-				fmt.Fprintf(os.Stderr, "  Warning: could not seed %q for %s: %v\n", src, name, err)
+				color.Warn("could not seed %q for %s: %v", src, name, err)
 			}
 		}
 
@@ -76,7 +77,7 @@ func RefreshAlwaysSeeds(projectName string, agents map[string]config.MergedAgent
 		dataDir := DataDir(name, projectName)
 		for _, src := range agent.Seed.Always {
 			if err := seedFile(src, dataDir, true); err != nil {
-				fmt.Fprintf(os.Stderr, "  Warning: could not refresh %q for %s: %v\n", src, name, err)
+				color.Warn("could not refresh %q for %s: %v", src, name, err)
 			}
 		}
 	}

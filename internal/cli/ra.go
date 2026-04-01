@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gschlager/silo/internal/agents"
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
@@ -45,9 +46,9 @@ Examples:
 			}
 
 			// Refresh "always" seed files.
-			fmt.Fprintf(os.Stderr, "Refreshing %s credentials...\n", agentName)
+			color.Status("Refreshing %s credentials...", agentName)
 			if err := agents.RefreshAlwaysSeeds(cfg.ContainerName, cfg.Agents); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not refresh seeds: %v\n", err)
+				color.Warn("could not refresh seeds: %v", err)
 			}
 
 			// Build environment variables.

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gschlager/silo/internal/agents"
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
 )
@@ -47,14 +48,14 @@ func newRmCmd() *cobra.Command {
 
 			// Stop if running.
 			if incus.IsRunning(server, name) {
-				fmt.Fprintf(os.Stderr, "Stopping %s...\n", name)
+				color.Status("Stopping %s...", name)
 				if err := incus.Stop(server, name); err != nil {
 					return err
 				}
 			}
 
 			// Delete container.
-			fmt.Fprintf(os.Stderr, "Removing %s...\n", name)
+			color.Status("Removing %s...", name)
 			if err := incus.Delete(server, name); err != nil {
 				return err
 			}

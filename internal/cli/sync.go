@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
 )
@@ -34,7 +35,7 @@ func newSyncCmd() *cobra.Command {
 
 			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 			for _, cmd := range cfg.Sync {
-				fmt.Fprintf(os.Stderr, "==> %s\n", cmd)
+				color.Status("%s", cmd)
 				if err := incus.ExecStreaming(server, cfg.ContainerName, opts,
 					cfg.LoginCmd("cd /workspace && "+cmd),
 					os.Stdout, os.Stderr); err != nil {

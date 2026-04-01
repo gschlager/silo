@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"fmt"
-	"os"
-
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/update"
 	"github.com/spf13/cobra"
@@ -24,7 +22,7 @@ and port forwarding.`,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if err := config.EnsureGlobalConfig(); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not create global config: %v\n", err)
+				color.Warn("could not create global config: %v", err)
 			}
 			return nil
 		},
@@ -32,7 +30,7 @@ and port forwarding.`,
 			// Background update check — non-blocking.
 			if Version != "dev" {
 				if newVersion := update.CheckForUpdate(Version); newVersion != "" {
-					fmt.Fprintf(os.Stderr, "A new version of silo is available (%s). Run 'silo upgrade' to update.\n", newVersion)
+					color.Infof("A new version of silo is available (%s). Run 'silo upgrade' to update.", newVersion)
 				}
 			}
 		},
@@ -66,7 +64,45 @@ and port forwarding.`,
 		newUpgradeCmd(),
 	)
 
+	styleHelp(rootCmd)
 	registerCompletions(rootCmd)
 
 	return rootCmd
+}
+
+func styleHelp(rootCmd *cobra.Command) {
+	h := "\033[1;33m" // bold yellow for headings
+	r := "\033[0m"
+
+	usageTemplate := h + "Usage:" + r + `{{if .Runnable}}
+  {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
+  {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
+
+` + h + "Aliases:" + r + `
+  {{.NameAndAliases}}{{end}}{{if .HasExample}}
+
+` + h + "Examples:" + r + `
+{{.Example}}{{end}}{{if .HasAvailableSubCommands}}{{$cmds := .Commands}}{{if eq (len .Groups) 0}}
+
+` + h + "Available Commands:" + r + `{{range $cmds}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}
+
+{{.Title}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
+
+` + h + "Additional Commands:" + r + `{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+
+` + h + "Flags:" + r + `
+{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+
+` + h + "Global Flags:" + r + `
+{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
+
+` + h + "Additional help topics:" + r + `{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
+  {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
+
+Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}
+`
+	rootCmd.SetUsageTemplate(usageTemplate)
 }
