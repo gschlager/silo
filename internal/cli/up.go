@@ -61,12 +61,10 @@ Subsequent: start the stopped container (~1 second).`,
 			// Run docker compose on every start if configured.
 			if cfg.Compose != "" {
 				fmt.Fprintf(os.Stderr, "Starting compose services...\n")
-				if err := incus.ExecStreaming(server, name, incus.ExecOpts{
-					User: 1000, WorkDir: "/workspace",
-				}, []string{
-					"/bin/sh", "-lc",
-					"cd /workspace && docker compose -f " + cfg.Compose + " up -d",
-				}, os.Stdout, os.Stderr); err != nil {
+				if err := incus.ExecStreaming(server, name,
+					incus.UserOpts(cfg.UserHome(), "/workspace"),
+					cfg.LoginCmd("cd /workspace && docker compose -f "+cfg.Compose+" up -d"),
+					os.Stdout, os.Stderr); err != nil {
 					fmt.Fprintf(os.Stderr, "Warning: compose up failed: %v\n", err)
 				}
 			}

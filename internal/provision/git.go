@@ -13,7 +13,7 @@ import (
 
 // ConfigureGit sets up .gitconfig inside the container for the dev user.
 func ConfigureGit(server incuscli.InstanceServer, container, username string, settings map[string]string) error {
-	userOpts := incus.ExecOpts{User: 1000, WorkDir: "/home/" + username}
+	userOpts := incus.UserOpts("/home/"+username, "/home/"+username)
 
 	for key, value := range settings {
 		if _, err := incus.Exec(server, container, userOpts, []string{
@@ -37,7 +37,7 @@ func SetupCredentialHelper(server incuscli.InstanceServer, container, username s
 	}
 
 	rootOpts := incus.ExecOpts{}
-	userOpts := incus.ExecOpts{User: 1000, WorkDir: "/home/" + username}
+	userOpts := incus.UserOpts("/home/"+username, "/home/"+username)
 
 	// Create the helper directory.
 	if _, err := incus.Exec(server, container, rootOpts, []string{

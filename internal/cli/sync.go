@@ -32,11 +32,11 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 
-			opts := incus.ExecOpts{User: 1000, WorkDir: "/workspace"}
+			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 			for _, cmd := range cfg.Sync {
 				fmt.Fprintf(os.Stderr, "==> %s\n", cmd)
 				if err := incus.ExecStreaming(server, cfg.ContainerName, opts,
-					[]string{"/bin/sh", "-lc", "cd /workspace && " + cmd},
+					cfg.LoginCmd("cd /workspace && "+cmd),
 					os.Stdout, os.Stderr); err != nil {
 					return fmt.Errorf("sync command %q: %w", cmd, err)
 				}

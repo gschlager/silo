@@ -40,9 +40,9 @@ With a daemon name, tails logs for that specific daemon.`,
 				journalCmd = fmt.Sprintf("journalctl --user -u silo-%s -f", daemon)
 			}
 
-			return incus.ExecInteractive(server, cfg.ContainerName, incus.ExecOpts{
-				User: 1000,
-			}, []string{"/bin/sh", "-lc", journalCmd})
+			return incus.ExecInteractive(server, cfg.ContainerName,
+				incus.UserOpts(cfg.UserHome(), ""),
+				cfg.LoginCmd(journalCmd))
 		},
 	}
 }

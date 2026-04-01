@@ -28,12 +28,12 @@ func newPullCmd() *cobra.Command {
 				return err
 			}
 
-			opts := incus.ExecOpts{User: 1000, WorkDir: "/workspace"}
+			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 
 			// Run git pull.
 			fmt.Fprintf(os.Stderr, "==> git pull\n")
 			if err := incus.ExecStreaming(server, cfg.ContainerName, opts,
-				[]string{"/bin/sh", "-lc", "cd /workspace && git pull"},
+				cfg.LoginCmd("cd /workspace && git pull"),
 				os.Stdout, os.Stderr); err != nil {
 				return fmt.Errorf("git pull: %w", err)
 			}
@@ -43,7 +43,7 @@ func newPullCmd() *cobra.Command {
 				for _, syncCmd := range cfg.Sync {
 					fmt.Fprintf(os.Stderr, "==> %s\n", syncCmd)
 					if err := incus.ExecStreaming(server, cfg.ContainerName, opts,
-						[]string{"/bin/sh", "-lc", "cd /workspace && " + syncCmd},
+						cfg.LoginCmd("cd /workspace && "+syncCmd),
 						os.Stdout, os.Stderr); err != nil {
 						return fmt.Errorf("sync command %q: %w", syncCmd, err)
 					}

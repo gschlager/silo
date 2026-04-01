@@ -56,6 +56,21 @@ type MergedAgentConfig struct {
 	Env     map[string]string
 }
 
+// UserHome returns the home directory for the configured user.
+func (m *MergedConfig) UserHome() string {
+	return "/home/" + m.User
+}
+
+// ShellPath returns the absolute path to the configured shell.
+func (m *MergedConfig) ShellPath() string {
+	return "/bin/" + m.Shell
+}
+
+// LoginCmd returns a login shell command that executes the given command string.
+func (m *MergedConfig) LoginCmd(cmd string) []string {
+	return []string{m.ShellPath(), "-lc", cmd}
+}
+
 // Merge combines global and project configs into a single resolved config.
 // projectDir is the absolute path to the project directory.
 func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *MergedConfig {

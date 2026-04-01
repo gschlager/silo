@@ -27,19 +27,16 @@ func newRunCmd() *cobra.Command {
 				return err
 			}
 
-			opts := incus.ExecOpts{
-				User:    1000,
-				WorkDir: "/workspace",
-			}
+			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 
 			shellCmd := args[0]
 			for _, a := range args[1:] {
 				shellCmd += " " + a
 			}
 
-			return incus.ExecStreaming(server, cfg.ContainerName, opts, []string{
-				"/bin/sh", "-lc", "cd /workspace && " + shellCmd,
-			}, os.Stdout, os.Stderr)
+			return incus.ExecStreaming(server, cfg.ContainerName, opts,
+				cfg.LoginCmd("cd /workspace && "+shellCmd),
+				os.Stdout, os.Stderr)
 		},
 	}
 }

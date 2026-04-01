@@ -116,7 +116,7 @@ func Provision(server incuscli.InstanceServer, cfg *config.MergedConfig, verbose
 
 	// Step 11: Install agents.
 	if len(cfg.Agents) > 0 {
-		if err := agents.InstallAgents(server, name, cfg.Agents); err != nil {
+		if err := agents.InstallAgents(server, name, cfg.User, cfg.Shell, cfg.Agents); err != nil {
 			return err
 		}
 	}
@@ -146,7 +146,7 @@ func Provision(server incuscli.InstanceServer, cfg *config.MergedConfig, verbose
 	// Step 14: Run project setup (as dev user).
 	if len(cfg.Setup) > 0 {
 		status("Running project setup...")
-		userOpts := incus.ExecOpts{User: 1000, WorkDir: "/workspace"}
+		userOpts := incus.UserOpts("/home/"+cfg.User, "/workspace")
 		if err := runCommands(server, name, userOpts, cfg.Setup); err != nil {
 			return fmt.Errorf("setup failed: %w", err)
 		}
@@ -291,18 +291,11 @@ func setEnvironment(server incuscli.InstanceServer, container, username string, 
 		return fmt.Errorf("setting environment variables: %w", err)
 	}
 
-	// Also set in shell rc for interactive sessions.
-	rcFile := ".bashrc"
-	if _, err := incus.Exec(server, container, rootOpts, []string{
-		"test", "-f", fmt.Sprintf("/home/%s/.zshrc", username),
-	}); err == nil {
-		rcFile = ".zshrc"
-	}
-
+	// Also set in ~/.profile for login shell sessions.
 	for k, v := range env {
 		incus.Exec(server, container, rootOpts, []string{
 			"su", "-", username, "-c",
-			fmt.Sprintf(`echo 'export %s="%s"' >> ~/%s`, k, v, rcFile),
+			fmt.Sprintf(`echo 'export %s="%s"' >> ~/.profile`, k, v),
 		})
 	}
 

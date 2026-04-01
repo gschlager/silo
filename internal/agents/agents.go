@@ -18,15 +18,15 @@ func DataDir(agent, projectName string) string {
 }
 
 // InstallAgents runs the install command for each agent that has one configured.
-func InstallAgents(server incuscli.InstanceServer, container string, agents map[string]config.MergedAgentConfig) error {
-	userOpts := incus.ExecOpts{User: 1000, WorkDir: "/workspace"}
+func InstallAgents(server incuscli.InstanceServer, container, username, shell string, agents map[string]config.MergedAgentConfig) error {
+	userOpts := incus.UserOpts("/home/"+username, "/workspace")
 	for name, agent := range agents {
 		if agent.Install == "" {
 			continue
 		}
 		fmt.Fprintf(os.Stderr, "==> Installing %s...\n", name)
 		if _, err := incus.Exec(server, container, userOpts, []string{
-			"/bin/sh", "-lc", agent.Install,
+			"/bin/" + shell, "-lc", agent.Install,
 		}); err != nil {
 			return fmt.Errorf("installing agent %q: %w", name, err)
 		}

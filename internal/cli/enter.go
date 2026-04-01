@@ -25,10 +25,9 @@ func newEnterCmd() *cobra.Command {
 				return err
 			}
 
-			return incus.ExecInteractive(server, cfg.ContainerName, incus.ExecOpts{
-				User:    1000,
-				WorkDir: "/workspace",
-			}, []string{"/bin/" + cfg.Shell, "-l"})
+			return incus.ExecInteractive(server, cfg.ContainerName,
+				incus.UserOpts(cfg.UserHome(), "/workspace"),
+				[]string{cfg.ShellPath(), "-l"})
 		},
 	}
 }

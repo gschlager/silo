@@ -105,7 +105,7 @@ func defaultGlobalConfig() *GlobalConfig {
 	return &GlobalConfig{
 		DefaultImage: "fedora/43",
 		DefaultSetup: []string{
-			"dnf install -y git curl wget make gcc which zsh jq socat",
+			"dnf install -y git curl wget make gcc which zsh jq socat nodejs npm",
 		},
 		Shell: "zsh",
 		User:  "dev",
@@ -122,6 +122,16 @@ func defaultGlobalConfig() *GlobalConfig {
 					},
 					Once: []string{
 						"~/.claude/hooks",
+					},
+				},
+			},
+			"codex": {
+				Install: "npm install -g @openai/codex --prefix ~/.local",
+				Mode:    "api-key",
+				Home:    "/home/dev/.codex",
+				Seed: AgentSeedConfig{
+					Always: []string{
+						"~/.codex/auth.json",
 					},
 				},
 			},

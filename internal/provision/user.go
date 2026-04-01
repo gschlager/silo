@@ -36,15 +36,11 @@ func CreateUser(server incuscli.InstanceServer, container, username, shell strin
 		return fmt.Errorf("configuring sudo for %q: %w", username, err)
 	}
 
-	// Add ~/.local/bin to PATH in shell rc.
-	rcFile := ".bashrc"
-	if shell == "zsh" {
-		rcFile = ".zshrc"
-	}
+	// Add ~/.local/bin to PATH in ~/.profile (sourced by all login shells).
 	pathLine := `export PATH="$HOME/.local/bin:$PATH"`
 	if _, err := incus.Exec(server, container, rootOpts, []string{
 		"su", "-", username, "-c",
-		fmt.Sprintf(`echo '%s' >> ~/%s`, pathLine, rcFile),
+		fmt.Sprintf(`echo '%s' >> ~/.profile`, pathLine),
 	}); err != nil {
 		return fmt.Errorf("setting PATH for %q: %w", username, err)
 	}

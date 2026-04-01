@@ -73,14 +73,12 @@ Examples:
 				agentCmd = append(agentCmd, "-p", prompt)
 			}
 
-			// Launch the agent interactively as a login shell
-			// so that shell rc files are sourced (PATH, env vars).
+			// Clear screen and launch the agent.
+			fmt.Print("\033[2J\033[H")
 			shellCmd := "cd /workspace && " + strings.Join(agentCmd, " ")
-			return incus.ExecInteractive(server, cfg.ContainerName, incus.ExecOpts{
-				User:    1000,
-				WorkDir: "/workspace",
-				Env:     env,
-			}, []string{"/bin/sh", "-lc", shellCmd})
+			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
+			opts.Env = env
+			return incus.ExecInteractive(server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd))
 		},
 	}
 }

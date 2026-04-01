@@ -16,8 +16,29 @@ import (
 // ExecOpts configures command execution inside a container.
 type ExecOpts struct {
 	User    uint32
+	Home    string
 	WorkDir string
 	Env     map[string]string
+}
+
+// UserOpts returns ExecOpts for running commands as a non-root user.
+func UserOpts(home, workDir string) ExecOpts {
+	return ExecOpts{User: 1000, Home: home, WorkDir: workDir}
+}
+
+// resolveEnv returns the environment map, injecting HOME if opts.Home is set and HOME is not already in Env.
+func resolveEnv(opts ExecOpts) map[string]string {
+	if opts.Home == "" {
+		return opts.Env
+	}
+	env := make(map[string]string)
+	for k, v := range opts.Env {
+		env[k] = v
+	}
+	if _, ok := env["HOME"]; !ok {
+		env["HOME"] = opts.Home
+	}
+	return env
 }
 
 // Exec runs a command inside the container and returns its combined output.
@@ -30,7 +51,7 @@ func Exec(server incuscli.InstanceServer, container string, opts ExecOpts, comma
 		Interactive: false,
 		User:        opts.User,
 		Cwd:         opts.WorkDir,
-		Environment: opts.Env,
+		Environment: resolveEnv(opts),
 	}
 
 	args := &incuscli.InstanceExecArgs{
@@ -80,7 +101,7 @@ func ExecInteractive(server incuscli.InstanceServer, container string, opts Exec
 		Height:      height,
 		User:        opts.User,
 		Cwd:         opts.WorkDir,
-		Environment: opts.Env,
+		Environment: resolveEnv(opts),
 	}
 
 	// Set terminal to raw mode.
@@ -121,7 +142,7 @@ func ExecStreaming(server incuscli.InstanceServer, container string, opts ExecOp
 		Interactive: false,
 		User:        opts.User,
 		Cwd:         opts.WorkDir,
-		Environment: opts.Env,
+		Environment: resolveEnv(opts),
 	}
 
 	args := &incuscli.InstanceExecArgs{
