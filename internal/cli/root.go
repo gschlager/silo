@@ -38,31 +38,54 @@ and port forwarding.`,
 
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Show command output during provisioning")
 
-	rootCmd.AddCommand(
-		newVersionCmd(),
-		newUpCmd(),
-		newDownCmd(),
-		newEnterCmd(),
-		newRunCmd(),
-		newRmCmd(),
-		newPsCmd(),
-		newStatusCmd(),
-		newRaCmd(),
-		newStartCmd(),
-		newStopCmd(),
-		newRestartCmd(),
-		newLogsCmd(),
-		newSyncCmd(),
-		newPullCmd(),
-		newResetCmd(),
-		newUpdateCmd(),
-		newSnapshotCmd(),
-		newRestoreCmd(),
-		newInitCmd(),
-		newConfigCmd(),
-		newCompletionCmd(),
-		newUpgradeCmd(),
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "environment", Title: "\033[1;33mEnvironment:\033[0m"},
+		&cobra.Group{ID: "agent", Title: "\033[1;33mAgents:\033[0m"},
+		&cobra.Group{ID: "workflow", Title: "\033[1;33mDevelopment Workflow:\033[0m"},
+		&cobra.Group{ID: "daemon", Title: "\033[1;33mDaemons:\033[0m"},
+		&cobra.Group{ID: "snapshot", Title: "\033[1;33mSnapshots:\033[0m"},
+		&cobra.Group{ID: "config", Title: "\033[1;33mConfiguration:\033[0m"},
 	)
+
+	addCmd := func(group string, cmd *cobra.Command) {
+		cmd.GroupID = group
+		rootCmd.AddCommand(cmd)
+	}
+
+	// Environment lifecycle.
+	addCmd("environment", newUpCmd())
+	addCmd("environment", newDownCmd())
+	addCmd("environment", newRmCmd())
+	addCmd("environment", newEnterCmd())
+	addCmd("environment", newRunCmd())
+	addCmd("environment", newPsCmd())
+	addCmd("environment", newStatusCmd())
+
+	// Agents.
+	addCmd("agent", newRaCmd())
+
+	// Development workflow.
+	addCmd("workflow", newSyncCmd())
+	addCmd("workflow", newPullCmd())
+	addCmd("workflow", newResetCmd())
+	addCmd("workflow", newUpdateCmd())
+
+	// Daemons.
+	addCmd("daemon", newStartCmd())
+	addCmd("daemon", newStopCmd())
+	addCmd("daemon", newRestartCmd())
+	addCmd("daemon", newLogsCmd())
+
+	// Snapshots.
+	addCmd("snapshot", newSnapshotCmd())
+	addCmd("snapshot", newRestoreCmd())
+
+	// Configuration.
+	addCmd("config", newInitCmd())
+	addCmd("config", newConfigCmd())
+	addCmd("config", newCompletionCmd())
+	addCmd("config", newUpgradeCmd())
+	addCmd("config", newVersionCmd())
 
 	styleHelp(rootCmd)
 	registerCompletions(rootCmd)
