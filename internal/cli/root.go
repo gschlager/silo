@@ -70,7 +70,6 @@ and port forwarding.`,
 
 	// Data management.
 	addCmd("data", newSnapshotCmd())
-	addCmd("data", newCacheCmd())
 
 	// Configuration.
 	addCmd("config", newInitCmd())

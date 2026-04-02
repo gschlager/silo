@@ -10,7 +10,6 @@ import (
 
 	incuscli "github.com/lxc/incus/v6/client"
 	"github.com/gschlager/silo/internal/agents"
-	"github.com/gschlager/silo/internal/cache"
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
@@ -156,36 +155,6 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	// Step 7: Create dev user.
 	status("Creating user %s...", cfg.User)
 	if err := CreateUser(ctx, server, name, cfg.User, cfg.Shell); err != nil {
-		return err
-	}
-
-	// Step 7b: Set up cache mounts (after user creation so /home/dev/ exists).
-	for i, cachePath := range cfg.Cache {
-		cacheDir := cache.Dir(cfg.ContainerName, cachePath, cfg.SharedCache)
-		if err := os.MkdirAll(cacheDir, 0755); err != nil {
-			return fmt.Errorf("creating cache dir for %q: %w", cachePath, err)
-		}
-		status("Mounting cache %s...", cachePath)
-		deviceName := fmt.Sprintf("cache-%d", i)
-		if err := incus.AddDiskDevice(ctx, server, name, deviceName, cacheDir, cachePath, false); err != nil {
-			return err
-		}
-		// Fix ownership so dev user can write.
-		incus.Exec(ctx, server, name, incus.ExecOpts{}, []string{
-			"chown", "-R", cfg.User + ":" + cfg.User, cachePath,
-		})
-	}
-
-	// Fix home directory ownership after mounts. Cache mounts create
-	// intermediate dirs as root (e.g. .local/ under /home/dev/).
-	// Use -R with --one-file-system so we fix ownership of dirs created
-	// by Incus without descending into the mounted cache filesystems.
-	homeDir := fmt.Sprintf("/home/%s", cfg.User)
-	incus.Exec(ctx, server, name, incus.ExecOpts{}, []string{
-		"chown", "-R", "--one-file-system", cfg.User + ":" + cfg.User, homeDir,
-	})
-	// Write .profile now that home dir ownership is correct.
-	if err := WriteProfile(ctx, server, name, cfg.User); err != nil {
 		return err
 	}
 

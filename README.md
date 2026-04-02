@@ -114,11 +114,6 @@ daemons:
     cmd: bundle exec sidekiq
     autostart: false
 
-# Paths to cache across container rebuilds
-cache:
-  - /home/dev/.rubies
-  - /home/dev/.cache/npm
-
 # Per-project agent overrides
 agents:
   claude:
@@ -198,9 +193,6 @@ Run `silo config show` to see the full resolved configuration (defaults + overri
 | `silo snapshot list` | List snapshots |
 | `silo snapshot restore <name>` | Restore a snapshot |
 | `silo snapshot rm <name>` | Delete a snapshot |
-| `silo cache list` | List caches with sizes |
-| `silo cache clean` | Remove caches for current project |
-| `silo cache clean --all` | Remove all caches |
 
 ### Configuration
 
@@ -223,25 +215,6 @@ Each agent has copy rules that define which files are synced:
 - **After exit**: updated credentials are copied back, so token refreshes propagate.
 
 Files inside the agent home (e.g., `~/.claude/`) are mounted directly. Files outside (e.g., `~/.claude.json`) are synced via exec.
-
-## Build caches
-
-Add paths to `cache` in `.silo.yml` to persist directories across container rebuilds:
-
-```yaml
-cache:
-  - /home/dev/.rubies
-  - /home/dev/.cache/npm
-```
-
-Caches are per-project by default. To share caches across projects (e.g., Ruby installations), add them to `shared_cache` in your global config:
-
-```yaml
-shared_cache:
-  - /home/dev/.rubies
-```
-
-Manage caches with `silo cache list` and `silo cache clean`.
 
 ## Requirements
 

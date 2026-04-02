@@ -30,7 +30,6 @@ type GlobalConfig struct {
 	User          string              `yaml:"user"`
 	Notifications bool                `yaml:"notifications,omitempty"`
 	Mounts        []string            `yaml:"mounts,omitempty"`
-	SharedCache   []string            `yaml:"shared_cache"`
 	Git           map[string]string   `yaml:"git,omitempty"`
 	Agents        []AgentGlobalConfig `yaml:"agents"`
 }
@@ -122,9 +121,6 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 	}
 	if len(userCfg.Mounts) > 0 {
 		cfg.Mounts = userCfg.Mounts
-	}
-	if len(userCfg.SharedCache) > 0 {
-		cfg.SharedCache = userCfg.SharedCache
 	}
 	if len(userCfg.Git) > 0 {
 		cfg.Git = userCfg.Git
