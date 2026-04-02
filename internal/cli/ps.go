@@ -14,6 +14,8 @@ func newPsCmd() *cobra.Command {
 		Short: "Show container status and running daemons",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -46,7 +48,7 @@ func newPsCmd() *cobra.Command {
 			// Show daemons.
 			if len(cfg.Daemons) > 0 {
 				fmt.Println("\nDaemons:")
-				output, err := incus.Exec(server, name, incus.ExecOpts{}, []string{
+				output, err := incus.Exec(ctx, server, name, incus.ExecOpts{}, []string{
 					"su", "-", cfg.User, "-c",
 					"systemctl --user list-units 'silo-*' --no-pager --no-legend 2>/dev/null || true",
 				})

@@ -1,6 +1,7 @@
 package provision
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,11 +13,11 @@ import (
 )
 
 // ConfigureGit sets up .gitconfig inside the container for the dev user.
-func ConfigureGit(server incuscli.InstanceServer, container, username string, settings map[string]string) error {
+func ConfigureGit(ctx context.Context, server incuscli.InstanceServer, container, username string, settings map[string]string) error {
 	userOpts := incus.UserOpts("/home/"+username, "/home/"+username)
 
 	for key, value := range settings {
-		if _, err := incus.Exec(server, container, userOpts, []string{
+		if _, err := incus.Exec(ctx, server, container, userOpts, []string{
 			"git", "config", "--global", key, value,
 		}); err != nil {
 			return fmt.Errorf("setting git config %q: %w", key, err)
@@ -26,7 +27,7 @@ func ConfigureGit(server incuscli.InstanceServer, container, username string, se
 }
 
 // SetupCredentialHelper configures a git credential helper inside the container.
-func SetupCredentialHelper(server incuscli.InstanceServer, container, username string, cred *config.CredentialConfig) error {
+func SetupCredentialHelper(ctx context.Context, server incuscli.InstanceServer, container, username string, cred *config.CredentialConfig) error {
 	if cred == nil {
 		return nil
 	}
@@ -40,7 +41,7 @@ func SetupCredentialHelper(server incuscli.InstanceServer, container, username s
 	userOpts := incus.UserOpts("/home/"+username, "/home/"+username)
 
 	// Create the helper directory.
-	if _, err := incus.Exec(server, container, rootOpts, []string{
+	if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
 		"su", "-", username, "-c", "mkdir -p ~/.silo",
 	}); err != nil {
 		return fmt.Errorf("creating .silo directory: %w", err)
@@ -57,7 +58,7 @@ password=%s
 CRED
 `, token)
 
-	if _, err := incus.Exec(server, container, rootOpts, []string{
+	if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
 		"sh", "-c", fmt.Sprintf(
 			`cat > /home/%s/.silo/git-credential-helper << 'SCRIPT'
 %sSCRIPT
@@ -69,7 +70,7 @@ chown %s:%s /home/%s/.silo/git-credential-helper`,
 	}
 
 	// Configure git to use the helper.
-	if _, err := incus.Exec(server, container, userOpts, []string{
+	if _, err := incus.Exec(ctx, server, container, userOpts, []string{
 		"git", "config", "--global",
 		"credential.https://github.com.helper",
 		fmt.Sprintf("/home/%s/.silo/git-credential-helper", username),

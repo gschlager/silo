@@ -15,6 +15,8 @@ func newUpdateCmd() *cobra.Command {
 		Short: "Run the update commands (system-level updates)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -36,7 +38,7 @@ func newUpdateCmd() *cobra.Command {
 			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 			for _, updateCmd := range cfg.Update {
 				color.Status("%s", updateCmd)
-				if err := incus.ExecStreaming(server, cfg.ContainerName, opts,
+				if err := incus.ExecStreaming(ctx, server, cfg.ContainerName, opts,
 					cfg.LoginCmd("cd /workspace && "+updateCmd),
 					os.Stdout, os.Stderr); err != nil {
 					return fmt.Errorf("update command %q: %w", updateCmd, err)

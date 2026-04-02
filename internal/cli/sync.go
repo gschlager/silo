@@ -15,6 +15,8 @@ func newSyncCmd() *cobra.Command {
 		Short: "Run the sync commands (after pulling new code)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -34,12 +36,12 @@ func newSyncCmd() *cobra.Command {
 			}
 
 			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
-			for _, cmd := range cfg.Sync {
-				color.Status("%s", cmd)
-				if err := incus.ExecStreaming(server, cfg.ContainerName, opts,
-					cfg.LoginCmd("cd /workspace && "+cmd),
+			for _, syncCmd := range cfg.Sync {
+				color.Status("%s", syncCmd)
+				if err := incus.ExecStreaming(ctx, server, cfg.ContainerName, opts,
+					cfg.LoginCmd("cd /workspace && "+syncCmd),
 					os.Stdout, os.Stderr); err != nil {
-					return fmt.Errorf("sync command %q: %w", cmd, err)
+					return fmt.Errorf("sync command %q: %w", syncCmd, err)
 				}
 			}
 			return nil

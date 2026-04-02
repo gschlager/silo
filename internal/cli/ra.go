@@ -25,6 +25,8 @@ Examples:
   silo ra claude ./prompt.md`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -76,10 +78,10 @@ Examples:
 
 			// Clear screen and launch the agent.
 			fmt.Print("\033[2J\033[H")
-			shellCmd := "cd /workspace && " + strings.Join(agentCmd, " ")
+			shellCmd := "cd /workspace && " + shellQuote(agentCmd)
 			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 			opts.Env = env
-			return incus.ExecInteractive(server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd))
+			return incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd))
 		},
 	}
 }

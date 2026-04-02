@@ -15,6 +15,8 @@ func newDownCmd() *cobra.Command {
 		Short: "Stop the container (preserves all state)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -37,7 +39,7 @@ func newDownCmd() *cobra.Command {
 			}
 
 			color.Status("Stopping %s...", name)
-			if err := incus.Stop(server, name); err != nil {
+			if err := incus.Stop(ctx, server, name); err != nil {
 				return err
 			}
 

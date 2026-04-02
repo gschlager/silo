@@ -15,6 +15,8 @@ func newLogsCmd() *cobra.Command {
 With a daemon name, tails logs for that specific daemon.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -40,7 +42,7 @@ With a daemon name, tails logs for that specific daemon.`,
 				journalCmd = fmt.Sprintf("journalctl --user -u silo-%s -f", daemon)
 			}
 
-			return incus.ExecInteractive(server, cfg.ContainerName,
+			return incus.ExecInteractive(ctx, server, cfg.ContainerName,
 				incus.UserOpts(cfg.UserHome(), ""),
 				cfg.LoginCmd(journalCmd))
 		},

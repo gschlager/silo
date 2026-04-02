@@ -14,6 +14,8 @@ func newSnapshotCmd() *cobra.Command {
 		Short: "Take a named snapshot of the container",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -34,7 +36,7 @@ func newSnapshotCmd() *cobra.Command {
 			}
 
 			fmt.Printf("Creating snapshot %q...\n", name)
-			if err := incus.CreateSnapshot(server, cfg.ContainerName, name); err != nil {
+			if err := incus.CreateSnapshot(ctx, server, cfg.ContainerName, name); err != nil {
 				return err
 			}
 			fmt.Println("Done.")
@@ -90,6 +92,8 @@ func newRestoreCmd() *cobra.Command {
 		Short: "Restore the container to a snapshot",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -106,7 +110,7 @@ func newRestoreCmd() *cobra.Command {
 
 			name := args[0]
 			fmt.Printf("Restoring snapshot %q...\n", name)
-			if err := incus.RestoreSnapshot(server, cfg.ContainerName, name); err != nil {
+			if err := incus.RestoreSnapshot(ctx, server, cfg.ContainerName, name); err != nil {
 				return err
 			}
 			fmt.Println("Done.")

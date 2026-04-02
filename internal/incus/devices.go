@@ -1,6 +1,7 @@
 package incus
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
@@ -8,7 +9,7 @@ import (
 )
 
 // AddDiskDevice adds a bind mount device to the container.
-func AddDiskDevice(server incuscli.InstanceServer, container, name, source, path string, readonly bool) error {
+func AddDiskDevice(ctx context.Context, server incuscli.InstanceServer, container, name, source, path string, readonly bool) error {
 	inst, etag, err := server.GetInstance(container)
 	if err != nil {
 		return fmt.Errorf("getting container %q: %w", container, err)
@@ -34,11 +35,20 @@ func AddDiskDevice(server incuscli.InstanceServer, container, name, source, path
 	if err != nil {
 		return fmt.Errorf("adding disk device %q to %q: %w", name, container, err)
 	}
-	return op.Wait()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- op.Wait() }()
+	select {
+	case <-ctx.Done():
+		_ = op.Cancel()
+		return ctx.Err()
+	case err := <-errCh:
+		return err
+	}
 }
 
 // AddProxyDevice adds a port forward device to the container.
-func AddProxyDevice(server incuscli.InstanceServer, container, name string, hostPort, containerPort int) error {
+func AddProxyDevice(ctx context.Context, server incuscli.InstanceServer, container, name string, hostPort, containerPort int) error {
 	inst, etag, err := server.GetInstance(container)
 	if err != nil {
 		return fmt.Errorf("getting container %q: %w", container, err)
@@ -59,11 +69,20 @@ func AddProxyDevice(server incuscli.InstanceServer, container, name string, host
 	if err != nil {
 		return fmt.Errorf("adding proxy device %q to %q: %w", name, container, err)
 	}
-	return op.Wait()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- op.Wait() }()
+	select {
+	case <-ctx.Done():
+		_ = op.Cancel()
+		return ctx.Err()
+	case err := <-errCh:
+		return err
+	}
 }
 
 // RemoveDevice removes a device from the container.
-func RemoveDevice(server incuscli.InstanceServer, container, name string) error {
+func RemoveDevice(ctx context.Context, server incuscli.InstanceServer, container, name string) error {
 	inst, etag, err := server.GetInstance(container)
 	if err != nil {
 		return fmt.Errorf("getting container %q: %w", container, err)
@@ -75,11 +94,20 @@ func RemoveDevice(server incuscli.InstanceServer, container, name string) error 
 	if err != nil {
 		return fmt.Errorf("removing device %q from %q: %w", name, container, err)
 	}
-	return op.Wait()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- op.Wait() }()
+	select {
+	case <-ctx.Done():
+		_ = op.Cancel()
+		return ctx.Err()
+	case err := <-errCh:
+		return err
+	}
 }
 
 // SetConfig sets an instance configuration key.
-func SetConfig(server incuscli.InstanceServer, container, key, value string) error {
+func SetConfig(ctx context.Context, server incuscli.InstanceServer, container, key, value string) error {
 	inst, etag, err := server.GetInstance(container)
 	if err != nil {
 		return fmt.Errorf("getting container %q: %w", container, err)
@@ -94,5 +122,14 @@ func SetConfig(server incuscli.InstanceServer, container, key, value string) err
 	if err != nil {
 		return fmt.Errorf("setting config %q on %q: %w", key, container, err)
 	}
-	return op.Wait()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- op.Wait() }()
+	select {
+	case <-ctx.Done():
+		_ = op.Cancel()
+		return ctx.Err()
+	case err := <-errCh:
+		return err
+	}
 }

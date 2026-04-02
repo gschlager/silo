@@ -2,6 +2,7 @@ package incus
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -42,8 +43,21 @@ func resolveEnv(opts ExecOpts) map[string]string {
 }
 
 // Exec runs a command inside the container and returns its combined output.
-func Exec(server incuscli.InstanceServer, container string, opts ExecOpts, command []string) (string, error) {
+func Exec(ctx context.Context, server incuscli.InstanceServer, container string, opts ExecOpts, command []string) (string, error) {
+	return ExecWithStdin(ctx, server, container, opts, command, nil)
+}
+
+// ExecWithStdin runs a command inside the container, piping stdinData to its
+// stdin, and returns its combined output. If stdinData is nil, stdin is empty.
+func ExecWithStdin(ctx context.Context, server incuscli.InstanceServer, container string, opts ExecOpts, command []string, stdinData []byte) (string, error) {
 	var stdout, stderr bytes.Buffer
+
+	var stdin io.ReadCloser
+	if stdinData != nil {
+		stdin = io.NopCloser(bytes.NewReader(stdinData))
+	} else {
+		stdin = io.NopCloser(bytes.NewReader(nil))
+	}
 
 	req := api.InstanceExecPost{
 		Command:     command,
@@ -55,7 +69,7 @@ func Exec(server incuscli.InstanceServer, container string, opts ExecOpts, comma
 	}
 
 	args := &incuscli.InstanceExecArgs{
-		Stdin:  io.NopCloser(bytes.NewReader(nil)),
+		Stdin:  stdin,
 		Stdout: &stdout,
 		Stderr: &stderr,
 	}
@@ -65,8 +79,17 @@ func Exec(server incuscli.InstanceServer, container string, opts ExecOpts, comma
 		return "", fmt.Errorf("exec in %q: %w", container, err)
 	}
 
-	if err := op.Wait(); err != nil {
-		return "", fmt.Errorf("exec in %q: %w\nstderr: %s", container, err, stderr.String())
+	// Wait for the operation, respecting context cancellation.
+	errCh := make(chan error, 1)
+	go func() { errCh <- op.Wait() }()
+	select {
+	case <-ctx.Done():
+		_ = op.Cancel()
+		return "", ctx.Err()
+	case err := <-errCh:
+		if err != nil {
+			return "", fmt.Errorf("exec in %q: %w\nstderr: %s", container, err, stderr.String())
+		}
 	}
 
 	// Check exit code.
@@ -83,7 +106,7 @@ func Exec(server incuscli.InstanceServer, container string, opts ExecOpts, comma
 }
 
 // ExecInteractive runs a command inside the container with full TTY passthrough.
-func ExecInteractive(server incuscli.InstanceServer, container string, opts ExecOpts, command []string) error {
+func ExecInteractive(ctx context.Context, server incuscli.InstanceServer, container string, opts ExecOpts, command []string) error {
 	// Get terminal size.
 	width, height := 80, 24
 	if term.IsTerminal(int(os.Stdin.Fd())) {
@@ -131,11 +154,20 @@ func ExecInteractive(server incuscli.InstanceServer, container string, opts Exec
 		return fmt.Errorf("interactive exec in %q: %w", container, err)
 	}
 
-	return op.Wait()
+	// Wait for the operation, respecting context cancellation.
+	errCh := make(chan error, 1)
+	go func() { errCh <- op.Wait() }()
+	select {
+	case <-ctx.Done():
+		_ = op.Cancel()
+		return ctx.Err()
+	case err := <-errCh:
+		return err
+	}
 }
 
 // ExecStreaming runs a command and streams stdout/stderr to the given writers.
-func ExecStreaming(server incuscli.InstanceServer, container string, opts ExecOpts, command []string, stdout, stderr io.Writer) error {
+func ExecStreaming(ctx context.Context, server incuscli.InstanceServer, container string, opts ExecOpts, command []string, stdout, stderr io.Writer) error {
 	req := api.InstanceExecPost{
 		Command:     command,
 		WaitForWS:   true,
@@ -156,8 +188,17 @@ func ExecStreaming(server incuscli.InstanceServer, container string, opts ExecOp
 		return fmt.Errorf("exec in %q: %w", container, err)
 	}
 
-	if err := op.Wait(); err != nil {
-		return fmt.Errorf("exec in %q: %w", container, err)
+	// Wait for the operation, respecting context cancellation.
+	errCh := make(chan error, 1)
+	go func() { errCh <- op.Wait() }()
+	select {
+	case <-ctx.Done():
+		_ = op.Cancel()
+		return ctx.Err()
+	case err := <-errCh:
+		if err != nil {
+			return fmt.Errorf("exec in %q: %w", container, err)
+		}
 	}
 
 	opAPI := op.Get()

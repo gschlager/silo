@@ -13,6 +13,8 @@ func newStartCmd() *cobra.Command {
 		Short: "Start a daemon",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -32,7 +34,7 @@ func newStartCmd() *cobra.Command {
 				return fmt.Errorf("unknown daemon %q", daemon)
 			}
 
-			_, err = incus.Exec(server, cfg.ContainerName, incus.ExecOpts{}, []string{
+			_, err = incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{}, []string{
 				"su", "-", cfg.User, "-c",
 				fmt.Sprintf("systemctl --user start silo-%s", daemon),
 			})

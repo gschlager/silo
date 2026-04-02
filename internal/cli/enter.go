@@ -11,6 +11,8 @@ func newEnterCmd() *cobra.Command {
 		Short: "Open an interactive shell inside the container",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -25,7 +27,7 @@ func newEnterCmd() *cobra.Command {
 				return err
 			}
 
-			return incus.ExecInteractive(server, cfg.ContainerName,
+			return incus.ExecInteractive(ctx, server, cfg.ContainerName,
 				incus.UserOpts(cfg.UserHome(), "/workspace"),
 				[]string{cfg.ShellPath(), "-l"})
 		},

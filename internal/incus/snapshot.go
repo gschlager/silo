@@ -1,6 +1,7 @@
 package incus
 
 import (
+	"context"
 	"fmt"
 
 	incuscli "github.com/lxc/incus/v6/client"
@@ -15,18 +16,27 @@ type SnapshotInfo struct {
 }
 
 // CreateSnapshot takes a named snapshot of the container.
-func CreateSnapshot(server incuscli.InstanceServer, container, name string) error {
+func CreateSnapshot(ctx context.Context, server incuscli.InstanceServer, container, name string) error {
 	op, err := server.CreateInstanceSnapshot(container, api.InstanceSnapshotsPost{
 		Name: name,
 	})
 	if err != nil {
 		return fmt.Errorf("creating snapshot %q of %q: %w", name, container, err)
 	}
-	return op.Wait()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- op.Wait() }()
+	select {
+	case <-ctx.Done():
+		_ = op.Cancel()
+		return ctx.Err()
+	case err := <-errCh:
+		return err
+	}
 }
 
 // RestoreSnapshot restores a container to a named snapshot.
-func RestoreSnapshot(server incuscli.InstanceServer, container, name string) error {
+func RestoreSnapshot(ctx context.Context, server incuscli.InstanceServer, container, name string) error {
 	inst, etag, err := server.GetInstance(container)
 	if err != nil {
 		return fmt.Errorf("getting container %q: %w", container, err)
@@ -39,7 +49,16 @@ func RestoreSnapshot(server incuscli.InstanceServer, container, name string) err
 	if err != nil {
 		return fmt.Errorf("restoring snapshot %q of %q: %w", name, container, err)
 	}
-	return op.Wait()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- op.Wait() }()
+	select {
+	case <-ctx.Done():
+		_ = op.Cancel()
+		return ctx.Err()
+	case err := <-errCh:
+		return err
+	}
 }
 
 // ListSnapshots returns all snapshots for a container.
@@ -61,10 +80,19 @@ func ListSnapshots(server incuscli.InstanceServer, container string) ([]Snapshot
 }
 
 // DeleteSnapshot removes a snapshot from a container.
-func DeleteSnapshot(server incuscli.InstanceServer, container, name string) error {
+func DeleteSnapshot(ctx context.Context, server incuscli.InstanceServer, container, name string) error {
 	op, err := server.DeleteInstanceSnapshot(container, name)
 	if err != nil {
 		return fmt.Errorf("deleting snapshot %q of %q: %w", name, container, err)
 	}
-	return op.Wait()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- op.Wait() }()
+	select {
+	case <-ctx.Done():
+		_ = op.Cancel()
+		return ctx.Err()
+	case err := <-errCh:
+		return err
+	}
 }

@@ -2,6 +2,7 @@ package provision
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -18,7 +19,7 @@ func NotifySocketPath(containerName string) string {
 }
 
 // SetupNotifications creates the notification socket bridge.
-func SetupNotifications(server incuscli.InstanceServer, container, username string) error {
+func SetupNotifications(ctx context.Context, server incuscli.InstanceServer, container, username string) error {
 	sockPath := NotifySocketPath(container)
 
 	// Remove stale socket if it exists.
@@ -31,7 +32,7 @@ func SetupNotifications(server incuscli.InstanceServer, container, username stri
 	}
 
 	// Make the socket world-writable so the container can write to it.
-	os.Chmod(sockPath, 0666)
+	os.Chmod(sockPath, 0700)
 
 	// Run listener in background goroutine.
 	go func() {
@@ -46,7 +47,7 @@ func SetupNotifications(server incuscli.InstanceServer, container, username stri
 	}()
 
 	// Mount the socket into the container.
-	if err := incus.AddDiskDevice(server, container, "notify-sock", sockPath, "/run/silo/notify.sock", false); err != nil {
+	if err := incus.AddDiskDevice(ctx, server, container, "notify-sock", sockPath, "/run/silo/notify.sock", false); err != nil {
 		listener.Close()
 		os.Remove(sockPath)
 		return fmt.Errorf("mounting notification socket: %w", err)
@@ -57,7 +58,7 @@ func SetupNotifications(server incuscli.InstanceServer, container, username stri
 echo "$*" | socat - UNIX-CONNECT:/run/silo/notify.sock
 `
 	rootOpts := incus.ExecOpts{}
-	if _, err := incus.Exec(server, container, rootOpts, []string{
+	if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
 		"sh", "-c", fmt.Sprintf(`cat > /usr/local/bin/silo-notify << 'SCRIPT'
 %sSCRIPT
 chmod 755 /usr/local/bin/silo-notify`, helperScript),

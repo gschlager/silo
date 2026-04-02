@@ -15,6 +15,8 @@ func newPullCmd() *cobra.Command {
 		Short: "Run git pull inside the container, then run sync",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -33,7 +35,7 @@ func newPullCmd() *cobra.Command {
 
 			// Run git pull.
 			color.Status("git pull")
-			if err := incus.ExecStreaming(server, cfg.ContainerName, opts,
+			if err := incus.ExecStreaming(ctx, server, cfg.ContainerName, opts,
 				cfg.LoginCmd("cd /workspace && git pull"),
 				os.Stdout, os.Stderr); err != nil {
 				return fmt.Errorf("git pull: %w", err)
@@ -43,7 +45,7 @@ func newPullCmd() *cobra.Command {
 			if len(cfg.Sync) > 0 {
 				for _, syncCmd := range cfg.Sync {
 					color.Status("%s", syncCmd)
-					if err := incus.ExecStreaming(server, cfg.ContainerName, opts,
+					if err := incus.ExecStreaming(ctx, server, cfg.ContainerName, opts,
 						cfg.LoginCmd("cd /workspace && "+syncCmd),
 						os.Stdout, os.Stderr); err != nil {
 						return fmt.Errorf("sync command %q: %w", syncCmd, err)

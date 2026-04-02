@@ -17,6 +17,8 @@ func newResetCmd() *cobra.Command {
 		Long:  `Run the named reset command list (e.g., silo reset db).`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -44,7 +46,7 @@ func newResetCmd() *cobra.Command {
 			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 			for _, resetCmd := range commands {
 				color.Status("%s", resetCmd)
-				if err := incus.ExecStreaming(server, cfg.ContainerName, opts,
+				if err := incus.ExecStreaming(ctx, server, cfg.ContainerName, opts,
 					cfg.LoginCmd("cd /workspace && "+resetCmd),
 					os.Stdout, os.Stderr); err != nil {
 					return fmt.Errorf("reset command %q: %w", resetCmd, err)

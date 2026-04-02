@@ -16,6 +16,8 @@ func newRestartCmd() *cobra.Command {
 With a daemon name, restarts that specific daemon.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -32,7 +34,7 @@ With a daemon name, restarts that specific daemon.`,
 					return err
 				}
 				color.Status("Restarting %s...", cfg.ContainerName)
-				return incus.Restart(server, cfg.ContainerName)
+				return incus.Restart(ctx, server, cfg.ContainerName)
 			}
 
 			// Restart daemon.
@@ -45,7 +47,7 @@ With a daemon name, restarts that specific daemon.`,
 				return fmt.Errorf("unknown daemon %q", daemon)
 			}
 
-			_, err = incus.Exec(server, cfg.ContainerName, incus.ExecOpts{}, []string{
+			_, err = incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{}, []string{
 				"su", "-", cfg.User, "-c",
 				fmt.Sprintf("systemctl --user restart silo-%s", daemon),
 			})

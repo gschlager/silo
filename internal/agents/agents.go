@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -19,14 +20,14 @@ func DataDir(agent, projectName string) string {
 }
 
 // InstallAgents runs the install command for each agent that has one configured.
-func InstallAgents(server incuscli.InstanceServer, container, username, shell string, agents map[string]config.MergedAgentConfig) error {
+func InstallAgents(ctx context.Context, server incuscli.InstanceServer, container, username, shell string, agents map[string]config.MergedAgentConfig) error {
 	userOpts := incus.UserOpts("/home/"+username, "/workspace")
 	for name, agent := range agents {
 		if agent.Install == "" {
 			continue
 		}
 		color.Status("Installing %s...", name)
-		if _, err := incus.Exec(server, container, userOpts, []string{
+		if _, err := incus.Exec(ctx, server, container, userOpts, []string{
 			"/bin/" + shell, "-lc", agent.Install,
 		}); err != nil {
 			return fmt.Errorf("installing agent %q: %w", name, err)
@@ -37,14 +38,14 @@ func InstallAgents(server incuscli.InstanceServer, container, username, shell st
 
 // SetupAgentDirs creates agent data directories on the host, seeds files,
 // and adds Incus disk devices to mount them into the container.
-func SetupAgentDirs(server incuscli.InstanceServer, container, projectName string, agents map[string]config.MergedAgentConfig) error {
+func SetupAgentDirs(ctx context.Context, server incuscli.InstanceServer, container, projectName string, agents map[string]config.MergedAgentConfig) error {
 	for name, agent := range agents {
 		if agent.Home == "" {
 			continue
 		}
 
 		dataDir := DataDir(name, projectName)
-		if err := os.MkdirAll(dataDir, 0755); err != nil {
+		if err := os.MkdirAll(dataDir, 0700); err != nil {
 			return fmt.Errorf("creating agent data dir for %q: %w", name, err)
 		}
 
@@ -64,7 +65,7 @@ func SetupAgentDirs(server incuscli.InstanceServer, container, projectName strin
 
 		// Add Incus disk device.
 		deviceName := fmt.Sprintf("agent-%s", name)
-		if err := incus.AddDiskDevice(server, container, deviceName, dataDir, agent.Home, false); err != nil {
+		if err := incus.AddDiskDevice(ctx, server, container, deviceName, dataDir, agent.Home, false); err != nil {
 			return fmt.Errorf("mounting agent data dir for %q: %w", name, err)
 		}
 	}
@@ -136,7 +137,7 @@ func seedDir(src, dst string, overwrite bool) error {
 		dstPath := filepath.Join(dst, relPath)
 
 		if info.IsDir() {
-			return os.MkdirAll(dstPath, 0755)
+			return os.MkdirAll(dstPath, 0700)
 		}
 
 		if !overwrite {
@@ -156,7 +157,7 @@ func copyFile(src, dst string) error {
 	}
 	defer in.Close()
 
-	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
 		return err
 	}
 
