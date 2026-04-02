@@ -148,7 +148,7 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 			color.Info("Please log in, then exit the session (Ctrl+C or /exit) to continue.")
 			fmt.Println()
 			fmt.Fprintf(os.Stderr, "Press Enter to open %s...", agentName)
-			bufio.NewReader(os.Stdin).ReadString('\n')
+			fmt.Scanln()
 
 			if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
 				cfg.LoginCmd("cd /workspace && "+baseCmd)); err != nil {
@@ -189,9 +189,9 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 		fmt.Println()
 
 		fmt.Fprintf(os.Stderr, "Refine this config with %s? [y/N] ", agentName)
-		reader := bufio.NewReader(os.Stdin)
-		answer, _ := reader.ReadString('\n')
-		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "y") {
+		var answer string
+		fmt.Scanln(&answer)
+		if strings.HasPrefix(strings.ToLower(answer), "y") {
 			fmt.Println()
 			if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
 				cfg.LoginCmd("cd /workspace && "+baseCmd)); err != nil {
@@ -363,3 +363,4 @@ func randomSuffix() string {
 	rand.Read(b)
 	return fmt.Sprintf("%x", b)
 }
+
