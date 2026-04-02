@@ -132,7 +132,7 @@ func defaultGlobalConfig() *GlobalConfig {
 			},
 			{
 				Name:    "codex",
-				Deps:    []string{"dnf install -y nodejs npm"},
+				Deps:    []string{"dnf install -y nodejs npm bubblewrap"},
 				Install: "npm install -g @openai/codex --prefix ~/.local",
 				Mode:    "api-key",
 				Home:    "/home/dev/.codex",
