@@ -39,9 +39,9 @@ func CreateUser(ctx context.Context, server incuscli.InstanceServer, container, 
 
 	// Add ~/.local/bin to PATH in ~/.profile (sourced by all login shells).
 	pathLine := `export PATH="$HOME/.local/bin:$PATH"`
-	if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
-		"su", "-", username, "-c",
-		fmt.Sprintf(`echo '%s' >> ~/.profile`, pathLine),
+	userOpts := incus.ExecOpts{User: 1000, Home: "/home/" + username}
+	if _, err := incus.Exec(ctx, server, container, userOpts, []string{
+		"sh", "-c", fmt.Sprintf(`echo '%s' >> ~/.profile`, pathLine),
 	}); err != nil {
 		return fmt.Errorf("setting PATH for %q: %w", username, err)
 	}

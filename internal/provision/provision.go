@@ -398,7 +398,8 @@ func setEnvironment(ctx context.Context, server incuscli.InstanceServer, contain
 	}
 	profileContent := strings.Join(profileLines, "\n") + "\n"
 
-	if _, err := incus.ExecWithStdin(ctx, server, container, rootOpts, []string{
+	userOpts := incus.ExecOpts{User: 1000, Home: "/home/" + username}
+	if _, err := incus.ExecWithStdin(ctx, server, container, userOpts, []string{
 		"tee", "-a", profilePath,
 	}, []byte(profileContent)); err != nil {
 		return fmt.Errorf("setting profile environment variables: %w", err)
