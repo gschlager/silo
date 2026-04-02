@@ -103,39 +103,50 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 	agentCfg := cfg.Agents[agentName]
 	agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Shared)
 
-	// Write instructions as CLAUDE.md so the agent picks them up automatically.
-	// This lets us start an interactive session (not one-shot with -p).
-	prompt := autoInitPrompt()
-	rootOpts := incus.ExecOpts{}
-	if _, err := incus.ExecWithStdin(ctx, server, cfg.ContainerName, rootOpts,
-		[]string{"tee", "/workspace/CLAUDE.md"}, []byte(prompt)); err != nil {
-		color.Warn("could not write CLAUDE.md: %v", err)
-	}
-
-	// Build agent command and env.
+	// Build env and base command.
 	baseCmd := agentCfg.AgentCmd(agentName)
 	env := cfg.HostEnv()
 	for k, v := range agentCfg.Env {
 		env[k] = v
 	}
-
-	shellCmd := "cd /workspace && " + baseCmd
-
-	// Launch agent interactively.
 	opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 	opts.Env = env
-	if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd)); err != nil {
+
+	// Step 1: Run the agent non-interactively to generate a draft .silo.yml.
+	prompt := autoInitPrompt()
+	color.Status("Generating .silo.yml draft with %s...", agentName)
+	genCmd := baseCmd + " -p " + shellQuote([]string{prompt})
+	if err := incus.ExecStreaming(ctx, server, cfg.ContainerName, opts,
+		cfg.LoginCmd("cd /workspace && "+genCmd),
+		os.Stdout, os.Stderr); err != nil {
 		color.Warn("agent exited: %v", err)
 	}
 
-	// Clean up the temporary CLAUDE.md (the agent should have created .silo.yml).
-	incus.Exec(ctx, server, cfg.ContainerName, rootOpts, []string{"rm", "-f", "/workspace/CLAUDE.md"})
+	// Step 2: If a draft was generated, open an interactive session to refine it.
+	configPath := filepath.Join(cwd, ".silo.yml")
+	if _, err := os.Stat(configPath); err == nil {
+		color.Success("Draft .silo.yml generated.")
+		color.Info("Opening interactive session to refine the config...")
+		fmt.Println()
+
+		if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
+			cfg.LoginCmd("cd /workspace && "+baseCmd)); err != nil {
+			color.Warn("agent exited: %v", err)
+		}
+	} else {
+		color.Warn("No .silo.yml was generated. Opening interactive session...")
+		fmt.Println()
+
+		if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
+			cfg.LoginCmd("cd /workspace && "+baseCmd)); err != nil {
+			color.Warn("agent exited: %v", err)
+		}
+	}
 
 	// Sync shared files back.
 	agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Shared)
 
-	// Check if config was generated.
-	configPath := filepath.Join(cwd, ".silo.yml")
+	// Final check.
 	if _, err := os.Stat(configPath); err == nil {
 		color.Success("Generated .silo.yml")
 		color.Info("Run 'silo up' to start the environment.")
