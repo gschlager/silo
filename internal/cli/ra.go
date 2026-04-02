@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/gschlager/silo/internal/agents"
-	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
@@ -64,11 +63,8 @@ Examples:
 				return fmt.Errorf("unknown agent %q (configured agents: %s)", agentName, agentNames(cfg))
 			}
 
-			// Refresh "always" seed files.
-			color.Status("Refreshing %s credentials...", agentName)
-			if err := agents.RefreshAlwaysSeeds(cfg.ContainerName, cfg.Agents); err != nil {
-				color.Warn("could not refresh seeds: %v", err)
-			}
+			// Sync shared files (credentials, settings) into the container dir.
+			agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Shared)
 
 			// Build environment variables (host terminal env + agent-specific).
 			env := cfg.HostEnv()
@@ -77,8 +73,6 @@ Examples:
 			}
 
 			// Build the agent command.
-			// baseCmd may contain flags (e.g. "claude --dangerously-skip-permissions"),
-			// so it's passed raw to the shell. Only the prompt is quoted.
 			baseCmd := agentCfg.AgentCmd(agentName)
 
 			// Handle prompt argument.
@@ -98,7 +92,12 @@ Examples:
 			shellCmd := "cd /workspace && " + baseCmd + promptPart
 			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 			opts.Env = env
-			return incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd))
+			err = incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd))
+
+			// Sync shared files back (pick up token refreshes, setting changes).
+			agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Shared)
+
+			return err
 		},
 	}
 }

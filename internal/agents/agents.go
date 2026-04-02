@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	incuscli "github.com/lxc/incus/v6/client"
 	"github.com/gschlager/silo/internal/color"
@@ -14,9 +13,61 @@ import (
 	"github.com/gschlager/silo/internal/incus"
 )
 
-// DataDir returns the host-side agent data directory for a project.
-func DataDir(agent, projectName string) string {
-	return filepath.Join(config.GlobalConfigDir(), "agents", agent, projectName)
+// GlobalDir returns the host-side shared agent directory.
+// e.g. ~/.config/silo/global/agents/claude/
+func GlobalDir(agent string) string {
+	return filepath.Join(config.GlobalConfigDir(), "global", "agents", agent)
+}
+
+// ContainerDir returns the host-side per-container agent directory.
+// e.g. ~/.config/silo/containers/silo-myapp/agents/claude/
+func ContainerDir(agent, containerName string) string {
+	return filepath.Join(config.GlobalConfigDir(), "containers", containerName, "agents", agent)
+}
+
+// SyncToContainer copies shared files from the global agent dir into the
+// container agent dir before launching an agent.
+func SyncToContainer(agentName, containerName string, shared []string) {
+	globalDir := GlobalDir(agentName)
+	containerDir := ContainerDir(agentName, containerName)
+
+	if err := os.MkdirAll(containerDir, 0700); err != nil {
+		color.Warn("could not create container agent dir: %v", err)
+		return
+	}
+
+	for _, name := range shared {
+		src := filepath.Join(globalDir, name)
+		dst := filepath.Join(containerDir, name)
+		if err := copyPath(src, dst); err != nil {
+			// Silently skip missing files (first run, nothing in global yet).
+			if !os.IsNotExist(err) {
+				color.Warn("could not sync %q to container: %v", name, err)
+			}
+		}
+	}
+}
+
+// SyncFromContainer copies shared files from the container agent dir back
+// to the global agent dir after an agent exits.
+func SyncFromContainer(agentName, containerName string, shared []string) {
+	globalDir := GlobalDir(agentName)
+	containerDir := ContainerDir(agentName, containerName)
+
+	if err := os.MkdirAll(globalDir, 0700); err != nil {
+		color.Warn("could not create global agent dir: %v", err)
+		return
+	}
+
+	for _, name := range shared {
+		src := filepath.Join(containerDir, name)
+		dst := filepath.Join(globalDir, name)
+		if err := copyPath(src, dst); err != nil {
+			if !os.IsNotExist(err) {
+				color.Warn("could not sync %q from container: %v", name, err)
+			}
+		}
+	}
 }
 
 // InstallAgents runs deps and install commands for each enabled agent.
@@ -27,7 +78,6 @@ func InstallAgents(ctx context.Context, server incuscli.InstanceServer, containe
 		if !agent.Enabled || agent.Install == "" {
 			continue
 		}
-		// Install agent dependencies as root.
 		if len(agent.Deps) > 0 {
 			color.Status("Installing %s dependencies...", name)
 			for _, dep := range agent.Deps {
@@ -36,13 +86,39 @@ func InstallAgents(ctx context.Context, server incuscli.InstanceServer, containe
 				}
 			}
 		}
-		// Install agent as user.
 		color.Status("Installing %s...", name)
 		if err := execCmd(ctx, server, container, userOpts, []string{"/bin/" + shell, "-lc", agent.Install}, verbose); err != nil {
 			color.Warn("could not install %s: %v", name, err)
 		}
 	}
 	return nil
+}
+
+// SetupAgentDirs creates per-container agent directories on the host and
+// adds Incus disk devices to mount them into the container.
+func SetupAgentDirs(ctx context.Context, server incuscli.InstanceServer, container, containerName string, agents map[string]config.MergedAgentConfig) error {
+	for name, agent := range agents {
+		if !agent.Enabled || agent.Home == "" {
+			continue
+		}
+
+		dir := ContainerDir(name, containerName)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return fmt.Errorf("creating agent dir for %q: %w", name, err)
+		}
+
+		deviceName := fmt.Sprintf("agent-%s", name)
+		if err := incus.AddDiskDevice(ctx, server, container, deviceName, dir, agent.Home, false); err != nil {
+			return fmt.Errorf("mounting agent dir for %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// CleanupContainerDirs removes the host-side per-container data directory.
+func CleanupContainerDirs(containerName string) error {
+	containerBase := filepath.Join(config.GlobalConfigDir(), "containers", containerName)
+	return os.RemoveAll(containerBase)
 }
 
 func execCmd(ctx context.Context, server incuscli.InstanceServer, container string, opts incus.ExecOpts, command []string, verbose bool) error {
@@ -54,98 +130,20 @@ func execCmd(ctx context.Context, server incuscli.InstanceServer, container stri
 	return err
 }
 
-// SetupAgentDirs creates agent data directories on the host, seeds files,
-// and adds Incus disk devices to mount them into the container.
-func SetupAgentDirs(ctx context.Context, server incuscli.InstanceServer, container, projectName string, agents map[string]config.MergedAgentConfig) error {
-	for name, agent := range agents {
-		if !agent.Enabled || agent.Home == "" {
-			continue
-		}
-
-		dataDir := DataDir(name, projectName)
-		if err := os.MkdirAll(dataDir, 0700); err != nil {
-			return fmt.Errorf("creating agent data dir for %q: %w", name, err)
-		}
-
-		// Seed "once" files (only if they don't already exist in the data dir).
-		for _, src := range agent.Seed.Once {
-			if err := seedFile(src, dataDir, false); err != nil {
-				color.Warn("could not seed %q for %s: %v", src, name, err)
-			}
-		}
-
-		// Seed "always" files.
-		for _, src := range agent.Seed.Always {
-			if err := seedFile(src, dataDir, true); err != nil {
-				color.Warn("could not seed %q for %s: %v", src, name, err)
-			}
-		}
-
-		// Add Incus disk device.
-		deviceName := fmt.Sprintf("agent-%s", name)
-		if err := incus.AddDiskDevice(ctx, server, container, deviceName, dataDir, agent.Home, false); err != nil {
-			return fmt.Errorf("mounting agent data dir for %q: %w", name, err)
-		}
-	}
-	return nil
-}
-
-// RefreshAlwaysSeeds re-copies "always" seed files to pick up token refreshes.
-func RefreshAlwaysSeeds(projectName string, agents map[string]config.MergedAgentConfig) error {
-	for name, agent := range agents {
-		dataDir := DataDir(name, projectName)
-		for _, src := range agent.Seed.Always {
-			if err := seedFile(src, dataDir, true); err != nil {
-				color.Warn("could not refresh %q for %s: %v", src, name, err)
-			}
-		}
-	}
-	return nil
-}
-
-// CleanupAgentDirs removes the host-side agent data directories for a project.
-func CleanupAgentDirs(projectName string, agentNames []string) error {
-	for _, name := range agentNames {
-		dataDir := DataDir(name, projectName)
-		if err := os.RemoveAll(dataDir); err != nil {
-			return fmt.Errorf("removing agent data dir for %q: %w", name, err)
-		}
-	}
-	return nil
-}
-
-// seedFile copies a file from the host into the agent data directory.
-// src is a path like "~/.claude/.credentials.json".
-// If overwrite is false, skips files that already exist in the destination.
-func seedFile(src, dataDir string, overwrite bool) error {
-	expanded := expandHome(src)
-
-	srcInfo, err := os.Stat(expanded)
+// copyPath copies a file or directory from src to dst, creating parent dirs.
+func copyPath(src, dst string) error {
+	info, err := os.Stat(src)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil // silently skip missing source files
-		}
 		return err
 	}
 
-	// Get the filename (last component of the source path).
-	name := filepath.Base(expanded)
-	dst := filepath.Join(dataDir, name)
-
-	if srcInfo.IsDir() {
-		return seedDir(expanded, dst, overwrite)
+	if info.IsDir() {
+		return copyDir(src, dst)
 	}
-
-	if !overwrite {
-		if _, err := os.Stat(dst); err == nil {
-			return nil // already exists, skip
-		}
-	}
-
-	return copyFile(expanded, dst)
+	return copyFile(src, dst)
 }
 
-func seedDir(src, dst string, overwrite bool) error {
+func copyDir(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -157,13 +155,6 @@ func seedDir(src, dst string, overwrite bool) error {
 		if info.IsDir() {
 			return os.MkdirAll(dstPath, 0700)
 		}
-
-		if !overwrite {
-			if _, err := os.Stat(dstPath); err == nil {
-				return nil
-			}
-		}
-
 		return copyFile(path, dstPath)
 	})
 }
@@ -189,15 +180,6 @@ func copyFile(src, dst string) error {
 		return err
 	}
 
-	// Preserve permissions.
 	srcInfo, _ := os.Stat(src)
 	return os.Chmod(dst, srcInfo.Mode())
-}
-
-func expandHome(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, path[2:])
-	}
-	return path
 }

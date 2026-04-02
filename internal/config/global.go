@@ -36,19 +36,13 @@ type GlobalConfig struct {
 
 // AgentGlobalConfig holds global agent settings.
 type AgentGlobalConfig struct {
-	Name    string          `yaml:"name"`
-	Cmd     string          `yaml:"cmd,omitempty"`
-	Deps    []string        `yaml:"deps,omitempty"`
-	Install string          `yaml:"install,omitempty"`
-	Mode    string          `yaml:"mode,omitempty"`
-	Home    string          `yaml:"home,omitempty"`
-	Seed    AgentSeedConfig `yaml:"seed,omitempty"`
-}
-
-// AgentSeedConfig lists files to seed into agent data directories.
-type AgentSeedConfig struct {
-	Always []string `yaml:"always,omitempty"`
-	Once   []string `yaml:"once,omitempty"`
+	Name    string   `yaml:"name"`
+	Cmd     string   `yaml:"cmd,omitempty"`
+	Deps    []string `yaml:"deps,omitempty"`
+	Install string   `yaml:"install,omitempty"`
+	Mode    string   `yaml:"mode,omitempty"`
+	Home    string   `yaml:"home,omitempty"`
+	Shared  []string `yaml:"shared,omitempty"`
 }
 
 // GlobalConfigDir returns the silo config directory path.
@@ -124,15 +118,7 @@ func defaultGlobalConfig() *GlobalConfig {
 				Install: "curl -fsSL https://claude.ai/install.sh | bash",
 				Mode:    "oauth",
 				Home:    "/home/dev/.claude",
-				Seed: AgentSeedConfig{
-					Always: []string{
-						"~/.claude/.credentials.json",
-						"~/.claude/settings.json",
-					},
-					Once: []string{
-						"~/.claude/hooks",
-					},
-				},
+				Shared:  []string{".credentials.json", "settings.json", "hooks/"},
 			},
 			{
 				Name:    "codex",
@@ -140,11 +126,7 @@ func defaultGlobalConfig() *GlobalConfig {
 				Install: "npm install -g @openai/codex --prefix ~/.local",
 				Mode:    "api-key",
 				Home:    "/home/dev/.codex",
-				Seed: AgentSeedConfig{
-					Always: []string{
-						"~/.codex/auth.json",
-					},
-				},
+				Shared:  []string{"config.toml"},
 			},
 		},
 	}

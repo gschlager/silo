@@ -99,17 +99,14 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 		return err
 	}
 
-	// Refresh agent credentials.
-	color.Status("Refreshing %s credentials...", agentName)
-	if err := agents.RefreshAlwaysSeeds(cfg.ContainerName, cfg.Agents); err != nil {
-		color.Warn("could not refresh seeds: %v", err)
-	}
+	// Sync shared files into the container dir.
+	agentCfg := cfg.Agents[agentName]
+	agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Shared)
 
 	// Build the agent prompt.
 	prompt := autoInitPrompt()
 
 	// Build agent command and env.
-	agentCfg := cfg.Agents[agentName]
 	env := cfg.HostEnv()
 	for k, v := range agentCfg.Env {
 		env[k] = v
@@ -124,6 +121,9 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 	if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd)); err != nil {
 		color.Warn("agent exited: %v", err)
 	}
+
+	// Sync shared files back.
+	agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Shared)
 
 	// Check if config was generated.
 	configPath := filepath.Join(cwd, ".silo.yml")

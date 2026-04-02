@@ -59,7 +59,7 @@ type MergedAgentConfig struct {
 	Install string
 	Mode    string
 	Home    string
-	Seed    AgentSeedConfig
+	Shared  []string
 	Env     map[string]string
 	Enabled bool
 }
@@ -187,7 +187,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 			Install: ga.Install,
 			Mode:    ga.Mode,
 			Home:    ga.Home,
-			Seed:    ga.Seed,
+			Shared:  ga.Shared,
 			Enabled: true,
 		}
 	}
@@ -207,7 +207,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 				merged.Deps = ga.Deps
 				merged.Install = ga.Install
 				merged.Home = ga.Home
-				merged.Seed = ga.Seed
+				merged.Shared = ga.Shared
 			}
 			if merged.Mode == "" {
 				if ga, ok := globalAgents[name]; ok {
