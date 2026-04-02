@@ -103,17 +103,23 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 	agentCfg := cfg.Agents[agentName]
 	agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Shared)
 
-	// Build the agent prompt.
+	// Write instructions as CLAUDE.md so the agent picks them up automatically.
+	// This lets us start an interactive session (not one-shot with -p).
 	prompt := autoInitPrompt()
+	rootOpts := incus.ExecOpts{}
+	if _, err := incus.ExecWithStdin(ctx, server, cfg.ContainerName, rootOpts,
+		[]string{"tee", "/workspace/CLAUDE.md"}, []byte(prompt)); err != nil {
+		color.Warn("could not write CLAUDE.md: %v", err)
+	}
 
 	// Build agent command and env.
+	baseCmd := agentCfg.AgentCmd(agentName)
 	env := cfg.HostEnv()
 	for k, v := range agentCfg.Env {
 		env[k] = v
 	}
 
-	agentCmd := shellQuote([]string{agentName, "-p", prompt})
-	shellCmd := "cd /workspace && " + agentCmd
+	shellCmd := "cd /workspace && " + baseCmd
 
 	// Launch agent interactively.
 	opts := incus.UserOpts(cfg.UserHome(), "/workspace")
@@ -121,6 +127,9 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 	if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd)); err != nil {
 		color.Warn("agent exited: %v", err)
 	}
+
+	// Clean up the temporary CLAUDE.md (the agent should have created .silo.yml).
+	incus.Exec(ctx, server, cfg.ContainerName, rootOpts, []string{"rm", "-f", "/workspace/CLAUDE.md"})
 
 	// Sync shared files back.
 	agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Shared)
