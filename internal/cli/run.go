@@ -9,10 +9,19 @@ import (
 
 func newRunCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "run <command> [args...]",
-		Short: "Run a single command inside the container",
-		Args:  requireArgs(1, "command"),
+		Use:                "run <command> [args...]",
+		Short:              "Run a single command inside the container",
+		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Handle --help manually since flag parsing is disabled.
+			for _, a := range args {
+				if a == "--help" || a == "-h" {
+					return cmd.Help()
+				}
+			}
+			if len(args) == 0 {
+				return cmd.Help()
+			}
 			ctx := cmd.Context()
 
 			cfg, err := loadConfig()
