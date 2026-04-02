@@ -113,7 +113,7 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 	opts.Env = env
 
 	// Step 1: Run the agent non-interactively to generate a draft .silo.yml.
-	prompt := autoInitPrompt()
+	prompt := autoInitPrompt(cfg)
 	color.Status("Generating .silo.yml draft with %s...", agentName)
 	genCmd := baseCmd + " -p " + shellQuote([]string{prompt})
 	if err := incus.ExecStreaming(ctx, server, cfg.ContainerName, opts,
@@ -219,8 +219,8 @@ func runInteractiveInit(cwd string) error {
 	return nil
 }
 
-func autoInitPrompt() string {
-	return `You are helping generate a .silo.yml configuration file for a project.
+func autoInitPrompt(cfg *config.MergedConfig) string {
+	prompt := `You are helping generate a .silo.yml configuration file for a project.
 
 .silo.yml configures an isolated development environment using Incus system containers.
 Analyze the project in /workspace and generate a complete .silo.yml.
@@ -260,8 +260,23 @@ Important rules:
 - Look at the project files to determine: language, package manager, services needed, ports
 - Check for Dockerfile, docker-compose.yml, Gemfile, package.json, go.mod, requirements.txt, etc.
 - Write the file to /workspace/.silo.yml
+`
 
-Analyze the project now and generate the configuration. Discuss your choices with the user and iterate until they're satisfied.`
+	// Add environment context.
+	prompt += fmt.Sprintf(`
+Environment context:
+- Base image: %s
+- The following packages are pre-installed via default_setup: %s
+`, cfg.Image, strings.Join(cfg.DefaultSetup, "; "))
+
+	prompt += `
+Important: The .silo.yml must be portable — do not reference host-specific
+paths or assume anything is pre-installed beyond the default_setup packages.
+All dependencies should be installed from scratch in the setup commands.
+The container starts clean each time.
+
+Analyze the project now and generate the configuration.`
+	return prompt
 }
 
 func hasPrivateRemote(dir string) bool {
