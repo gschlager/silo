@@ -124,24 +124,47 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 		color.Warn("agent exited: %v", err)
 	}
 
-	// Step 2: If a draft was generated, open an interactive session to refine it.
+	// Step 2: Show the generated config and ask if the user wants to refine it.
 	configPath := filepath.Join(cwd, ".silo.yml")
 	if _, err := os.Stat(configPath); err == nil {
-		color.Success("Draft .silo.yml generated.")
-		color.Info("Opening interactive session to refine the config...")
+		fmt.Println()
+		color.Success("Generated .silo.yml:")
 		fmt.Println()
 
-		if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
-			cfg.LoginCmd("cd /workspace && "+baseCmd)); err != nil {
-			color.Warn("agent exited: %v", err)
+		// Display the config with syntax highlighting.
+		if data, err := os.ReadFile(configPath); err == nil {
+			highlightYAML(string(data))
+		}
+
+		fmt.Println()
+		color.Info("Things to consider:")
+		color.Info("  - Are all required services listed (database, Redis, etc.)?")
+		color.Info("  - Are the port forwards correct for your host-side tools?")
+		color.Info("  - Should any slow-to-install runtimes use the cache field?")
+		color.Info("  - Are daemon commands correct for development mode?")
+		fmt.Println()
+
+		fmt.Fprintf(os.Stderr, "Refine this config with %s? [y/N] ", agentName)
+		reader := bufio.NewReader(os.Stdin)
+		answer, _ := reader.ReadString('\n')
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "y") {
+			fmt.Println()
+			if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
+				cfg.LoginCmd("cd /workspace && "+baseCmd)); err != nil {
+				color.Warn("agent exited: %v", err)
+			}
 		}
 	} else {
-		color.Warn("No .silo.yml was generated. Opening interactive session...")
-		fmt.Println()
-
-		if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
-			cfg.LoginCmd("cd /workspace && "+baseCmd)); err != nil {
-			color.Warn("agent exited: %v", err)
+		color.Warn("No .silo.yml was generated.")
+		fmt.Fprintf(os.Stderr, "Open %s to create it interactively? [y/N] ", agentName)
+		reader := bufio.NewReader(os.Stdin)
+		answer, _ := reader.ReadString('\n')
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "y") {
+			fmt.Println()
+			if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
+				cfg.LoginCmd("cd /workspace && "+baseCmd)); err != nil {
+				color.Warn("agent exited: %v", err)
+			}
 		}
 	}
 
