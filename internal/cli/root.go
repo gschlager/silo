@@ -43,7 +43,7 @@ and port forwarding.`,
 		&cobra.Group{ID: "agent", Title: "\033[1;33mAgents:\033[0m"},
 		&cobra.Group{ID: "workflow", Title: "\033[1;33mDevelopment Workflow:\033[0m"},
 		&cobra.Group{ID: "daemon", Title: "\033[1;33mDaemons:\033[0m"},
-		&cobra.Group{ID: "snapshot", Title: "\033[1;33mSnapshots:\033[0m"},
+		&cobra.Group{ID: "data", Title: "\033[1;33mData Management:\033[0m"},
 		&cobra.Group{ID: "config", Title: "\033[1;33mConfiguration:\033[0m"},
 	)
 
@@ -59,6 +59,7 @@ and port forwarding.`,
 	addCmd("environment", newRmCmd())
 	addCmd("environment", newEnterCmd())
 	addCmd("environment", newRunCmd())
+	addCmd("environment", newCpCmd())
 	addCmd("environment", newStatusCmd())
 
 	// Agents.
@@ -76,8 +77,9 @@ and port forwarding.`,
 	addCmd("daemon", newRestartCmd())
 	addCmd("daemon", newLogsCmd())
 
-	// Snapshots.
-	addCmd("snapshot", newSnapshotCmd())
+	// Data management.
+	addCmd("data", newSnapshotCmd())
+	addCmd("data", newCacheCmd())
 
 	// Configuration.
 	addCmd("config", newInitCmd())
