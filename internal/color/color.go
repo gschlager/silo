@@ -9,7 +9,6 @@ import (
 
 var (
 	arrow   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))  // green
-	heading = lipgloss.NewStyle().Bold(true)
 	warn    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))             // yellow
 	err_    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("1"))  // red
 	dimmed  = lipgloss.NewStyle().Faint(true)
@@ -17,10 +16,10 @@ var (
 	info_   = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))             // cyan
 )
 
-// Status prints a green "==> message" line to stderr.
+// Status prints a "==> message" line to stderr (green arrow, normal text).
 func Status(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(os.Stderr, "%s %s\n", arrow.Render("==>"), heading.Render(msg))
+	fmt.Fprintf(os.Stderr, "%s %s\n", arrow.Render("==>"), msg)
 }
 
 // Warn prints a yellow "Warning: message" line to stderr.
