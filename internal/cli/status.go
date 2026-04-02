@@ -2,7 +2,7 @@ package cli
 
 import (
 	"fmt"
-	"os"
+	"strings"
 
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
@@ -78,29 +78,34 @@ func newStatusCmd() *cobra.Command {
 				}
 			}
 
-			// Daemons (config + live status if running).
+			// Daemons.
 			if len(cfg.Daemons) > 0 {
 				fmt.Println("\nDaemons:")
-				if inst.Status == "Running" {
-					output, err := incus.Exec(ctx, server, name, incus.ExecOpts{}, []string{
-						"su", "-", cfg.User, "-c",
-						"systemctl --user list-units 'silo-*' --no-pager --no-legend 2>/dev/null || true",
-					})
-					if err == nil && output != "" {
-						fmt.Print(output)
+				for daemon, dcfg := range cfg.Daemons {
+					status := "stopped"
+					if inst.Status == "Running" {
+						out, err := incus.Exec(ctx, server, name, incus.ExecOpts{}, []string{
+							"su", "-", cfg.User, "-c",
+							fmt.Sprintf("systemctl --user is-active silo-%s 2>/dev/null || true", daemon),
+						})
+						if err == nil {
+							s := strings.TrimSpace(out)
+							if s == "active" {
+								status = "running"
+							} else if s == "inactive" {
+								status = "stopped"
+							} else if s == "failed" {
+								status = "failed"
+							}
+						}
 					} else {
-						for daemon := range cfg.Daemons {
-							fmt.Fprintf(os.Stderr, "  silo-%s (status unknown)\n", daemon)
-						}
+						status = "container stopped"
 					}
-				} else {
-					for daemon, dcfg := range cfg.Daemons {
-						autostart := "autostart"
-						if !dcfg.Autostart {
-							autostart = "manual"
-						}
-						fmt.Printf("  %s (%s): %s\n", daemon, autostart, dcfg.Cmd)
+					autostart := ""
+					if !dcfg.Autostart {
+						autostart = ", manual"
 					}
+					fmt.Printf("  %-20s %s%s\n", daemon, status, autostart)
 				}
 			}
 
