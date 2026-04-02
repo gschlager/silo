@@ -156,13 +156,9 @@ func SyncOutOfHomeToContainer(ctx context.Context, server incuscli.InstanceServe
 		target := rule.ResolveTarget(userHome)
 		src := filepath.Join(filesDir, rule.File)
 
-		var data []byte
-		var err error
-		if len(rule.Keys) > 0 {
-			data, err = extractJSONKeys(src, rule.Keys)
-		} else {
-			data, err = os.ReadFile(src)
-		}
+		// Read the full file from the container's files dir. This has
+		// all the runtime data from the previous session.
+		data, err := os.ReadFile(src)
 		if err != nil {
 			if !os.IsNotExist(err) {
 				color.Warn("could not read %q for container: %v", rule.File, err)
