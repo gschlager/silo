@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 
@@ -85,15 +86,27 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 		return err
 	}
 
-	// Ensure cleanup on exit.
-	defer func() {
+	// Ensure cleanup on exit, including SIGINT. Use a background context
+	// for cleanup since the original ctx may be cancelled.
+	cleanup := func() {
+		cleanupCtx := context.Background()
 		color.Status("Removing temporary container...")
 		if incus.IsRunning(server, cfg.ContainerName) {
-			incus.Stop(ctx, server, cfg.ContainerName)
+			incus.Stop(cleanupCtx, server, cfg.ContainerName)
 		}
-		incus.Delete(ctx, server, cfg.ContainerName)
+		incus.Delete(cleanupCtx, server, cfg.ContainerName)
 		agents.CleanupContainerDirs(cfg.ContainerName)
+	}
+	defer cleanup()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+	go func() {
+		<-sigCh
+		cleanup()
+		os.Exit(1)
 	}()
+	defer signal.Stop(sigCh)
 
 	// Provision minimal container with just the agent.
 	if err := provision.ProvisionMinimal(ctx, server, cfg, agentName); err != nil {
@@ -119,7 +132,8 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 	configPath := filepath.Join(cwd, ".silo.yml")
 
 	generateConfig := func() error {
-		color.Status("Generating .silo.yml draft with %s...", agentName)
+		color.Status("Generating .silo.yml with %s (this may take a minute)...", agentName)
+		fmt.Println()
 		genCmd := baseCmd + " -p " + shellQuote([]string{prompt})
 		return incus.ExecStreaming(ctx, server, cfg.ContainerName, opts,
 			cfg.LoginCmd("cd /workspace && "+genCmd),
@@ -133,6 +147,8 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 			color.Info("%s needs to be logged in first.", agentName)
 			color.Info("Please log in, then exit the session (Ctrl+C or /exit) to continue.")
 			fmt.Println()
+			fmt.Fprintf(os.Stderr, "Press Enter to open %s...", agentName)
+			bufio.NewReader(os.Stdin).ReadString('\n')
 
 			if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
 				cfg.LoginCmd("cd /workspace && "+baseCmd)); err != nil {
