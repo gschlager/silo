@@ -37,12 +37,19 @@ type GlobalConfig struct {
 // AgentGlobalConfig holds global agent settings.
 type AgentGlobalConfig struct {
 	Name    string   `yaml:"name"`
+	Enabled bool     `yaml:"enabled"`
 	Cmd     string   `yaml:"cmd"`
-	Deps    []string `yaml:"deps,omitempty"`
-	Install string   `yaml:"install,omitempty"`
-	Mode    string   `yaml:"mode,omitempty"`
-	Home    string   `yaml:"home,omitempty"`
-	Shared  []string `yaml:"shared,omitempty"`
+	Deps    []string `yaml:"deps"`
+	Install string   `yaml:"install"`
+	Mode    string   `yaml:"mode"`
+	Home    string   `yaml:"home"`
+	Shared  []string `yaml:"shared"`
+}
+
+// agentOverride is used during config parsing to detect explicit enabled: false.
+type agentOverride struct {
+	Name    string `yaml:"name"`
+	Enabled *bool  `yaml:"enabled"`
 }
 
 // GlobalConfigDir returns the silo config directory path.
@@ -71,11 +78,16 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
 
-	// Parse user config into a separate struct.
+	// Parse user config separately. Use agentOverride with *bool for enabled
+	// so we can distinguish "not set" from "explicitly false".
 	var userCfg GlobalConfig
 	if err := yaml.Unmarshal(data, &userCfg); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
+	var userAgentOverrides struct {
+		Agents []agentOverride `yaml:"agents"`
+	}
+	yaml.Unmarshal(data, &userAgentOverrides)
 
 	// Start with defaults, then apply user overrides for scalar fields.
 	cfg := defaultGlobalConfig()
@@ -109,6 +121,14 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 
 	// Merge agents: user overrides per agent by name, defaults fill in the rest.
 	if len(userCfg.Agents) > 0 {
+		// Build enabled override map from the *bool parse.
+		enabledOverrides := make(map[string]*bool)
+		for _, ao := range userAgentOverrides.Agents {
+			if ao.Enabled != nil {
+				enabledOverrides[ao.Name] = ao.Enabled
+			}
+		}
+
 		defaultAgents := make(map[string]AgentGlobalConfig)
 		for _, a := range cfg.Agents {
 			defaultAgents[a.Name] = a
@@ -117,7 +137,6 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 		// Apply user overrides onto defaults.
 		for _, ua := range userCfg.Agents {
 			if da, ok := defaultAgents[ua.Name]; ok {
-				// Merge: user fields override, empty fields keep defaults.
 				if ua.Cmd != "" {
 					da.Cmd = ua.Cmd
 				}
@@ -136,9 +155,19 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 				if len(ua.Shared) > 0 {
 					da.Shared = ua.Shared
 				}
+				if ep, ok := enabledOverrides[ua.Name]; ok {
+					da.Enabled = *ep
+				}
 				defaultAgents[ua.Name] = da
 			} else {
-				// New agent defined by user.
+				// New agent defined by user — default to enabled unless explicit.
+				if ua.Enabled == false {
+					if ep, ok := enabledOverrides[ua.Name]; ok {
+						ua.Enabled = *ep
+					} else {
+						ua.Enabled = true
+					}
+				}
 				defaultAgents[ua.Name] = ua
 			}
 		}
@@ -200,6 +229,8 @@ func defaultGlobalConfig() *GlobalConfig {
 		Agents: []AgentGlobalConfig{
 			{
 				Name:    "claude",
+				Enabled: true,
+				Cmd:     "claude",
 				Install: "curl -fsSL https://claude.ai/install.sh | bash",
 				Mode:    "oauth",
 				Home:    "/home/dev/.claude",
@@ -207,6 +238,8 @@ func defaultGlobalConfig() *GlobalConfig {
 			},
 			{
 				Name:    "codex",
+				Enabled: true,
+				Cmd:     "codex",
 				Deps:    []string{"dnf install -y nodejs npm bubblewrap"},
 				Install: "npm install -g @openai/codex --prefix ~/.local",
 				Mode:    "api-key",
