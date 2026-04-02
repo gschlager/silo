@@ -3,6 +3,7 @@ package incus
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -10,6 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/gorilla/websocket"
 	incuscli "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/shared/api"
 	"golang.org/x/term"
@@ -148,6 +150,24 @@ func ExecInteractive(ctx context.Context, server incuscli.InstanceServer, contai
 		Stdin:  os.Stdin,
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
+		Control: func(conn *websocket.Conn) {
+			// Forward window resize events to the container.
+			for range sigCh {
+				w, h, err := term.GetSize(int(os.Stdin.Fd()))
+				if err != nil {
+					continue
+				}
+				msg := api.InstanceExecControl{
+					Command: "window-resize",
+					Args: map[string]string{
+						"width":  fmt.Sprintf("%d", w),
+						"height": fmt.Sprintf("%d", h),
+					},
+				}
+				data, _ := json.Marshal(msg)
+				conn.WriteMessage(websocket.TextMessage, data)
+			}
+		},
 	}
 
 	op, err := server.ExecInstance(container, req, args)
