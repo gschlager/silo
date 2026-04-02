@@ -1,0 +1,37 @@
+version: 2
+
+builds:
+  - main: ./cmd/silo
+    binary: silo
+    ldflags:
+      - -s -w -X github.com/gschlager/silo/internal/cli.Version={{.Version}}
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - format: tar.gz
+    name_template: "silo-{{.Version}}-{{.Os}}-{{.Arch}}"
+
+nfpms:
+  - package_name: silo
+    vendor: Gerhard Schlager
+    homepage: https://github.com/gschlager/silo
+    maintainer: Gerhard Schlager <gerhard@schlager.dev>
+    description: Secure isolated local environments for AI agents
+    license: MIT
+    formats:
+      - rpm
+    contents:
+      - src: LICENSE
+        dst: /usr/share/licenses/silo/LICENSE
+
+changelog:
+  use: github-native
+
+release:
+  github:
+    owner: gschlager
+    name: silo

@@ -3,7 +3,6 @@ package cli
 import (
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
-	"github.com/gschlager/silo/internal/update"
 	"github.com/spf13/cobra"
 )
 
@@ -25,14 +24,6 @@ and port forwarding.`,
 				color.Warn("could not create global config: %v", err)
 			}
 			return nil
-		},
-		PersistentPostRun: func(cmd *cobra.Command, args []string) {
-			// Background update check — non-blocking.
-			if Version != "dev" {
-				if newVersion := update.CheckForUpdate(Version); newVersion != "" {
-					color.Infof("A new version of silo is available (%s). Run 'silo upgrade' to update.", newVersion)
-				}
-			}
 		},
 	}
 
@@ -85,7 +76,6 @@ and port forwarding.`,
 	addCmd("config", newInitCmd())
 	addCmd("config", newConfigCmd())
 	addCmd("config", newCompletionCmd())
-	addCmd("config", newUpgradeCmd())
 	addCmd("config", newVersionCmd())
 
 	styleHelp(rootCmd)
