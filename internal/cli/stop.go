@@ -11,7 +11,7 @@ func newStopCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop <daemon>",
 		Short: "Stop a running daemon",
-		Args:  cobra.ExactArgs(1),
+		Args:  requireArgs(1, "daemon name"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 

@@ -17,7 +17,7 @@ func newResetCmd() *cobra.Command {
 		Use:   "reset <target>",
 		Short: "Run the named reset command list",
 		Long:  `Run the named reset command list (e.g., silo reset db).`,
-		Args:  cobra.ExactArgs(1),
+		Args:  requireArgs(1, "reset target"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 

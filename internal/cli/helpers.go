@@ -8,7 +8,19 @@ import (
 	incuscli "github.com/lxc/incus/v6/client"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	"github.com/spf13/cobra"
 )
+
+// requireArgs returns a cobra.PositionalArgs validator that prints
+// a friendly error with usage hint instead of cobra's default message.
+func requireArgs(n int, what string) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) < n {
+			return fmt.Errorf("missing %s\n\n%s", what, cmd.UsageString())
+		}
+		return nil
+	}
+}
 
 // shellQuote quotes each argument for safe use in a POSIX shell command string.
 // Each argument is wrapped in single quotes, with any embedded single quotes

@@ -24,7 +24,7 @@ Print completions to stdout:
 
 Auto-install to the standard location:
   silo completion install`,
-		Args:      cobra.ExactArgs(1),
+		Args:      requireArgs(1, "shell name (bash, zsh, or fish)"),
 		ValidArgs: []string{"bash", "zsh", "fish"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rootCmd := cmd.Root()

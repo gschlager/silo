@@ -11,7 +11,7 @@ func newRunCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "run <command> [args...]",
 		Short: "Run a single command inside the container",
-		Args:  cobra.MinimumNArgs(1),
+		Args:  requireArgs(1, "command"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 

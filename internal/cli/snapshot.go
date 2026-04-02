@@ -103,7 +103,7 @@ func newSnapshotRestoreCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "restore <name>",
 		Short: "Restore the container to a snapshot",
-		Args:  cobra.ExactArgs(1),
+		Args:  requireArgs(1, "snapshot name"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
@@ -136,7 +136,7 @@ func newSnapshotRmCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "rm <name>",
 		Short: "Delete a snapshot",
-		Args:  cobra.ExactArgs(1),
+		Args:  requireArgs(1, "snapshot name"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 

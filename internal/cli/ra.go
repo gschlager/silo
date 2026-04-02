@@ -16,16 +16,18 @@ import (
 
 func newRaCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "ra <agent> [prompt or file]",
+		Use:   "ra [agent] [prompt or file]",
 		Short: "Run an AI agent interactively inside the container",
 		Long: `Run an AI agent interactively inside the container.
 Copies agent-specific auth/config, then launches the agent with TTY attached.
+Without arguments, runs the default agent.
 
 Examples:
+  silo ra
   silo ra claude
   silo ra claude "fix the failing tests"
   silo ra claude ./prompt.md`,
-		Args: cobra.RangeArgs(1, 2),
+		Args: cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
@@ -43,7 +45,20 @@ Examples:
 				return err
 			}
 
-			agentName := args[0]
+			agentName := cfg.ResolveDefaultAgent()
+			promptArgs := args
+
+			// If first arg matches a configured agent, use it as agent name.
+			// Otherwise treat all args as prompt for the default agent.
+			if len(args) > 0 {
+				if _, ok := cfg.Agents[args[0]]; ok {
+					agentName = args[0]
+					promptArgs = args[1:]
+				}
+			}
+			if agentName == "" {
+				return fmt.Errorf("no agents configured")
+			}
 			agentCfg, ok := cfg.Agents[agentName]
 			if !ok {
 				return fmt.Errorf("unknown agent %q (configured agents: %s)", agentName, agentNames(cfg))
@@ -65,8 +80,8 @@ Examples:
 			agentCmd := []string{agentName}
 
 			// Handle prompt argument.
-			if len(args) > 1 {
-				prompt := args[1]
+			if len(promptArgs) > 0 {
+				prompt := promptArgs[0]
 				// Check if it's a file path on the host.
 				if info, err := os.Stat(prompt); err == nil && !info.IsDir() {
 					data, err := os.ReadFile(prompt)
