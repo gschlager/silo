@@ -40,6 +40,10 @@ type MergedConfig struct {
 	// Daemons.
 	Daemons map[string]DaemonConfig
 
+	// Cache.
+	Cache       []string
+	SharedCache []string
+
 	// Docker/Compose.
 	Docker  bool
 	Compose string
@@ -145,6 +149,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		m.Reset = project.Reset
 		m.Update = project.Update
 		m.Ports = project.Ports
+		m.Cache = project.Cache
 		m.Docker = project.Docker
 		m.Compose = project.Compose
 	}
@@ -153,6 +158,9 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 	if project != nil && project.Env != nil {
 		m.Env = project.Env
 	}
+
+	// Shared cache: global-only.
+	m.SharedCache = global.SharedCache
 
 	// Mounts: union of global and project.
 	m.Mounts = append(m.Mounts, global.Mounts...)

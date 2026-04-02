@@ -14,9 +14,9 @@ import (
 )
 
 // GlobalDir returns the host-side shared agent directory.
-// e.g. ~/.config/silo/global/agents/claude/
+// e.g. ~/.config/silo/agents/claude/
 func GlobalDir(agent string) string {
-	return filepath.Join(config.GlobalConfigDir(), "global", "agents", agent)
+	return filepath.Join(config.GlobalConfigDir(), "agents", agent)
 }
 
 // ContainerDir returns the host-side per-container agent directory.

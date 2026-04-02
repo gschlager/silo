@@ -10,6 +10,7 @@ import (
 
 	incuscli "github.com/lxc/incus/v6/client"
 	"github.com/gschlager/silo/internal/agents"
+	"github.com/gschlager/silo/internal/cache"
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
@@ -144,6 +145,19 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
+	// Step 5b: Set up cache mounts.
+	for i, cachePath := range cfg.Cache {
+		cacheDir := cache.Dir(cfg.ContainerName, cachePath, cfg.SharedCache)
+		if err := os.MkdirAll(cacheDir, 0755); err != nil {
+			return fmt.Errorf("creating cache dir for %q: %w", cachePath, err)
+		}
+		status("Mounting cache %s...", cachePath)
+		deviceName := fmt.Sprintf("cache-%d", i)
+		if err := incus.AddDiskDevice(ctx, server, name, deviceName, cacheDir, cachePath, false); err != nil {
+			return err
+		}
+	}
+
 	// Step 6: Run default_setup (as root, before user creation so shell is available).
 	if len(cfg.DefaultSetup) > 0 {
 		status("Running default setup...")
@@ -156,6 +170,13 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	status("Creating user %s...", cfg.User)
 	if err := CreateUser(ctx, server, name, cfg.User, cfg.Shell); err != nil {
 		return err
+	}
+
+	// Fix ownership of cache mount targets.
+	for _, cachePath := range cfg.Cache {
+		incus.Exec(ctx, server, name, incus.ExecOpts{}, []string{
+			"chown", "-R", cfg.User + ":" + cfg.User, cachePath,
+		})
 	}
 
 	// Step 8: Configure git.

@@ -251,6 +251,10 @@ The file format (all fields are optional):
     sidekiq:
       cmd: bundle exec sidekiq
       autostart: false
+  cache:                    # Paths to cache across container rebuilds
+    - /home/dev/.rubies     # Ruby installations (e.g. from ruby-install)
+    - /home/dev/.cache/npm  # npm cache
+    - /home/dev/go          # Go module cache
   docker: false             # Enable nested Docker
   compose: ""               # Docker compose file to start on silo up
 
@@ -274,6 +278,11 @@ Important: The .silo.yml must be portable — do not reference host-specific
 paths or assume anything is pre-installed beyond the default_setup packages.
 All dependencies should be installed from scratch in the setup commands.
 The container starts clean each time.
+
+Use the cache field for directories that are slow to rebuild, like Ruby
+installations from ruby-install, npm/yarn caches, Go module caches, or
+Python virtualenvs. Caches persist across container rebuilds so setup
+runs much faster on subsequent silo up commands.
 
 Analyze the project now and generate the configuration.`
 	return prompt

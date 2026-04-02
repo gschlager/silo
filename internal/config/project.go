@@ -22,6 +22,7 @@ type ProjectConfig struct {
 	Mounts  []string            `yaml:"mounts"`
 	Tools   map[string]ToolConfig `yaml:"tools"`
 	Daemons map[string]DaemonConfig `yaml:"daemons"`
+	Cache   []string            `yaml:"cache"`
 	Docker  bool                `yaml:"docker"`
 	Compose string              `yaml:"compose"`
 }
