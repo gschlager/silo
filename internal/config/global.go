@@ -22,33 +22,33 @@ func MarshalYAML(v any) ([]byte, error) {
 
 // GlobalConfig represents ~/.config/silo/config.yml.
 type GlobalConfig struct {
-	DefaultImage string            `yaml:"default_image"`
-	DefaultSetup []string          `yaml:"default_setup"`
-	DefaultAgent string            `yaml:"default_agent"`
-	PassEnv      []string          `yaml:"pass_env"`
-	Shell        string            `yaml:"shell"`
-	User         string            `yaml:"user"`
-	Notifications bool            `yaml:"notifications"`
-	Mounts       []string          `yaml:"mounts"`
-	Git          map[string]string `yaml:"git"`
-	Agents       []AgentGlobalConfig `yaml:"agents"`
+	DefaultImage  string              `yaml:"default_image"`
+	DefaultSetup  []string            `yaml:"default_setup"`
+	DefaultAgent  string              `yaml:"default_agent,omitempty"`
+	PassEnv       []string            `yaml:"pass_env,omitempty"`
+	Shell         string              `yaml:"shell"`
+	User          string              `yaml:"user"`
+	Notifications bool                `yaml:"notifications,omitempty"`
+	Mounts        []string            `yaml:"mounts,omitempty"`
+	Git           map[string]string   `yaml:"git,omitempty"`
+	Agents        []AgentGlobalConfig `yaml:"agents"`
 }
 
 // AgentGlobalConfig holds global agent settings.
 type AgentGlobalConfig struct {
-	Name    string         `yaml:"name"`
-	Cmd     string         `yaml:"cmd"`
-	Deps    []string       `yaml:"deps"`
-	Install string         `yaml:"install"`
-	Mode    string         `yaml:"mode"`
-	Home    string         `yaml:"home"`
-	Seed    AgentSeedConfig `yaml:"seed"`
+	Name    string          `yaml:"name"`
+	Cmd     string          `yaml:"cmd,omitempty"`
+	Deps    []string        `yaml:"deps,omitempty"`
+	Install string          `yaml:"install,omitempty"`
+	Mode    string          `yaml:"mode,omitempty"`
+	Home    string          `yaml:"home,omitempty"`
+	Seed    AgentSeedConfig `yaml:"seed,omitempty"`
 }
 
 // AgentSeedConfig lists files to seed into agent data directories.
 type AgentSeedConfig struct {
-	Always []string `yaml:"always"`
-	Once   []string `yaml:"once"`
+	Always []string `yaml:"always,omitempty"`
+	Once   []string `yaml:"once,omitempty"`
 }
 
 // GlobalConfigDir returns the silo config directory path.
@@ -84,7 +84,9 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 	return cfg, nil
 }
 
-// EnsureGlobalConfig creates the global config file with defaults if it doesn't exist.
+// EnsureGlobalConfig creates the global config directory and a minimal
+// config file if it doesn't exist. Defaults are applied in code, not
+// written to disk — the file only needs to contain user overrides.
 func EnsureGlobalConfig() error {
 	path := GlobalConfigPath()
 	if _, err := os.Stat(path); err == nil {
@@ -95,12 +97,12 @@ func EnsureGlobalConfig() error {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
-	data, err := MarshalYAML(defaultGlobalConfig())
-	if err != nil {
-		return fmt.Errorf("marshaling default config: %w", err)
-	}
+	content := `# Silo global configuration
+# Run 'silo config show' to see all resolved settings with defaults.
+# Only add settings here that you want to override.
+`
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	return nil

@@ -51,13 +51,16 @@ func newConfigEditCmd() *cobra.Command {
 func newConfigShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show",
-		Short: "Print the global config file",
+		Short: "Print the resolved global config (defaults + overrides)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := config.GlobalConfigPath()
-			data, err := os.ReadFile(path)
+			cfg, err := config.LoadGlobalConfig()
 			if err != nil {
-				return fmt.Errorf("reading %s: %w", path, err)
+				return err
+			}
+			data, err := config.MarshalYAML(cfg)
+			if err != nil {
+				return err
 			}
 			fmt.Print(string(data))
 			return nil
