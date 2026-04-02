@@ -24,6 +24,7 @@ func MarshalYAML(v any) ([]byte, error) {
 type GlobalConfig struct {
 	DefaultImage string            `yaml:"default_image"`
 	DefaultSetup []string          `yaml:"default_setup"`
+	DefaultAgent string            `yaml:"default_agent"`
 	Shell        string            `yaml:"shell"`
 	User         string            `yaml:"user"`
 	Notifications bool            `yaml:"notifications"`

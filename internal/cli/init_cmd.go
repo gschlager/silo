@@ -47,12 +47,25 @@ With --manual, runs a simple scaffolding wizard instead.`,
 			if manual {
 				return runInteractiveInit(cwd)
 			}
+
+			// Resolve agent name from flag or config default.
+			if agentName == "" {
+				global, err := config.LoadGlobalConfig()
+				if err != nil {
+					return err
+				}
+				cfg := config.Merge(global, nil, cwd)
+				agentName = cfg.ResolveDefaultAgent()
+				if agentName == "" {
+					return fmt.Errorf("no agents configured; use --agent to specify one")
+				}
+			}
 			return runAutoInit(cmd.Context(), cwd, agentName)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&manual, "manual", "m", false, "Use the interactive wizard instead of an AI agent")
-	cmd.Flags().StringVar(&agentName, "agent", "claude", "AI agent to use for config generation")
+	cmd.Flags().StringVar(&agentName, "agent", "", "AI agent to use (default: from global config)")
 
 	return cmd
 }

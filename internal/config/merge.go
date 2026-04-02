@@ -3,6 +3,7 @@ package config
 import (
 	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -43,8 +44,9 @@ type MergedConfig struct {
 	Compose string
 
 	// Global settings.
-	Shell         string
-	User          string
+	Shell        string
+	User         string
+	DefaultAgent string
 	Notifications bool
 }
 
@@ -60,6 +62,19 @@ type MergedAgentConfig struct {
 // UserHome returns the home directory for the configured user.
 func (m *MergedConfig) UserHome() string {
 	return "/home/" + m.User
+}
+
+// ResolveDefaultAgent returns the default agent name. If DefaultAgent is set,
+// it returns that. Otherwise it returns the first agent alphabetically.
+func (m *MergedConfig) ResolveDefaultAgent() string {
+	if m.DefaultAgent != "" {
+		return m.DefaultAgent
+	}
+	names := slices.Sorted(maps.Keys(m.Agents))
+	if len(names) > 0 {
+		return names[0]
+	}
+	return ""
 }
 
 // ShellPath returns the absolute path to the configured shell.
@@ -80,6 +95,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		ProjectDir:    projectDir,
 		Shell:         global.Shell,
 		User:          global.User,
+		DefaultAgent:  global.DefaultAgent,
 		Notifications: global.Notifications,
 	}
 
