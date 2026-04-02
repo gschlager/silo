@@ -92,6 +92,7 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 			incus.Stop(ctx, server, cfg.ContainerName)
 		}
 		incus.Delete(ctx, server, cfg.ContainerName)
+		agents.CleanupContainerDirs(cfg.ContainerName)
 	}()
 
 	// Provision minimal container with just the agent.
