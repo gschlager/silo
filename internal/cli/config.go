@@ -10,9 +10,23 @@ import (
 )
 
 func newConfigCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "View or edit global configuration",
+		Short: "Manage global configuration",
+	}
+
+	cmd.AddCommand(
+		newConfigEditCmd(),
+		newConfigShowCmd(),
+		newConfigPathCmd(),
+	)
+	return cmd
+}
+
+func newConfigEditCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "edit",
+		Short: "Open global config in $EDITOR",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := config.GlobalConfigPath()
@@ -22,9 +36,7 @@ func newConfigCmd() *cobra.Command {
 				editor = os.Getenv("VISUAL")
 			}
 			if editor == "" {
-				fmt.Printf("Global config: %s\n", path)
-				fmt.Println("Set $EDITOR to open it for editing.")
-				return nil
+				return fmt.Errorf("$EDITOR is not set; edit %s manually", path)
 			}
 
 			editorCmd := exec.Command(editor, path)
@@ -32,6 +44,34 @@ func newConfigCmd() *cobra.Command {
 			editorCmd.Stdout = os.Stdout
 			editorCmd.Stderr = os.Stderr
 			return editorCmd.Run()
+		},
+	}
+}
+
+func newConfigShowCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "show",
+		Short: "Print the global config file",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := config.GlobalConfigPath()
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("reading %s: %w", path, err)
+			}
+			fmt.Print(string(data))
+			return nil
+		},
+	}
+}
+
+func newConfigPathCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "path",
+		Short: "Print the global config file path",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println(config.GlobalConfigPath())
 		},
 	}
 }
