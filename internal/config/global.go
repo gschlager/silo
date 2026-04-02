@@ -30,11 +30,12 @@ type GlobalConfig struct {
 	Notifications bool            `yaml:"notifications"`
 	Mounts       []string          `yaml:"mounts"`
 	Git          map[string]string `yaml:"git"`
-	Agents       map[string]AgentGlobalConfig `yaml:"agents"`
+	Agents       []AgentGlobalConfig `yaml:"agents"`
 }
 
 // AgentGlobalConfig holds global agent settings.
 type AgentGlobalConfig struct {
+	Name    string         `yaml:"name"`
 	Install string         `yaml:"install"`
 	Mode    string         `yaml:"mode"`
 	Home    string         `yaml:"home"`
@@ -111,8 +112,9 @@ func defaultGlobalConfig() *GlobalConfig {
 		Shell: "zsh",
 		User:  "dev",
 		Git:   map[string]string{},
-		Agents: map[string]AgentGlobalConfig{
-			"claude": {
+		Agents: []AgentGlobalConfig{
+			{
+				Name:    "claude",
 				Install: "curl -fsSL https://claude.ai/install.sh | bash",
 				Mode:    "oauth",
 				Home:    "/home/dev/.claude",
@@ -126,7 +128,8 @@ func defaultGlobalConfig() *GlobalConfig {
 					},
 				},
 			},
-			"codex": {
+			{
+				Name:    "codex",
 				Install: "npm install -g @openai/codex --prefix ~/.local",
 				Mode:    "api-key",
 				Home:    "/home/dev/.codex",

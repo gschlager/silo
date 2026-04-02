@@ -3,7 +3,6 @@ package config
 import (
 	"maps"
 	"path/filepath"
-	"slices"
 	"strings"
 )
 
@@ -31,7 +30,8 @@ type MergedConfig struct {
 	GitCredential *CredentialConfig
 
 	// Agent configuration (merged: project replaces global per agent).
-	Agents map[string]MergedAgentConfig
+	Agents     map[string]MergedAgentConfig
+	AgentOrder []string // preserves definition order from global config
 
 	// Tools.
 	Tools map[string]ToolConfig
@@ -65,14 +65,13 @@ func (m *MergedConfig) UserHome() string {
 }
 
 // ResolveDefaultAgent returns the default agent name. If DefaultAgent is set,
-// it returns that. Otherwise it returns the first agent alphabetically.
+// it returns that. Otherwise it returns the first agent in definition order.
 func (m *MergedConfig) ResolveDefaultAgent() string {
 	if m.DefaultAgent != "" {
 		return m.DefaultAgent
 	}
-	names := slices.Sorted(maps.Keys(m.Agents))
-	if len(names) > 0 {
-		return names[0]
+	if len(m.AgentOrder) > 0 {
+		return m.AgentOrder[0]
 	}
 	return ""
 }
@@ -149,10 +148,13 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		m.GitCredential = project.Git.Credential
 	}
 
-	// Agents: project replaces global entirely per agent.
+	// Agents: build from global (preserving order), project overrides per agent.
 	m.Agents = make(map[string]MergedAgentConfig)
-	for name, ga := range global.Agents {
-		m.Agents[name] = MergedAgentConfig{
+	globalAgents := make(map[string]AgentGlobalConfig)
+	for _, ga := range global.Agents {
+		m.AgentOrder = append(m.AgentOrder, ga.Name)
+		globalAgents[ga.Name] = ga
+		m.Agents[ga.Name] = MergedAgentConfig{
 			Install: ga.Install,
 			Mode:    ga.Mode,
 			Home:    ga.Home,
@@ -166,13 +168,13 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 				Env:  pa.Env,
 			}
 			// Keep install, home and seed from global if this agent exists there.
-			if ga, ok := global.Agents[name]; ok {
+			if ga, ok := globalAgents[name]; ok {
 				merged.Install = ga.Install
 				merged.Home = ga.Home
 				merged.Seed = ga.Seed
 			}
 			if merged.Mode == "" {
-				if ga, ok := global.Agents[name]; ok {
+				if ga, ok := globalAgents[name]; ok {
 					merged.Mode = ga.Mode
 				}
 			}
