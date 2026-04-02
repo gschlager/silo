@@ -65,6 +65,7 @@ Examples:
 
 			// Sync files into the container dir and write out-of-home files.
 			agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			agents.ApplySet(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy, agentCfg.Set)
 			agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 
 			// Build environment variables (host terminal env + agent-specific).

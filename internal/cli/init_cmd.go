@@ -120,6 +120,7 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 	// Sync files into the container dir and write out-of-home files.
 	agentCfg := cfg.Agents[agentName]
 	agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+	agents.ApplySet(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy, agentCfg.Set)
 	agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 
 	// Build env and base command.
@@ -164,6 +165,7 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 			agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 			// Re-sync into container for the retry.
 			agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			agents.ApplySet(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy, agentCfg.Set)
 			agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 
 			// Retry generation.

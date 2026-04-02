@@ -42,8 +42,9 @@ type AgentGlobalConfig struct {
 	Deps    []string   `yaml:"deps"`
 	Install string     `yaml:"install"`
 	Mode    string     `yaml:"mode"`
-	Home    string     `yaml:"home"`
-	Copy    []CopyRule `yaml:"copy"`
+	Home    string                       `yaml:"home"`
+	Copy    []CopyRule                   `yaml:"copy"`
+	Set     map[string]map[string]any    `yaml:"set,omitempty"`
 }
 
 // CopyRule defines how a file is synced between silo's agent directory and the container.
@@ -162,6 +163,9 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 				if len(ua.Copy) > 0 {
 					da.Copy = ua.Copy
 				}
+				if len(ua.Set) > 0 {
+					da.Set = ua.Set
+				}
 				if ep, ok := enabledOverrides[ua.Name]; ok {
 					da.Enabled = *ep
 				}
@@ -246,6 +250,15 @@ func defaultGlobalConfig() *GlobalConfig {
 					{File: "claude.json", Target: "~/.claude.json", Keys: []string{"oauthAccount", "userID", "hasCompletedOnboarding"}},
 					{File: "settings.json", Target: "~/.claude/settings.json"},
 					{File: "hooks/", Target: "~/.claude/hooks/"},
+				},
+				Set: map[string]map[string]any{
+					"~/.claude.json": {
+						"projects": map[string]any{
+							"/workspace": map[string]any{
+								"hasTrustDialogAccepted": true,
+							},
+						},
+					},
 				},
 			},
 			{

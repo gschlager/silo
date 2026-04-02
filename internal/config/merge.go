@@ -60,6 +60,7 @@ type MergedAgentConfig struct {
 	Mode    string
 	Home    string
 	Copy    []CopyRule
+	Set     map[string]map[string]any
 	Env     map[string]string
 	Enabled bool
 }
@@ -218,6 +219,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 			Mode:    ga.Mode,
 			Home:    ga.Home,
 			Copy:    ga.Copy,
+			Set:     ga.Set,
 			Enabled: true,
 		}
 	}
@@ -238,6 +240,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 				merged.Install = ga.Install
 				merged.Home = ga.Home
 				merged.Copy = ga.Copy
+				merged.Set = ga.Set
 			}
 			if merged.Mode == "" {
 				if ga, ok := globalAgents[name]; ok {

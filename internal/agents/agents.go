@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	incuscli "github.com/lxc/incus/v6/client"
 	"github.com/gschlager/silo/internal/color"
@@ -42,6 +43,7 @@ func SyncToContainer(agentName, containerName, agentHome, userHome string, rules
 	homeDir := ContainerHomeDir(agentName, containerName)
 	filesDir := ContainerFilesDir(agentName, containerName)
 
+	os.MkdirAll(globalDir, 0700)
 	os.MkdirAll(homeDir, 0700)
 	os.MkdirAll(filesDir, 0700)
 
@@ -97,6 +99,47 @@ func syncFile(src, dst string, keys []string) error {
 		return mergeJSONKeys(src, dst, keys)
 	}
 	return copyPath(src, dst)
+}
+
+// ApplySet deep-merges the agent's set values into the appropriate files
+// in the container's home/ and files/ dirs. Must be called after SyncToContainer.
+func ApplySet(agentName, containerName, agentHome, userHome string, rules []config.CopyRule, setValues map[string]map[string]any) {
+	if len(setValues) == 0 {
+		return
+	}
+
+	homeDir := ContainerHomeDir(agentName, containerName)
+	filesDir := ContainerFilesDir(agentName, containerName)
+
+	for target, values := range setValues {
+		// Find the matching copy rule to determine if this is in-home or out-of-home.
+		resolved := target
+		if strings.HasPrefix(target, "~/") {
+			resolved = filepath.Join("/home", "dev", target[2:]) // approximate
+		}
+
+		var filePath string
+		for _, rule := range rules {
+			if rule.Target == target {
+				if rel := rule.RelPath(agentHome, userHome); rel != "" {
+					filePath = filepath.Join(homeDir, rel)
+				} else {
+					filePath = filepath.Join(filesDir, rule.File)
+				}
+				break
+			}
+		}
+
+		if filePath == "" {
+			// No matching copy rule — write directly to files dir using sanitized target.
+			sanitized := strings.ReplaceAll(strings.TrimPrefix(resolved, "/"), "/", "-")
+			filePath = filepath.Join(filesDir, sanitized)
+		}
+
+		if err := deepMergeJSONFile(filePath, values); err != nil {
+			color.Warn("could not apply set values to %q: %v", target, err)
+		}
+	}
 }
 
 // SyncOutOfHomeToContainer writes files whose target is outside the agent home

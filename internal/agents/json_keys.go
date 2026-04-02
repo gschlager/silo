@@ -69,6 +69,42 @@ func extractJSONKeys(path string, keys []string) ([]byte, error) {
 	return json.MarshalIndent(extracted, "", "  ")
 }
 
+// deepMergeJSONFile reads a JSON file and deep-merges the given values into it.
+// If the file doesn't exist, it's created. Existing keys at any depth are preserved
+// unless overridden by the merge values.
+func deepMergeJSONFile(path string, values map[string]any) error {
+	existing := make(map[string]any)
+	if data, err := os.ReadFile(path); err == nil {
+		json.Unmarshal(data, &existing)
+	}
+
+	deepMerge(existing, values)
+
+	out, err := json.MarshalIndent(existing, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(dir(path), 0700); err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(out, '\n'), 0600)
+}
+
+// deepMerge recursively merges src into dst. Maps are merged recursively,
+// other values are overwritten.
+func deepMerge(dst, src map[string]any) {
+	for k, srcVal := range src {
+		if srcMap, ok := srcVal.(map[string]any); ok {
+			if dstMap, ok := dst[k].(map[string]any); ok {
+				deepMerge(dstMap, srcMap)
+				continue
+			}
+		}
+		dst[k] = srcVal
+	}
+}
+
 func dir(path string) string {
 	for i := len(path) - 1; i >= 0; i-- {
 		if path[i] == '/' {
