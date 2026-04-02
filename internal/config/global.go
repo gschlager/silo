@@ -71,10 +71,95 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
 
-	cfg := defaultGlobalConfig()
-	if err := yaml.Unmarshal(data, cfg); err != nil {
+	// Parse user config into a separate struct.
+	var userCfg GlobalConfig
+	if err := yaml.Unmarshal(data, &userCfg); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
+
+	// Start with defaults, then apply user overrides for scalar fields.
+	cfg := defaultGlobalConfig()
+	if userCfg.DefaultImage != "" {
+		cfg.DefaultImage = userCfg.DefaultImage
+	}
+	if len(userCfg.DefaultSetup) > 0 {
+		cfg.DefaultSetup = userCfg.DefaultSetup
+	}
+	if userCfg.DefaultAgent != "" {
+		cfg.DefaultAgent = userCfg.DefaultAgent
+	}
+	if len(userCfg.PassEnv) > 0 {
+		cfg.PassEnv = userCfg.PassEnv
+	}
+	if userCfg.Shell != "" {
+		cfg.Shell = userCfg.Shell
+	}
+	if userCfg.User != "" {
+		cfg.User = userCfg.User
+	}
+	if userCfg.Notifications {
+		cfg.Notifications = true
+	}
+	if len(userCfg.Mounts) > 0 {
+		cfg.Mounts = userCfg.Mounts
+	}
+	if len(userCfg.Git) > 0 {
+		cfg.Git = userCfg.Git
+	}
+
+	// Merge agents: user overrides per agent by name, defaults fill in the rest.
+	if len(userCfg.Agents) > 0 {
+		defaultAgents := make(map[string]AgentGlobalConfig)
+		for _, a := range cfg.Agents {
+			defaultAgents[a.Name] = a
+		}
+
+		// Apply user overrides onto defaults.
+		for _, ua := range userCfg.Agents {
+			if da, ok := defaultAgents[ua.Name]; ok {
+				// Merge: user fields override, empty fields keep defaults.
+				if ua.Cmd != "" {
+					da.Cmd = ua.Cmd
+				}
+				if len(ua.Deps) > 0 {
+					da.Deps = ua.Deps
+				}
+				if ua.Install != "" {
+					da.Install = ua.Install
+				}
+				if ua.Mode != "" {
+					da.Mode = ua.Mode
+				}
+				if ua.Home != "" {
+					da.Home = ua.Home
+				}
+				if len(ua.Shared) > 0 {
+					da.Shared = ua.Shared
+				}
+				defaultAgents[ua.Name] = da
+			} else {
+				// New agent defined by user.
+				defaultAgents[ua.Name] = ua
+			}
+		}
+
+		// Rebuild agents list preserving default order, then appending new user agents.
+		var merged []AgentGlobalConfig
+		seen := make(map[string]bool)
+		for _, a := range cfg.Agents {
+			if m, ok := defaultAgents[a.Name]; ok {
+				merged = append(merged, m)
+				seen[a.Name] = true
+			}
+		}
+		for _, ua := range userCfg.Agents {
+			if !seen[ua.Name] {
+				merged = append(merged, defaultAgents[ua.Name])
+			}
+		}
+		cfg.Agents = merged
+	}
+
 	return cfg, nil
 }
 
