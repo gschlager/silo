@@ -2,7 +2,7 @@
 
 Secure isolated local environments for AI coding agents.
 
-`silo` creates development environments using [Incus](https://linuxcontainers.org/incus/) system containers, providing full network and service isolation while keeping your existing workflow (host-side IDE, git client, DB inspector) intact via bind mounts and port forwarding.
+`silo` creates development environments on **Linux** using [Incus](https://linuxcontainers.org/incus/) system containers, providing full network and service isolation while keeping your existing workflow (host-side IDE, git client, DB tools) intact via bind mounts and port forwarding.
 
 ## Why
 
@@ -17,6 +17,9 @@ AI coding agents run with your full user permissions. They can read any file, co
 # Install silo
 go install github.com/gschlager/silo/cmd/silo@latest
 
+# Set up shell completions
+silo completion install
+
 # Generate a project config with AI
 cd your-project
 silo init
@@ -28,7 +31,7 @@ silo up
 silo ra
 ```
 
-`silo init` spins up a temporary container, uses an AI agent to analyze your project, and generates a `.silo.yml` configuration file. `silo up` provisions the environment, and `silo ra` launches your default agent inside it.
+`silo init` spins up a temporary container, uses an AI agent to analyze your project, and generates a `.silo.yml` configuration file. It shows you the result with syntax highlighting and lets you refine it interactively. `silo up` provisions the environment, and `silo ra` launches your default agent inside it.
 
 ## How it works
 
@@ -38,30 +41,28 @@ silo ra
 │                                                         │
 │  IDE ──────────┐                                        │
 │  Git client ───┤── ~/project (real files)               │
-│  DB inspector ─┘         │                              │
+│  DB client ────┘         │                              │
 │                          │ bind mount                   │
-│  DB client ── localhost:15432   │                        │
-│                    │            │                        │
-│                    │ port       │                        │
-│                    │ forward    │                        │
-│           ┌────────┼────────────┼──────────────┐        │
-│           │ INCUS CONTAINER     │              │        │
-│           │                     ▼              │        │
-│           │           /workspace (shared)      │        │
-│           │                                    │        │
-│           │  Claude / Codex (agent)            │        │
-│           │                                    │        │
-│           │  postgresql ── :5432               │        │
-│           │  redis ─────── :6379               │        │
-│           │                                    │        │
-│           │  ✗ No route to host localhost      │        │
-│           │  ✓ Internet access (APIs, deps)    │        │
-│           └────────────────────────────────────┘        │
+│  localhost:15432 ────────┼──────────────┐               │
+│                          │ port forward │               │
+│           ┌──────────────┼─────────────┐│               │
+│           │ INCUS CONTAINER            ││               │
+│           │              ▼             ││               │
+│           │    /workspace (shared)     ││               │
+│           │                            ││               │
+│           │  Claude / Codex (agent)    ││               │
+│           │                            ││               │
+│           │  postgresql ── :5432 ──────┘│               │
+│           │  redis ─────── :6379        │               │
+│           │                             │               │
+│           │  ✗ No route to host         │               │
+│           │  ✓ Internet access          │               │
+│           └─────────────────────────────┘               │
 └─────────────────────────────────────────────────────────┘
 ```
 
 - The project directory is shared via bind mount — edits are instantly visible on both sides.
-- Services (Postgres, Redis) run inside the container, isolated from host services.
+- Services run inside the container, isolated from host services.
 - Port forwarding exposes container services to host tools.
 - The container has no route to the host's localhost ports.
 
@@ -76,7 +77,8 @@ Create a `.silo.yml` in your project root (or run `silo init` to generate one):
 # Base image (default: fedora/43)
 image: fedora/43
 
-# Commands run once on first provisioning (as dev user with sudo)
+# Commands run once on first provisioning (as dev user with sudo).
+# Runs with a login shell so ~/.profile is sourced between commands.
 setup:
   - sudo dnf install -y postgresql16-server redis ruby nodejs
   - sudo systemctl enable --now postgresql redis
@@ -121,6 +123,11 @@ agents:
     env:
       CLAUDE_CODE_USE_BEDROCK: "1"
 
+# Disable an agent for this project
+# agents:
+#   codex:
+#     enabled: false
+
 # Enable nested Docker/Podman
 docker: false
 
@@ -128,11 +135,11 @@ docker: false
 compose: ""
 ```
 
-All fields are optional. The `setup` commands run as the `dev` user — use `sudo` for commands that need root.
+All fields are optional. Setup commands run as the `dev` user with a login shell — use `sudo` for commands that need root (dnf, systemctl, etc.).
 
 ## Global configuration
 
-Silo uses sensible defaults. The config file (`~/.config/silo/config.yml`) only needs to contain your overrides:
+Silo uses sensible defaults for everything. The config file (`~/.config/silo/config.yml`) only needs to contain your overrides — missing fields use the built-in defaults automatically. New features added in updates work immediately without changing your config.
 
 ```yaml
 # Override the default agent command
@@ -141,7 +148,37 @@ agents:
     cmd: claude --dangerously-skip-permissions
 ```
 
-Run `silo config show` to see the full resolved configuration (defaults + overrides). Run `silo config edit` to open the config in your editor.
+Run `silo config show` to see the full resolved configuration (defaults + your overrides) with syntax highlighting. Run `silo config edit` to open the config in your editor.
+
+### Agent configuration
+
+Each agent has:
+
+- **`cmd`** — How to launch the agent (default: agent name)
+- **`deps`** — System dependencies installed as root before the agent
+- **`install`** — Install command run as the dev user
+- **`copy`** — Rules for syncing files between silo's agent dir and the container
+- **`set`** — Values to deep-merge into config files inside the container
+
+Example with copy rules and set:
+
+```yaml
+agents:
+  - name: claude
+    copy:
+      - file: .credentials.json
+        target: ~/.claude/.credentials.json
+      - file: claude.json
+        target: ~/.claude.json
+        keys: [oauthAccount, userID, hasCompletedOnboarding]
+    set:
+      ~/.claude.json:
+        projects:
+          /workspace:
+            hasTrustDialogAccepted: true
+```
+
+Copy rules with `keys` sync only the listed top-level JSON keys, preserving everything else. The `set` field deep-merges values into files before the agent launches.
 
 ## Commands
 
@@ -154,7 +191,7 @@ Run `silo config show` to see the full resolved configuration (defaults + overri
 | `silo rm` | Remove the container and its data |
 | `silo enter` | Open a shell inside the container |
 | `silo run <cmd>` | Run a command inside the container |
-| `silo cp <src> <dst>` | Copy files between host (`.`) and container (`:`) |
+| `silo cp <src> <dst>` | Copy files between host and container (`:` prefix) |
 | `silo list` | List all silo containers |
 | `silo status` | Show container state, config, and daemons |
 
@@ -198,23 +235,59 @@ Run `silo config show` to see the full resolved configuration (defaults + overri
 
 | Command | Description |
 |---------|-------------|
-| `silo init` | Generate `.silo.yml` with AI |
+| `silo init` | Generate `.silo.yml` with AI (default) |
 | `silo init -m` | Generate `.silo.yml` with interactive wizard |
-| `silo config show` | Print resolved global config |
+| `silo init --agent codex` | Use a specific agent for generation |
+| `silo config show` | Print resolved global config with syntax highlighting |
 | `silo config edit` | Open global config in `$EDITOR` |
 | `silo config path` | Print config file path |
-| `silo completion install` | Install shell completions |
+| `silo completion install` | Auto-install shell completions |
 
 ## Agent credentials
 
-Silo manages agent credentials separately from your host. On first `silo ra`, the agent will prompt you to log in. Credentials are stored in `~/.config/silo/agents/<name>/` and shared across all your containers.
+Silo manages agent credentials in its own directory (`~/.config/silo/agents/<name>/`), separate from your host's agent config. This means agents inside containers can't access or modify your host's settings.
 
-Each agent has copy rules that define which files are synced:
+**First run**: The agent prompts you to log in. Credentials are saved to silo's agent dir and shared across all containers automatically.
 
-- **Before launch**: credentials and settings are copied from the global agent dir into the container.
-- **After exit**: updated credentials are copied back, so token refreshes propagate.
+**How syncing works**:
 
-Files inside the agent home (e.g., `~/.claude/`) are mounted directly. Files outside (e.g., `~/.claude.json`) are synced via exec.
+1. Before `silo ra`: credentials are copied from the global agent dir into the container
+2. Agent runs interactively
+3. After exit: updated credentials (token refreshes) are copied back to the global dir
+
+Files inside the agent home (e.g., `~/.claude/.credentials.json`) are handled via an Incus disk mount. Files outside the agent home (e.g., `~/.claude.json`) are synced into the container via exec.
+
+**Directory structure**:
+
+```
+~/.config/silo/
+├── config.yml                              # global overrides
+├── agents/
+│   └── claude/                             # shared credentials & settings
+│       ├── .credentials.json
+│       └── settings.json
+└── containers/
+    └── silo-myapp/
+        └── agents/
+            └── claude/
+                ├── home/                   # mounted as /home/dev/.claude/
+                │   ├── .credentials.json
+                │   ├── settings.json
+                │   ├── projects/           # per-project agent data
+                │   └── auto-memory/
+                └── files/                  # out-of-home files (exec-synced)
+                    └── claude.json         # → /home/dev/.claude.json
+```
+
+## Building
+
+```bash
+make build      # build with version from git
+make install    # install to $GOPATH/bin
+make vet        # run go vet
+```
+
+Releases are built with [GoReleaser](https://goreleaser.com/) and published as GitHub releases with RPM packages.
 
 ## Requirements
 
