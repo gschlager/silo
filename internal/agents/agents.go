@@ -20,7 +20,7 @@ func DataDir(agent, projectName string) string {
 }
 
 // InstallAgents runs deps and install commands for each enabled agent.
-func InstallAgents(ctx context.Context, server incuscli.InstanceServer, container, username, shell string, agents map[string]config.MergedAgentConfig) error {
+func InstallAgents(ctx context.Context, server incuscli.InstanceServer, container, username, shell string, agents map[string]config.MergedAgentConfig, verbose bool) error {
 	rootOpts := incus.ExecOpts{}
 	userOpts := incus.UserOpts("/home/"+username, "/workspace")
 	for name, agent := range agents {
@@ -31,23 +31,27 @@ func InstallAgents(ctx context.Context, server incuscli.InstanceServer, containe
 		if len(agent.Deps) > 0 {
 			color.Status("Installing %s dependencies...", name)
 			for _, dep := range agent.Deps {
-				if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
-					"sh", "-c", dep,
-				}); err != nil {
+				if err := execCmd(ctx, server, container, rootOpts, []string{"sh", "-c", dep}, verbose); err != nil {
 					color.Warn("could not install deps for %s: %v", name, err)
-					continue
 				}
 			}
 		}
 		// Install agent as user.
 		color.Status("Installing %s...", name)
-		if _, err := incus.Exec(ctx, server, container, userOpts, []string{
-			"/bin/" + shell, "-lc", agent.Install,
-		}); err != nil {
+		if err := execCmd(ctx, server, container, userOpts, []string{"/bin/" + shell, "-lc", agent.Install}, verbose); err != nil {
 			color.Warn("could not install %s: %v", name, err)
 		}
 	}
 	return nil
+}
+
+func execCmd(ctx context.Context, server incuscli.InstanceServer, container string, opts incus.ExecOpts, command []string, verbose bool) error {
+	if verbose {
+		color.Command(command[len(command)-1])
+		return incus.ExecStreaming(ctx, server, container, opts, command, os.Stdout, os.Stderr)
+	}
+	_, err := incus.Exec(ctx, server, container, opts, command)
+	return err
 }
 
 // SetupAgentDirs creates agent data directories on the host, seeds files,

@@ -59,7 +59,7 @@ func ProvisionMinimal(ctx context.Context, server incuscli.InstanceServer, cfg *
 	}
 	if agentCfg.Install != "" {
 		singleAgent := map[string]config.MergedAgentConfig{agentName: agentCfg}
-		if err := agents.InstallAgents(ctx, server, name, cfg.User, cfg.Shell, singleAgent); err != nil {
+		if err := agents.InstallAgents(ctx, server, name, cfg.User, cfg.Shell, singleAgent, false); err != nil {
 			return err
 		}
 	}
@@ -181,7 +181,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 
 	// Step 11: Install agents.
 	if len(cfg.Agents) > 0 {
-		if err := agents.InstallAgents(ctx, server, name, cfg.User, cfg.Shell, cfg.Agents); err != nil {
+		if err := agents.InstallAgents(ctx, server, name, cfg.User, cfg.Shell, cfg.Agents, verbose); err != nil {
 			return err
 		}
 	}
