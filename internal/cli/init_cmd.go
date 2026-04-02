@@ -71,6 +71,10 @@ With --manual, runs a simple scaffolding wizard instead.`,
 	return cmd
 }
 
+const siloYmlHeader = `# silo project configuration
+# https://github.com/gschlager/silo#project-configuration
+`
+
 func runAutoInit(ctx context.Context, cwd, agentName string) error {
 	global, err := config.LoadGlobalConfig()
 	if err != nil {
@@ -269,6 +273,8 @@ func runInteractiveInit(cwd string) error {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
 
+	data = append([]byte(siloYmlHeader), data...)
+
 	path := filepath.Join(cwd, ".silo.yml")
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
@@ -324,6 +330,9 @@ Important rules:
 - Look at the project files to determine: language, package manager, services needed, ports
 - Check for Dockerfile, docker-compose.yml, Gemfile, package.json, go.mod, requirements.txt, etc.
 - Write the file to /workspace/.silo.yml
+- Start the file with these comment lines:
+  # silo project configuration
+  # https://github.com/gschlager/silo#project-configuration
 `
 
 	// Add environment context.
