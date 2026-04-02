@@ -78,7 +78,6 @@ and port forwarding.`,
 
 	// Snapshots.
 	addCmd("snapshot", newSnapshotCmd())
-	addCmd("snapshot", newRestoreCmd())
 
 	// Configuration.
 	addCmd("config", newInitCmd())

@@ -4,14 +4,30 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
 )
 
 func newSnapshotCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "snapshot [name]",
-		Short: "Take a named snapshot of the container",
+		Use:   "snapshot",
+		Short: "Manage container snapshots",
+	}
+
+	cmd.AddCommand(
+		newSnapshotCreateCmd(),
+		newSnapshotListCmd(),
+		newSnapshotRestoreCmd(),
+		newSnapshotRmCmd(),
+	)
+	return cmd
+}
+
+func newSnapshotCreateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "create [name]",
+		Short: "Take a snapshot (defaults to timestamp name)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -35,17 +51,14 @@ func newSnapshotCmd() *cobra.Command {
 				name = args[0]
 			}
 
-			fmt.Printf("Creating snapshot %q...\n", name)
+			color.Status("Creating snapshot %q...", name)
 			if err := incus.CreateSnapshot(ctx, server, cfg.ContainerName, name); err != nil {
 				return err
 			}
-			fmt.Println("Done.")
+			color.Success("Done.")
 			return nil
 		},
 	}
-
-	cmd.AddCommand(newSnapshotListCmd())
-	return cmd
 }
 
 func newSnapshotListCmd() *cobra.Command {
@@ -86,7 +99,7 @@ func newSnapshotListCmd() *cobra.Command {
 	}
 }
 
-func newRestoreCmd() *cobra.Command {
+func newSnapshotRestoreCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "restore <name>",
 		Short: "Restore the container to a snapshot",
@@ -109,11 +122,44 @@ func newRestoreCmd() *cobra.Command {
 			}
 
 			name := args[0]
-			fmt.Printf("Restoring snapshot %q...\n", name)
+			color.Status("Restoring snapshot %q...", name)
 			if err := incus.RestoreSnapshot(ctx, server, cfg.ContainerName, name); err != nil {
 				return err
 			}
-			fmt.Println("Done.")
+			color.Success("Done.")
+			return nil
+		},
+	}
+}
+
+func newSnapshotRmCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "rm <name>",
+		Short: "Delete a snapshot",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+
+			server, err := incus.Connect()
+			if err != nil {
+				return err
+			}
+
+			if !incus.Exists(server, cfg.ContainerName) {
+				return fmt.Errorf("container %s does not exist", cfg.ContainerName)
+			}
+
+			name := args[0]
+			color.Status("Deleting snapshot %q...", name)
+			if err := incus.DeleteSnapshot(ctx, server, cfg.ContainerName, name); err != nil {
+				return err
+			}
+			color.Success("Done.")
 			return nil
 		},
 	}
