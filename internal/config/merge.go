@@ -52,11 +52,13 @@ type MergedConfig struct {
 
 // MergedAgentConfig combines global and project agent settings.
 type MergedAgentConfig struct {
+	Deps    []string
 	Install string
 	Mode    string
 	Home    string
 	Seed    AgentSeedConfig
 	Env     map[string]string
+	Enabled bool
 }
 
 // UserHome returns the home directory for the configured user.
@@ -155,20 +157,27 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		m.AgentOrder = append(m.AgentOrder, ga.Name)
 		globalAgents[ga.Name] = ga
 		m.Agents[ga.Name] = MergedAgentConfig{
+			Deps:    ga.Deps,
 			Install: ga.Install,
 			Mode:    ga.Mode,
 			Home:    ga.Home,
 			Seed:    ga.Seed,
+			Enabled: true,
 		}
 	}
 	if project != nil {
 		for name, pa := range project.Agents {
 			merged := MergedAgentConfig{
-				Mode: pa.Mode,
-				Env:  pa.Env,
+				Mode:    pa.Mode,
+				Env:     pa.Env,
+				Enabled: true,
 			}
-			// Keep install, home and seed from global if this agent exists there.
+			if pa.Enabled != nil {
+				merged.Enabled = *pa.Enabled
+			}
+			// Keep deps, install, home and seed from global if this agent exists there.
 			if ga, ok := globalAgents[name]; ok {
+				merged.Deps = ga.Deps
 				merged.Install = ga.Install
 				merged.Home = ga.Home
 				merged.Seed = ga.Seed

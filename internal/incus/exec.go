@@ -108,6 +108,16 @@ func ExecWithStdin(ctx context.Context, server incuscli.InstanceServer, containe
 
 // ExecInteractive runs a command inside the container with full TTY passthrough.
 func ExecInteractive(ctx context.Context, server incuscli.InstanceServer, container string, opts ExecOpts, command []string) error {
+	// Pass TERM from host so the container shell works correctly.
+	if opts.Env == nil {
+		opts.Env = make(map[string]string)
+	}
+	if _, ok := opts.Env["TERM"]; !ok {
+		if t := os.Getenv("TERM"); t != "" {
+			opts.Env["TERM"] = t
+		}
+	}
+
 	// Get terminal size.
 	width, height := 80, 24
 	if term.IsTerminal(int(os.Stdin.Fd())) {

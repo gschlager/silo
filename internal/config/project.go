@@ -42,8 +42,9 @@ type CredentialConfig struct {
 
 // AgentProjectConfig holds per-project agent settings.
 type AgentProjectConfig struct {
-	Mode string            `yaml:"mode"` // "oauth", "bedrock", "api-key"
-	Env  map[string]string `yaml:"env"`
+	Enabled *bool             `yaml:"enabled"` // nil = use default (true)
+	Mode    string            `yaml:"mode"`    // "oauth", "bedrock", "api-key"
+	Env     map[string]string `yaml:"env"`
 }
 
 // ToolConfig holds configuration for a tool like gh.

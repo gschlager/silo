@@ -36,6 +36,7 @@ type GlobalConfig struct {
 // AgentGlobalConfig holds global agent settings.
 type AgentGlobalConfig struct {
 	Name    string         `yaml:"name"`
+	Deps    []string       `yaml:"deps"`
 	Install string         `yaml:"install"`
 	Mode    string         `yaml:"mode"`
 	Home    string         `yaml:"home"`
@@ -107,7 +108,7 @@ func defaultGlobalConfig() *GlobalConfig {
 	return &GlobalConfig{
 		DefaultImage: "fedora/43",
 		DefaultSetup: []string{
-			"dnf install -y git curl wget make gcc which zsh jq socat",
+			"dnf install -y git curl wget make gcc which zsh jq socat ripgrep fd-find tree gh",
 		},
 		Shell: "zsh",
 		User:  "dev",
@@ -130,6 +131,7 @@ func defaultGlobalConfig() *GlobalConfig {
 			},
 			{
 				Name:    "codex",
+				Deps:    []string{"dnf install -y nodejs npm"},
 				Install: "npm install -g @openai/codex --prefix ~/.local",
 				Mode:    "api-key",
 				Home:    "/home/dev/.codex",

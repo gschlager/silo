@@ -19,13 +19,27 @@ func DataDir(agent, projectName string) string {
 	return filepath.Join(config.GlobalConfigDir(), "agents", agent, projectName)
 }
 
-// InstallAgents runs the install command for each agent that has one configured.
+// InstallAgents runs deps and install commands for each enabled agent.
 func InstallAgents(ctx context.Context, server incuscli.InstanceServer, container, username, shell string, agents map[string]config.MergedAgentConfig) error {
+	rootOpts := incus.ExecOpts{}
 	userOpts := incus.UserOpts("/home/"+username, "/workspace")
 	for name, agent := range agents {
-		if agent.Install == "" {
+		if !agent.Enabled || agent.Install == "" {
 			continue
 		}
+		// Install agent dependencies as root.
+		if len(agent.Deps) > 0 {
+			color.Status("Installing %s dependencies...", name)
+			for _, dep := range agent.Deps {
+				if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
+					"sh", "-c", dep,
+				}); err != nil {
+					color.Warn("could not install deps for %s: %v", name, err)
+					continue
+				}
+			}
+		}
+		// Install agent as user.
 		color.Status("Installing %s...", name)
 		if _, err := incus.Exec(ctx, server, container, userOpts, []string{
 			"/bin/" + shell, "-lc", agent.Install,
@@ -40,7 +54,7 @@ func InstallAgents(ctx context.Context, server incuscli.InstanceServer, containe
 // and adds Incus disk devices to mount them into the container.
 func SetupAgentDirs(ctx context.Context, server incuscli.InstanceServer, container, projectName string, agents map[string]config.MergedAgentConfig) error {
 	for name, agent := range agents {
-		if agent.Home == "" {
+		if !agent.Enabled || agent.Home == "" {
 			continue
 		}
 
