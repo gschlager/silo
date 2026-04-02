@@ -2,7 +2,9 @@ package cli
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/gschlager/silo/internal/color"
@@ -27,11 +29,7 @@ func newResetCmd() *cobra.Command {
 			target := args[0]
 			commands, ok := cfg.Reset[target]
 			if !ok {
-				var targets []string
-				for t := range cfg.Reset {
-					targets = append(targets, t)
-				}
-				return fmt.Errorf("unknown reset target %q (available: %s)", target, strings.Join(targets, ", "))
+				return fmt.Errorf("unknown reset target %q (available: %s)", target, strings.Join(slices.Sorted(maps.Keys(cfg.Reset)), ", "))
 			}
 
 			server, err := incus.Connect()

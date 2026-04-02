@@ -1,6 +1,7 @@
 package config
 
 import (
+	"maps"
 	"path/filepath"
 	"strings"
 )
@@ -118,9 +119,9 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 	}
 
 	// Git: global base, project overrides individual keys.
-	m.Git = make(map[string]string)
-	for k, v := range global.Git {
-		m.Git[k] = v
+	m.Git = maps.Clone(global.Git)
+	if m.Git == nil {
+		m.Git = make(map[string]string)
 	}
 	if project != nil {
 		for k, v := range project.Git.Settings {

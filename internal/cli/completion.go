@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"maps"
 	"os"
+	"slices"
 
 	"github.com/spf13/cobra"
 )
@@ -81,11 +83,7 @@ func completeAgentNames(cmd *cobra.Command, args []string, toComplete string) ([
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	var names []string
-	for name := range cfg.Agents {
-		names = append(names, name)
-	}
-	return names, cobra.ShellCompDirectiveNoFileComp
+	return slices.Collect(maps.Keys(cfg.Agents)), cobra.ShellCompDirectiveNoFileComp
 }
 
 func completeDaemonNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -96,11 +94,7 @@ func completeDaemonNames(cmd *cobra.Command, args []string, toComplete string) (
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	var names []string
-	for name := range cfg.Daemons {
-		names = append(names, name)
-	}
-	return names, cobra.ShellCompDirectiveNoFileComp
+	return slices.Collect(maps.Keys(cfg.Daemons)), cobra.ShellCompDirectiveNoFileComp
 }
 
 func completeResetTargets(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -111,9 +105,5 @@ func completeResetTargets(cmd *cobra.Command, args []string, toComplete string) 
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	var names []string
-	for name := range cfg.Reset {
-		names = append(names, name)
-	}
-	return names, cobra.ShellCompDirectiveNoFileComp
+	return slices.Collect(maps.Keys(cfg.Reset)), cobra.ShellCompDirectiveNoFileComp
 }

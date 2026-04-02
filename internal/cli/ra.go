@@ -2,7 +2,9 @@ package cli
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/gschlager/silo/internal/agents"
@@ -87,9 +89,5 @@ Examples:
 }
 
 func agentNames(cfg *config.MergedConfig) string {
-	var names []string
-	for name := range cfg.Agents {
-		names = append(names, name)
-	}
-	return strings.Join(names, ", ")
+	return strings.Join(slices.Sorted(maps.Keys(cfg.Agents)), ", ")
 }

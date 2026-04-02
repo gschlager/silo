@@ -3,7 +3,9 @@ package cli
 import (
 	"bufio"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/gschlager/silo/internal/agents"
@@ -72,11 +74,7 @@ func newRmCmd() *cobra.Command {
 					deleteAgents = strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "y")
 				}
 				if deleteAgents {
-					var agentNames []string
-					for name := range cfg.Agents {
-						agentNames = append(agentNames, name)
-					}
-					if err := agents.CleanupAgentDirs(cfg.ContainerName, agentNames); err != nil {
+					if err := agents.CleanupAgentDirs(cfg.ContainerName, slices.Collect(maps.Keys(cfg.Agents))); err != nil {
 						return err
 					}
 					fmt.Fprintln(os.Stderr, "Agent data removed.")

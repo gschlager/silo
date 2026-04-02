@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/signal"
 	"syscall"
@@ -32,9 +33,9 @@ func resolveEnv(opts ExecOpts) map[string]string {
 	if opts.Home == "" {
 		return opts.Env
 	}
-	env := make(map[string]string)
-	for k, v := range opts.Env {
-		env[k] = v
+	env := maps.Clone(opts.Env)
+	if env == nil {
+		env = make(map[string]string)
 	}
 	if _, ok := env["HOME"]; !ok {
 		env["HOME"] = opts.Home
