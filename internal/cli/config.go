@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 
+	"github.com/alecthomas/chroma/v2/quick"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -62,8 +64,7 @@ func newConfigShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Print(string(data))
-			return nil
+			return highlightYAML(string(data))
 		},
 	}
 }
@@ -77,4 +78,16 @@ func newConfigPathCmd() *cobra.Command {
 			fmt.Println(config.GlobalConfigPath())
 		},
 	}
+}
+
+func highlightYAML(src string) error {
+	var buf bytes.Buffer
+	err := quick.Highlight(&buf, src, "yaml", "terminal256", "monokai")
+	if err != nil {
+		// Fallback to plain output.
+		fmt.Print(src)
+		return nil
+	}
+	fmt.Print(buf.String())
+	return nil
 }
