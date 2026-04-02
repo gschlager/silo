@@ -208,11 +208,11 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 14: Run project setup (as dev user).
+	// Step 14: Run project setup (as dev user with login shell).
 	if len(cfg.Setup) > 0 {
 		status("Running project setup...")
 		userOpts := incus.UserOpts("/home/"+cfg.User, "/workspace")
-		if err := runCommands(ctx, server, name, userOpts, cfg.Setup); err != nil {
+		if err := runUserCommands(ctx, server, name, userOpts, cfg.Shell, cfg.Setup); err != nil {
 			return fmt.Errorf("setup failed: %w", err)
 		}
 	}
@@ -260,6 +260,25 @@ func IsInitialized(ctx context.Context, server incuscli.InstanceServer, containe
 }
 
 var verboseOutput bool
+
+// runUserCommands runs commands as the dev user with a login shell so that
+// ~/.profile is sourced and PATH includes user-installed binaries.
+func runUserCommands(ctx context.Context, server incuscli.InstanceServer, container string, opts incus.ExecOpts, shell string, commands []string) error {
+	loginShell := "/bin/" + shell
+	for _, cmd := range commands {
+		if verboseOutput {
+			color.Command(cmd)
+			if err := incus.ExecStreaming(ctx, server, container, opts, []string{loginShell, "-lc", cmd}, os.Stdout, os.Stderr); err != nil {
+				return fmt.Errorf("command %q: %w", cmd, err)
+			}
+		} else {
+			if _, err := incus.Exec(ctx, server, container, opts, []string{loginShell, "-lc", cmd}); err != nil {
+				return fmt.Errorf("command %q: %w", cmd, err)
+			}
+		}
+	}
+	return nil
+}
 
 func runCommands(ctx context.Context, server incuscli.InstanceServer, container string, opts incus.ExecOpts, commands []string) error {
 	for _, cmd := range commands {
