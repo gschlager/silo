@@ -19,98 +19,91 @@ func GlobalDir(agent string) string {
 	return filepath.Join(config.GlobalConfigDir(), "agents", agent)
 }
 
-// ContainerDir returns the host-side per-container agent directory.
-// e.g. ~/.config/silo/containers/silo-myapp/agents/claude/
-func ContainerDir(agent, containerName string) string {
-	return filepath.Join(config.GlobalConfigDir(), "containers", containerName, "agents", agent)
+// ContainerHomeDir returns the host-side directory that is mounted into the
+// container as the agent's home path. e.g. /home/dev/.claude/
+// Host: ~/.config/silo/containers/silo-myapp/agents/claude/home/
+func ContainerHomeDir(agent, containerName string) string {
+	return filepath.Join(config.GlobalConfigDir(), "containers", containerName, "agents", agent, "home")
 }
 
-// SyncToContainer copies files from the global agent dir into the container
-// agent dir before launching an agent. For in-home files, they're placed at
-// the relative path within the agent home (which is mounted into the container).
-// For keys rules, only the listed JSON keys are merged.
+// ContainerFilesDir returns the host-side directory for files that target paths
+// outside the agent home. NOT mounted — synced via exec.
+// Host: ~/.config/silo/containers/silo-myapp/agents/claude/files/
+func ContainerFilesDir(agent, containerName string) string {
+	return filepath.Join(config.GlobalConfigDir(), "containers", containerName, "agents", agent, "files")
+}
+
+// SyncToContainer copies files from the global agent dir into the container's
+// home/ or files/ subdirectory before launching an agent.
+// - In-home files go to containers/.../agents/claude/home/ (mounted)
+// - Out-of-home files go to containers/.../agents/claude/files/ (synced via exec)
 func SyncToContainer(agentName, containerName, agentHome, userHome string, rules []config.CopyRule) {
 	globalDir := GlobalDir(agentName)
-	containerDir := ContainerDir(agentName, containerName)
+	homeDir := ContainerHomeDir(agentName, containerName)
+	filesDir := ContainerFilesDir(agentName, containerName)
 
-	if err := os.MkdirAll(containerDir, 0700); err != nil {
-		color.Warn("could not create container agent dir: %v", err)
-		return
-	}
+	os.MkdirAll(homeDir, 0700)
+	os.MkdirAll(filesDir, 0700)
 
 	for _, rule := range rules {
 		src := filepath.Join(globalDir, rule.File)
 
-		// Determine destination in container dir.
 		var dst string
 		if rel := rule.RelPath(agentHome, userHome); rel != "" {
-			dst = filepath.Join(containerDir, rel)
+			dst = filepath.Join(homeDir, rel)
 		} else {
-			// Out-of-home file: store by rule.File name in container dir.
-			// It will be copied into the container via exec separately.
-			dst = filepath.Join(containerDir, rule.File)
+			dst = filepath.Join(filesDir, rule.File)
 		}
 
-		if len(rule.Keys) > 0 {
-			if err := mergeJSONKeys(src, dst, rule.Keys); err != nil {
-				if !os.IsNotExist(err) {
-					color.Warn("could not sync %q to container: %v", rule.File, err)
-				}
-			}
-		} else {
-			if err := copyPath(src, dst); err != nil {
-				if !os.IsNotExist(err) {
-					color.Warn("could not sync %q to container: %v", rule.File, err)
-				}
+		if err := syncFile(src, dst, rule.Keys); err != nil {
+			if !os.IsNotExist(err) {
+				color.Warn("could not sync %q to container: %v", rule.File, err)
 			}
 		}
 	}
 }
 
-// SyncFromContainer copies files from the container agent dir back to the
-// global agent dir after an agent exits. For keys rules, only the listed
-// JSON keys are merged back.
+// SyncFromContainer copies files from the container's home/ and files/
+// subdirectories back to the global agent dir after an agent exits.
 func SyncFromContainer(agentName, containerName, agentHome, userHome string, rules []config.CopyRule) {
 	globalDir := GlobalDir(agentName)
-	containerDir := ContainerDir(agentName, containerName)
+	homeDir := ContainerHomeDir(agentName, containerName)
+	filesDir := ContainerFilesDir(agentName, containerName)
 
-	if err := os.MkdirAll(globalDir, 0700); err != nil {
-		color.Warn("could not create global agent dir: %v", err)
-		return
-	}
+	os.MkdirAll(globalDir, 0700)
 
 	for _, rule := range rules {
-		// Determine source in container dir.
 		var src string
 		if rel := rule.RelPath(agentHome, userHome); rel != "" {
-			src = filepath.Join(containerDir, rel)
+			src = filepath.Join(homeDir, rel)
 		} else {
-			src = filepath.Join(containerDir, rule.File)
+			src = filepath.Join(filesDir, rule.File)
 		}
 
 		dst := filepath.Join(globalDir, rule.File)
 
-		if len(rule.Keys) > 0 {
-			if err := mergeJSONKeys(src, dst, rule.Keys); err != nil {
-				if !os.IsNotExist(err) {
-					color.Warn("could not sync %q from container: %v", rule.File, err)
-				}
-			}
-		} else {
-			if err := copyPath(src, dst); err != nil {
-				if !os.IsNotExist(err) {
-					color.Warn("could not sync %q from container: %v", rule.File, err)
-				}
+		if err := syncFile(src, dst, rule.Keys); err != nil {
+			if !os.IsNotExist(err) {
+				color.Warn("could not sync %q from container: %v", rule.File, err)
 			}
 		}
 	}
+}
+
+// syncFile copies or merges a file. If keys is non-empty, only those
+// JSON keys are merged; otherwise the whole file/dir is copied.
+func syncFile(src, dst string, keys []string) error {
+	if len(keys) > 0 {
+		return mergeJSONKeys(src, dst, keys)
+	}
+	return copyPath(src, dst)
 }
 
 // SyncOutOfHomeToContainer writes files whose target is outside the agent home
 // directory into the running container via exec. Must be called after the
 // container is running and SetupAgentDirs has mounted the agent home.
 func SyncOutOfHomeToContainer(ctx context.Context, server incuscli.InstanceServer, container, agentName, containerName, agentHome, userHome string, rules []config.CopyRule) {
-	containerDir := ContainerDir(agentName, containerName)
+	filesDir := ContainerFilesDir(agentName, containerName)
 
 	for _, rule := range rules {
 		if rule.IsInsideHome(agentHome, userHome) {
@@ -118,7 +111,7 @@ func SyncOutOfHomeToContainer(ctx context.Context, server incuscli.InstanceServe
 		}
 
 		target := rule.ResolveTarget(userHome)
-		src := filepath.Join(containerDir, rule.File)
+		src := filepath.Join(filesDir, rule.File)
 
 		var data []byte
 		var err error
@@ -155,7 +148,7 @@ func SyncOutOfHomeToContainer(ctx context.Context, server incuscli.InstanceServe
 // SyncOutOfHomeFromContainer reads files whose target is outside the agent home
 // directory from the running container and saves them to the container dir.
 func SyncOutOfHomeFromContainer(ctx context.Context, server incuscli.InstanceServer, container, agentName, containerName, agentHome, userHome string, rules []config.CopyRule) {
-	containerDir := ContainerDir(agentName, containerName)
+	filesDir := ContainerFilesDir(agentName, containerName)
 
 	for _, rule := range rules {
 		if rule.IsInsideHome(agentHome, userHome) {
@@ -163,7 +156,7 @@ func SyncOutOfHomeFromContainer(ctx context.Context, server incuscli.InstanceSer
 		}
 
 		target := rule.ResolveTarget(userHome)
-		dst := filepath.Join(containerDir, rule.File)
+		dst := filepath.Join(filesDir, rule.File)
 
 		// Read file from container.
 		content, err := incus.Exec(ctx, server, container, incus.ExecOpts{}, []string{
@@ -224,14 +217,14 @@ func SetupAgentDirs(ctx context.Context, server incuscli.InstanceServer, contain
 			continue
 		}
 
-		dir := ContainerDir(name, containerName)
-		if err := os.MkdirAll(dir, 0700); err != nil {
-			return fmt.Errorf("creating agent dir for %q: %w", name, err)
+		homeDir := ContainerHomeDir(name, containerName)
+		if err := os.MkdirAll(homeDir, 0700); err != nil {
+			return fmt.Errorf("creating agent home dir for %q: %w", name, err)
 		}
 
 		deviceName := fmt.Sprintf("agent-%s", name)
-		if err := incus.AddDiskDevice(ctx, server, container, deviceName, dir, agent.Home, false); err != nil {
-			return fmt.Errorf("mounting agent dir for %q: %w", name, err)
+		if err := incus.AddDiskDevice(ctx, server, container, deviceName, homeDir, agent.Home, false); err != nil {
+			return fmt.Errorf("mounting agent home dir for %q: %w", name, err)
 		}
 	}
 	return nil
