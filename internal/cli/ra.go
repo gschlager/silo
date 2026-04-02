@@ -95,8 +95,6 @@ Examples:
 				promptPart = " -p " + shellQuote([]string{prompt})
 			}
 
-			// Clear screen and launch the agent.
-			fmt.Print("\033[2J\033[H")
 			shellCmd := "cd /workspace && " + baseCmd + promptPart
 			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 			opts.Env = env

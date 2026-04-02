@@ -119,7 +119,6 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 	shellCmd := "cd /workspace && " + agentCmd
 
 	// Launch agent interactively.
-	fmt.Print("\033[2J\033[H")
 	opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 	opts.Env = env
 	if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd)); err != nil {
