@@ -36,6 +36,7 @@ type GlobalConfig struct {
 // AgentGlobalConfig holds global agent settings.
 type AgentGlobalConfig struct {
 	Name    string         `yaml:"name"`
+	Cmd     string         `yaml:"cmd"`
 	Deps    []string       `yaml:"deps"`
 	Install string         `yaml:"install"`
 	Mode    string         `yaml:"mode"`

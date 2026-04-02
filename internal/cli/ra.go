@@ -77,12 +77,14 @@ Examples:
 			}
 
 			// Build the agent command.
-			agentCmd := []string{agentName}
+			// baseCmd may contain flags (e.g. "claude --dangerously-skip-permissions"),
+			// so it's passed raw to the shell. Only the prompt is quoted.
+			baseCmd := agentCfg.AgentCmd(agentName)
 
 			// Handle prompt argument.
+			promptPart := ""
 			if len(promptArgs) > 0 {
 				prompt := promptArgs[0]
-				// Check if it's a file path on the host.
 				if info, err := os.Stat(prompt); err == nil && !info.IsDir() {
 					data, err := os.ReadFile(prompt)
 					if err != nil {
@@ -90,12 +92,12 @@ Examples:
 					}
 					prompt = string(data)
 				}
-				agentCmd = append(agentCmd, "-p", prompt)
+				promptPart = " -p " + shellQuote([]string{prompt})
 			}
 
 			// Clear screen and launch the agent.
 			fmt.Print("\033[2J\033[H")
-			shellCmd := "cd /workspace && " + shellQuote(agentCmd)
+			shellCmd := "cd /workspace && " + baseCmd + promptPart
 			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 			opts.Env = env
 			return incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd))
