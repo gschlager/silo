@@ -13,10 +13,7 @@ func NewRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "silo",
 		Short: "Secure isolated local environments for AI agents",
-		Long: `silo creates isolated development environments using Incus system containers.
-It provides full network and service isolation while keeping your existing
-workflow (host-side IDE, git client, DB inspector) intact via bind mounts
-and port forwarding.`,
+		Long: "\033[1;32msilo\033[0m " + Version + ` — Secure isolated local environments for AI agents.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {

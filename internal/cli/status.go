@@ -4,8 +4,17 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
+)
+
+var (
+	statusLabel = lipgloss.NewStyle().Bold(true).Width(12)
+	statusSection = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3")) // yellow
+	statusGreen = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	statusRed   = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	statusDim   = lipgloss.NewStyle().Faint(true)
 )
 
 func newStatusCmd() *cobra.Command {
@@ -29,8 +38,8 @@ func newStatusCmd() *cobra.Command {
 			name := cfg.ContainerName
 
 			if !incus.Exists(server, name) {
-				fmt.Printf("Container: %s\n", name)
-				fmt.Printf("Status:    not created\n")
+				fmt.Printf("%s %s\n", statusLabel.Render("Container:"), name)
+				fmt.Printf("%s %s\n", statusLabel.Render("Status:"), statusDim.Render("not created"))
 				return nil
 			}
 
@@ -39,73 +48,78 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("Container: %s\n", name)
-			fmt.Printf("Status:    %s\n", inst.Status)
-			fmt.Printf("Image:     %s\n", cfg.Image)
-			fmt.Printf("User:      %s\n", cfg.User)
-			fmt.Printf("Shell:     %s\n", cfg.Shell)
-			fmt.Printf("Project:   %s\n", cfg.ProjectDir)
+			// Container info.
+			containerStatus := statusRed.Render(inst.Status)
+			if inst.Status == "Running" {
+				containerStatus = statusGreen.Render(inst.Status)
+			}
+			fmt.Printf("%s %s\n", statusLabel.Render("Container:"), name)
+			fmt.Printf("%s %s\n", statusLabel.Render("Status:"), containerStatus)
+			fmt.Printf("%s %s\n", statusLabel.Render("Image:"), cfg.Image)
+			fmt.Printf("%s %s\n", statusLabel.Render("User:"), cfg.User)
+			fmt.Printf("%s %s\n", statusLabel.Render("Shell:"), cfg.Shell)
+			fmt.Printf("%s %s\n", statusLabel.Render("Project:"), cfg.ProjectDir)
 
 			// Port mappings.
 			if len(cfg.Ports) > 0 {
-				fmt.Println("\nPorts:")
+				fmt.Printf("\n%s\n", statusSection.Render("Ports"))
 				for _, p := range cfg.Ports {
-					fmt.Printf("  %s\n", p)
-				}
-			}
-
-			// Mounts.
-			if len(cfg.Mounts) > 0 {
-				fmt.Println("\nMounts:")
-				for _, m := range cfg.Mounts {
-					fmt.Printf("  %s\n", m)
+					parts := strings.SplitN(p, ":", 2)
+					if len(parts) == 2 {
+						fmt.Printf("  container:%s → localhost:%s\n", parts[0], parts[1])
+					} else {
+						fmt.Printf("  %s\n", p)
+					}
 				}
 			}
 
 			// Agents.
 			if len(cfg.Agents) > 0 {
-				fmt.Println("\nAgents:")
+				fmt.Printf("\n%s\n", statusSection.Render("Agents"))
 				for agentName, agent := range cfg.Agents {
-					mode := agent.Mode
-					if mode == "" {
-						mode = "default"
-					}
-					status := "enabled"
+					mode := statusDim.Render(agent.Mode)
+					state := statusGreen.Render("enabled")
 					if !agent.Enabled {
-						status = "disabled"
+						state = statusRed.Render("disabled")
 					}
-					fmt.Printf("  %s (mode: %s, %s)\n", agentName, mode, status)
+					fmt.Printf("  %-16s %s  %s\n", agentName, state, mode)
 				}
 			}
 
 			// Daemons.
 			if len(cfg.Daemons) > 0 {
-				fmt.Println("\nDaemons:")
+				fmt.Printf("\n%s\n", statusSection.Render("Daemons"))
 				for daemon, dcfg := range cfg.Daemons {
-					status := "stopped"
+					state := statusDim.Render("stopped")
 					if inst.Status == "Running" {
 						out, err := incus.Exec(ctx, server, name, incus.ExecOpts{}, []string{
 							"su", "-", cfg.User, "-c",
 							fmt.Sprintf("systemctl --user is-active silo-%s 2>/dev/null || true", daemon),
 						})
 						if err == nil {
-							s := strings.TrimSpace(out)
-							if s == "active" {
-								status = "running"
-							} else if s == "inactive" {
-								status = "stopped"
-							} else if s == "failed" {
-								status = "failed"
+							switch strings.TrimSpace(out) {
+							case "active":
+								state = statusGreen.Render("running")
+							case "failed":
+								state = statusRed.Render("failed")
 							}
 						}
 					} else {
-						status = "container stopped"
+						state = statusDim.Render("container stopped")
 					}
-					autostart := ""
+					extra := ""
 					if !dcfg.Autostart {
-						autostart = ", manual"
+						extra = statusDim.Render("  (manual)")
 					}
-					fmt.Printf("  %-20s %s%s\n", daemon, status, autostart)
+					fmt.Printf("  %-16s %s%s\n", daemon, state, extra)
+				}
+			}
+
+			// Mounts.
+			if len(cfg.Mounts) > 0 {
+				fmt.Printf("\n%s\n", statusSection.Render("Mounts"))
+				for _, m := range cfg.Mounts {
+					fmt.Printf("  %s\n", m)
 				}
 			}
 
