@@ -30,7 +30,7 @@ func InstallAgents(ctx context.Context, server incuscli.InstanceServer, containe
 		if _, err := incus.Exec(ctx, server, container, userOpts, []string{
 			"/bin/" + shell, "-lc", agent.Install,
 		}); err != nil {
-			return fmt.Errorf("installing agent %q: %w", name, err)
+			color.Warn("could not install %s: %v", name, err)
 		}
 	}
 	return nil

@@ -105,7 +105,7 @@ func defaultGlobalConfig() *GlobalConfig {
 	return &GlobalConfig{
 		DefaultImage: "fedora/43",
 		DefaultSetup: []string{
-			"dnf install -y git curl wget make gcc which zsh jq socat nodejs npm",
+			"dnf install -y git curl wget make gcc which zsh jq socat",
 		},
 		Shell: "zsh",
 		User:  "dev",

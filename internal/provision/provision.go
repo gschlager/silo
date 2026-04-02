@@ -15,6 +15,67 @@ import (
 	"github.com/gschlager/silo/internal/incus"
 )
 
+// ProvisionMinimal creates a lightweight container with just networking, a user,
+// and a single agent installed. Used for temporary containers like silo init --auto.
+func ProvisionMinimal(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig, agentName string) error {
+	name := cfg.ContainerName
+
+	status("Creating temporary container %s...", name)
+	if err := incus.Launch(ctx, server, cfg.Image, name); err != nil {
+		return err
+	}
+
+	status("Waiting for network...")
+	networkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := incus.WaitForNetwork(networkCtx, server, name, "dns.google"); err != nil {
+		return err
+	}
+
+	// Mount project directory.
+	status("Mounting project directory...")
+	if err := incus.AddDiskDevice(ctx, server, name, "workspace", cfg.ProjectDir, "/workspace", false); err != nil {
+		return err
+	}
+
+	// Run default_setup.
+	if len(cfg.DefaultSetup) > 0 {
+		status("Running default setup...")
+		if err := runCommands(ctx, server, name, incus.ExecOpts{}, cfg.DefaultSetup); err != nil {
+			return fmt.Errorf("default_setup failed: %w", err)
+		}
+	}
+
+	// Create user.
+	status("Creating user %s...", cfg.User)
+	if err := CreateUser(ctx, server, name, cfg.User, cfg.Shell); err != nil {
+		return err
+	}
+
+	// Install the requested agent.
+	agentCfg, ok := cfg.Agents[agentName]
+	if !ok {
+		return fmt.Errorf("unknown agent %q", agentName)
+	}
+	if agentCfg.Install != "" {
+		singleAgent := map[string]config.MergedAgentConfig{agentName: agentCfg}
+		if err := agents.InstallAgents(ctx, server, name, cfg.User, cfg.Shell, singleAgent); err != nil {
+			return err
+		}
+	}
+
+	// Set up agent data directory.
+	if agentCfg.Home != "" {
+		status("Setting up agent directory...")
+		singleAgent := map[string]config.MergedAgentConfig{agentName: agentCfg}
+		if err := agents.SetupAgentDirs(ctx, server, name, cfg.ContainerName, singleAgent); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Provision runs the full first-run provisioning flow for a container.
 func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig, verbose bool) error {
 	verboseOutput = verbose
