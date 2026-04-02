@@ -2,6 +2,7 @@ package config
 
 import (
 	"maps"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -44,9 +45,10 @@ type MergedConfig struct {
 	Compose string
 
 	// Global settings.
-	Shell        string
-	User         string
-	DefaultAgent string
+	Shell         string
+	User          string
+	DefaultAgent  string
+	PassEnv       []string
 	Notifications bool
 }
 
@@ -69,6 +71,18 @@ func (a *MergedAgentConfig) AgentCmd(name string) string {
 		return a.Cmd
 	}
 	return name
+}
+
+// HostEnv returns a map of host environment variables that should be
+// passed to interactive container sessions, based on the PassEnv config.
+func (m *MergedConfig) HostEnv() map[string]string {
+	env := make(map[string]string)
+	for _, key := range m.PassEnv {
+		if v := os.Getenv(key); v != "" {
+			env[key] = v
+		}
+	}
+	return env
 }
 
 // UserHome returns the home directory for the configured user.
@@ -107,6 +121,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		Shell:         global.Shell,
 		User:          global.User,
 		DefaultAgent:  global.DefaultAgent,
+		PassEnv:       global.PassEnv,
 		Notifications: global.Notifications,
 	}
 

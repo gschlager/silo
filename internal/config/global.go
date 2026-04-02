@@ -25,6 +25,7 @@ type GlobalConfig struct {
 	DefaultImage string            `yaml:"default_image"`
 	DefaultSetup []string          `yaml:"default_setup"`
 	DefaultAgent string            `yaml:"default_agent"`
+	PassEnv      []string          `yaml:"pass_env"`
 	Shell        string            `yaml:"shell"`
 	User         string            `yaml:"user"`
 	Notifications bool            `yaml:"notifications"`
@@ -111,7 +112,8 @@ func defaultGlobalConfig() *GlobalConfig {
 		DefaultSetup: []string{
 			"dnf install -y git curl wget make gcc which zsh jq socat ripgrep fd-find tree gh",
 		},
-		Shell: "zsh",
+		PassEnv: []string{"TERM", "COLORTERM", "COLORFGBG", "LANG", "LC_ALL"},
+		Shell:   "zsh",
 		User:  "dev",
 		Git:   map[string]string{},
 		Agents: []AgentGlobalConfig{

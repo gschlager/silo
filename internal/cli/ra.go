@@ -70,8 +70,8 @@ Examples:
 				color.Warn("could not refresh seeds: %v", err)
 			}
 
-			// Build environment variables.
-			env := make(map[string]string)
+			// Build environment variables (host terminal env + agent-specific).
+			env := cfg.HostEnv()
 			for k, v := range agentCfg.Env {
 				env[k] = v
 			}

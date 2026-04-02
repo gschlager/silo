@@ -110,7 +110,7 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 
 	// Build agent command and env.
 	agentCfg := cfg.Agents[agentName]
-	env := make(map[string]string)
+	env := cfg.HostEnv()
 	for k, v := range agentCfg.Env {
 		env[k] = v
 	}
