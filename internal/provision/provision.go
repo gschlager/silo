@@ -176,6 +176,19 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		})
 	}
 
+	// Fix home directory ownership after mounts. Cache mounts create
+	// intermediate dirs as root (e.g. .local/ under /home/dev/).
+	// Use -R with --one-file-system so we fix ownership of dirs created
+	// by Incus without descending into the mounted cache filesystems.
+	homeDir := fmt.Sprintf("/home/%s", cfg.User)
+	incus.Exec(ctx, server, name, incus.ExecOpts{}, []string{
+		"chown", "-R", "--one-file-system", cfg.User + ":" + cfg.User, homeDir,
+	})
+	// Write .profile now that home dir ownership is correct.
+	if err := WriteProfile(ctx, server, name, cfg.User); err != nil {
+		return err
+	}
+
 	// Step 8: Configure git.
 	if len(cfg.Git) > 0 {
 		status("Configuring git...")

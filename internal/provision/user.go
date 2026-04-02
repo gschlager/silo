@@ -37,14 +37,8 @@ func CreateUser(ctx context.Context, server incuscli.InstanceServer, container, 
 		return fmt.Errorf("configuring sudo for %q: %w", username, err)
 	}
 
-	// Add ~/.local/bin to PATH in ~/.profile (sourced by all login shells).
-	pathLine := `export PATH="$HOME/.local/bin:$PATH"`
-	userOpts := incus.ExecOpts{User: 1000, Home: "/home/" + username}
-	if _, err := incus.Exec(ctx, server, container, userOpts, []string{
-		"sh", "-c", fmt.Sprintf(`echo '%s' >> ~/.profile`, pathLine),
-	}); err != nil {
-		return fmt.Errorf("setting PATH for %q: %w", username, err)
-	}
+	// Note: .profile setup is done by WriteProfile() later in provisioning,
+	// after cache mounts which may recreate /home/dev/ dirs as root.
 
 	// Enable systemd user linger so user services start at boot.
 	if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
@@ -53,5 +47,18 @@ func CreateUser(ctx context.Context, server incuscli.InstanceServer, container, 
 		return fmt.Errorf("enabling linger for %q: %w", username, err)
 	}
 
+	return nil
+}
+
+// WriteProfile writes ~/.profile with PATH setup. Must be called after
+// all mounts are in place (cache mounts can recreate /home/dev/ as root).
+func WriteProfile(ctx context.Context, server incuscli.InstanceServer, container, username string) error {
+	userOpts := incus.ExecOpts{User: 1000, Home: "/home/" + username}
+	pathLine := `export PATH="$HOME/.local/bin:$PATH"`
+	if _, err := incus.Exec(ctx, server, container, userOpts, []string{
+		"sh", "-c", fmt.Sprintf(`echo '%s' >> ~/.profile`, pathLine),
+	}); err != nil {
+		return fmt.Errorf("writing .profile for %q: %w", username, err)
+	}
 	return nil
 }
