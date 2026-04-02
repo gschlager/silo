@@ -100,9 +100,10 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 		return err
 	}
 
-	// Sync shared files into the container dir.
+	// Sync files into the container dir and write out-of-home files.
 	agentCfg := cfg.Agents[agentName]
-	agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Shared)
+	agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+	agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 
 	// Build env and base command.
 	baseCmd := agentCfg.AgentCmd(agentName)
@@ -144,8 +145,9 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 		}
 	}
 
-	// Sync shared files back.
-	agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Shared)
+	// Sync files back.
+	agents.SyncOutOfHomeFromContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+	agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 
 	// Final check.
 	if _, err := os.Stat(configPath); err == nil {

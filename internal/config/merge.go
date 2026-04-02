@@ -63,9 +63,39 @@ type MergedAgentConfig struct {
 	Install string
 	Mode    string
 	Home    string
-	Shared  []string
+	Copy    []CopyRule
 	Env     map[string]string
 	Enabled bool
+}
+
+// ResolveTarget expands ~/ in the target path to the user home directory.
+func (r CopyRule) ResolveTarget(userHome string) string {
+	if strings.HasPrefix(r.Target, "~/") {
+		return filepath.Join(userHome, r.Target[2:])
+	}
+	return r.Target
+}
+
+// IsInsideHome returns true if the target resolves to a path under the agent home.
+func (r CopyRule) IsInsideHome(agentHome, userHome string) bool {
+	resolved := r.ResolveTarget(userHome)
+	return strings.HasPrefix(resolved, agentHome+"/") || resolved == agentHome
+}
+
+// RelPath returns the path within the agent home where this file should be
+// placed. Returns empty string if the target is outside agent home.
+func (r CopyRule) RelPath(agentHome, userHome string) string {
+	resolved := r.ResolveTarget(userHome)
+	rel, err := filepath.Rel(agentHome, resolved)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return ""
+	}
+	return rel
+}
+
+// IsDir returns true if this rule refers to a directory.
+func (r CopyRule) IsDir() bool {
+	return strings.HasSuffix(r.File, "/")
 }
 
 // AgentCmd returns the launch command for an agent. If Cmd is set, it's
@@ -195,7 +225,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 			Install: ga.Install,
 			Mode:    ga.Mode,
 			Home:    ga.Home,
-			Shared:  ga.Shared,
+			Copy:    ga.Copy,
 			Enabled: true,
 		}
 	}
@@ -215,7 +245,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 				merged.Deps = ga.Deps
 				merged.Install = ga.Install
 				merged.Home = ga.Home
-				merged.Shared = ga.Shared
+				merged.Copy = ga.Copy
 			}
 			if merged.Mode == "" {
 				if ga, ok := globalAgents[name]; ok {

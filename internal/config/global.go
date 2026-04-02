@@ -37,14 +37,21 @@ type GlobalConfig struct {
 
 // AgentGlobalConfig holds global agent settings.
 type AgentGlobalConfig struct {
-	Name    string   `yaml:"name"`
-	Enabled bool     `yaml:"enabled"`
-	Cmd     string   `yaml:"cmd"`
-	Deps    []string `yaml:"deps"`
-	Install string   `yaml:"install"`
-	Mode    string   `yaml:"mode"`
-	Home    string   `yaml:"home"`
-	Shared  []string `yaml:"shared"`
+	Name    string     `yaml:"name"`
+	Enabled bool       `yaml:"enabled"`
+	Cmd     string     `yaml:"cmd"`
+	Deps    []string   `yaml:"deps"`
+	Install string     `yaml:"install"`
+	Mode    string     `yaml:"mode"`
+	Home    string     `yaml:"home"`
+	Copy    []CopyRule `yaml:"copy"`
+}
+
+// CopyRule defines how a file is synced between silo's agent directory and the container.
+type CopyRule struct {
+	File   string   `yaml:"file"`           // name in silo's agent dir
+	Target string   `yaml:"target"`         // path inside container (supports ~/)
+	Keys   []string `yaml:"keys,omitempty"` // for JSON files: only sync these top-level keys
 }
 
 // agentOverride is used during config parsing to detect explicit enabled: false.
@@ -156,8 +163,8 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 				if ua.Home != "" {
 					da.Home = ua.Home
 				}
-				if len(ua.Shared) > 0 {
-					da.Shared = ua.Shared
+				if len(ua.Copy) > 0 {
+					da.Copy = ua.Copy
 				}
 				if ep, ok := enabledOverrides[ua.Name]; ok {
 					da.Enabled = *ep
@@ -237,8 +244,13 @@ func defaultGlobalConfig() *GlobalConfig {
 				Cmd:     "claude",
 				Install: "curl -fsSL https://claude.ai/install.sh | bash",
 				Mode:    "oauth",
-				Home:    "/home/dev/.claude",
-				Shared:  []string{".credentials.json", "settings.json", "hooks/"},
+				Home: "/home/dev/.claude",
+				Copy: []CopyRule{
+					{File: ".credentials.json", Target: "~/.claude/.credentials.json"},
+					{File: "claude.json", Target: "~/.claude.json", Keys: []string{"oauthAccount", "userID", "hasCompletedOnboarding"}},
+					{File: "settings.json", Target: "~/.claude/settings.json"},
+					{File: "hooks/", Target: "~/.claude/hooks/"},
+				},
 			},
 			{
 				Name:    "codex",
@@ -247,8 +259,10 @@ func defaultGlobalConfig() *GlobalConfig {
 				Deps:    []string{"dnf install -y nodejs npm bubblewrap"},
 				Install: "npm install -g @openai/codex --prefix ~/.local",
 				Mode:    "api-key",
-				Home:    "/home/dev/.codex",
-				Shared:  []string{"config.toml"},
+				Home: "/home/dev/.codex",
+				Copy: []CopyRule{
+					{File: "config.toml", Target: "~/.codex/config.toml"},
+				},
 			},
 		},
 	}

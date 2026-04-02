@@ -63,8 +63,9 @@ Examples:
 				return fmt.Errorf("unknown agent %q (configured agents: %s)", agentName, agentNames(cfg))
 			}
 
-			// Sync shared files (credentials, settings) into the container dir.
-			agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Shared)
+			// Sync files into the container dir and write out-of-home files.
+			agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 
 			// Build environment variables (host terminal env + agent-specific).
 			env := cfg.HostEnv()
@@ -94,8 +95,9 @@ Examples:
 			opts.Env = env
 			err = incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd))
 
-			// Sync shared files back (pick up token refreshes, setting changes).
-			agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Shared)
+			// Sync files back (pick up token refreshes, setting changes).
+			agents.SyncOutOfHomeFromContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 
 			return err
 		},

@@ -25,9 +25,11 @@ func ContainerDir(agent, containerName string) string {
 	return filepath.Join(config.GlobalConfigDir(), "containers", containerName, "agents", agent)
 }
 
-// SyncToContainer copies shared files from the global agent dir into the
-// container agent dir before launching an agent.
-func SyncToContainer(agentName, containerName string, shared []string) {
+// SyncToContainer copies files from the global agent dir into the container
+// agent dir before launching an agent. For in-home files, they're placed at
+// the relative path within the agent home (which is mounted into the container).
+// For keys rules, only the listed JSON keys are merged.
+func SyncToContainer(agentName, containerName, agentHome, userHome string, rules []config.CopyRule) {
 	globalDir := GlobalDir(agentName)
 	containerDir := ContainerDir(agentName, containerName)
 
@@ -36,21 +38,39 @@ func SyncToContainer(agentName, containerName string, shared []string) {
 		return
 	}
 
-	for _, name := range shared {
-		src := filepath.Join(globalDir, name)
-		dst := filepath.Join(containerDir, name)
-		if err := copyPath(src, dst); err != nil {
-			// Silently skip missing files (first run, nothing in global yet).
-			if !os.IsNotExist(err) {
-				color.Warn("could not sync %q to container: %v", name, err)
+	for _, rule := range rules {
+		src := filepath.Join(globalDir, rule.File)
+
+		// Determine destination in container dir.
+		var dst string
+		if rel := rule.RelPath(agentHome, userHome); rel != "" {
+			dst = filepath.Join(containerDir, rel)
+		} else {
+			// Out-of-home file: store by rule.File name in container dir.
+			// It will be copied into the container via exec separately.
+			dst = filepath.Join(containerDir, rule.File)
+		}
+
+		if len(rule.Keys) > 0 {
+			if err := mergeJSONKeys(src, dst, rule.Keys); err != nil {
+				if !os.IsNotExist(err) {
+					color.Warn("could not sync %q to container: %v", rule.File, err)
+				}
+			}
+		} else {
+			if err := copyPath(src, dst); err != nil {
+				if !os.IsNotExist(err) {
+					color.Warn("could not sync %q to container: %v", rule.File, err)
+				}
 			}
 		}
 	}
 }
 
-// SyncFromContainer copies shared files from the container agent dir back
-// to the global agent dir after an agent exits.
-func SyncFromContainer(agentName, containerName string, shared []string) {
+// SyncFromContainer copies files from the container agent dir back to the
+// global agent dir after an agent exits. For keys rules, only the listed
+// JSON keys are merged back.
+func SyncFromContainer(agentName, containerName, agentHome, userHome string, rules []config.CopyRule) {
 	globalDir := GlobalDir(agentName)
 	containerDir := ContainerDir(agentName, containerName)
 
@@ -59,12 +79,114 @@ func SyncFromContainer(agentName, containerName string, shared []string) {
 		return
 	}
 
-	for _, name := range shared {
-		src := filepath.Join(containerDir, name)
-		dst := filepath.Join(globalDir, name)
-		if err := copyPath(src, dst); err != nil {
+	for _, rule := range rules {
+		// Determine source in container dir.
+		var src string
+		if rel := rule.RelPath(agentHome, userHome); rel != "" {
+			src = filepath.Join(containerDir, rel)
+		} else {
+			src = filepath.Join(containerDir, rule.File)
+		}
+
+		dst := filepath.Join(globalDir, rule.File)
+
+		if len(rule.Keys) > 0 {
+			if err := mergeJSONKeys(src, dst, rule.Keys); err != nil {
+				if !os.IsNotExist(err) {
+					color.Warn("could not sync %q from container: %v", rule.File, err)
+				}
+			}
+		} else {
+			if err := copyPath(src, dst); err != nil {
+				if !os.IsNotExist(err) {
+					color.Warn("could not sync %q from container: %v", rule.File, err)
+				}
+			}
+		}
+	}
+}
+
+// SyncOutOfHomeToContainer writes files whose target is outside the agent home
+// directory into the running container via exec. Must be called after the
+// container is running and SetupAgentDirs has mounted the agent home.
+func SyncOutOfHomeToContainer(ctx context.Context, server incuscli.InstanceServer, container, agentName, containerName, agentHome, userHome string, rules []config.CopyRule) {
+	containerDir := ContainerDir(agentName, containerName)
+
+	for _, rule := range rules {
+		if rule.IsInsideHome(agentHome, userHome) {
+			continue
+		}
+
+		target := rule.ResolveTarget(userHome)
+		src := filepath.Join(containerDir, rule.File)
+
+		var data []byte
+		var err error
+		if len(rule.Keys) > 0 {
+			data, err = extractJSONKeys(src, rule.Keys)
+		} else {
+			data, err = os.ReadFile(src)
+		}
+		if err != nil {
 			if !os.IsNotExist(err) {
-				color.Warn("could not sync %q from container: %v", name, err)
+				color.Warn("could not read %q for container: %v", rule.File, err)
+			}
+			continue
+		}
+
+		// Create parent dir and write file inside container.
+		parentDir := filepath.Dir(target)
+		incus.Exec(ctx, server, container, incus.ExecOpts{}, []string{
+			"mkdir", "-p", parentDir,
+		})
+		if _, err := incus.ExecWithStdin(ctx, server, container, incus.ExecOpts{}, []string{
+			"tee", target,
+		}, data); err != nil {
+			color.Warn("could not write %q in container: %v", target, err)
+			continue
+		}
+		// Fix ownership.
+		incus.Exec(ctx, server, container, incus.ExecOpts{}, []string{
+			"chown", "1000:1000", target,
+		})
+	}
+}
+
+// SyncOutOfHomeFromContainer reads files whose target is outside the agent home
+// directory from the running container and saves them to the container dir.
+func SyncOutOfHomeFromContainer(ctx context.Context, server incuscli.InstanceServer, container, agentName, containerName, agentHome, userHome string, rules []config.CopyRule) {
+	containerDir := ContainerDir(agentName, containerName)
+
+	for _, rule := range rules {
+		if rule.IsInsideHome(agentHome, userHome) {
+			continue
+		}
+
+		target := rule.ResolveTarget(userHome)
+		dst := filepath.Join(containerDir, rule.File)
+
+		// Read file from container.
+		content, err := incus.Exec(ctx, server, container, incus.ExecOpts{}, []string{
+			"cat", target,
+		})
+		if err != nil {
+			// File might not exist yet (first run).
+			continue
+		}
+
+		if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
+			color.Warn("could not create dir for %q: %v", rule.File, err)
+			continue
+		}
+
+		if len(rule.Keys) > 0 {
+			// Write the full content first, then merge keys into the global file.
+			if err := os.WriteFile(dst, []byte(content), 0600); err != nil {
+				color.Warn("could not write %q: %v", rule.File, err)
+			}
+		} else {
+			if err := os.WriteFile(dst, []byte(content), 0600); err != nil {
+				color.Warn("could not write %q: %v", rule.File, err)
 			}
 		}
 	}
