@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
@@ -10,9 +11,11 @@ import (
 func newStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Show container state, daemons, port mappings, agent config",
+		Short: "Show container state, config, and running daemons",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
@@ -62,24 +65,42 @@ func newStatusCmd() *cobra.Command {
 			// Agents.
 			if len(cfg.Agents) > 0 {
 				fmt.Println("\nAgents:")
-				for name, agent := range cfg.Agents {
+				for agentName, agent := range cfg.Agents {
 					mode := agent.Mode
 					if mode == "" {
 						mode = "default"
 					}
-					fmt.Printf("  %s (mode: %s)\n", name, mode)
+					status := "enabled"
+					if !agent.Enabled {
+						status = "disabled"
+					}
+					fmt.Printf("  %s (mode: %s, %s)\n", agentName, mode, status)
 				}
 			}
 
-			// Daemons.
+			// Daemons (config + live status if running).
 			if len(cfg.Daemons) > 0 {
 				fmt.Println("\nDaemons:")
-				for name, daemon := range cfg.Daemons {
-					autostart := "autostart"
-					if !daemon.Autostart {
-						autostart = "manual"
+				if inst.Status == "Running" {
+					output, err := incus.Exec(ctx, server, name, incus.ExecOpts{}, []string{
+						"su", "-", cfg.User, "-c",
+						"systemctl --user list-units 'silo-*' --no-pager --no-legend 2>/dev/null || true",
+					})
+					if err == nil && output != "" {
+						fmt.Print(output)
+					} else {
+						for daemon := range cfg.Daemons {
+							fmt.Fprintf(os.Stderr, "  silo-%s (status unknown)\n", daemon)
+						}
 					}
-					fmt.Printf("  %s (%s): %s\n", name, autostart, daemon.Cmd)
+				} else {
+					for daemon, dcfg := range cfg.Daemons {
+						autostart := "autostart"
+						if !dcfg.Autostart {
+							autostart = "manual"
+						}
+						fmt.Printf("  %s (%s): %s\n", daemon, autostart, dcfg.Cmd)
+					}
 				}
 			}
 

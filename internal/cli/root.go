@@ -58,7 +58,6 @@ and port forwarding.`,
 	addCmd("environment", newRmCmd())
 	addCmd("environment", newEnterCmd())
 	addCmd("environment", newRunCmd())
-	addCmd("environment", newPsCmd())
 	addCmd("environment", newStatusCmd())
 
 	// Agents.
