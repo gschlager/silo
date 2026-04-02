@@ -53,6 +53,7 @@ and port forwarding.`,
 	}
 
 	// Environment lifecycle.
+	addCmd("environment", newListCmd())
 	addCmd("environment", newUpCmd())
 	addCmd("environment", newDownCmd())
 	addCmd("environment", newRmCmd())

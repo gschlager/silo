@@ -158,6 +158,21 @@ func WaitForNetwork(ctx context.Context, server incuscli.InstanceServer, name st
 	}
 }
 
+// ListSiloInstances returns all Incus instances whose name starts with "silo-".
+func ListSiloInstances(server incuscli.InstanceServer) ([]api.Instance, error) {
+	instances, err := server.GetInstances(api.InstanceTypeContainer)
+	if err != nil {
+		return nil, fmt.Errorf("listing instances: %w", err)
+	}
+	var result []api.Instance
+	for _, inst := range instances {
+		if len(inst.Name) > 5 && inst.Name[:5] == "silo-" {
+			result = append(result, inst)
+		}
+	}
+	return result, nil
+}
+
 // Exists checks if a container with the given name exists.
 func Exists(server incuscli.InstanceServer, name string) bool {
 	_, _, err := server.GetInstance(name)
