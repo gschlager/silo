@@ -116,22 +116,50 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 
 	// Step 1: Run the agent non-interactively to generate a draft .silo.yml.
 	prompt := autoInitPrompt(cfg)
-	color.Status("Generating .silo.yml draft with %s...", agentName)
-	genCmd := baseCmd + " -p " + shellQuote([]string{prompt})
-	if err := incus.ExecStreaming(ctx, server, cfg.ContainerName, opts,
-		cfg.LoginCmd("cd /workspace && "+genCmd),
-		os.Stdout, os.Stderr); err != nil {
-		color.Warn("agent exited: %v", err)
+	configPath := filepath.Join(cwd, ".silo.yml")
+
+	generateConfig := func() error {
+		color.Status("Generating .silo.yml draft with %s...", agentName)
+		genCmd := baseCmd + " -p " + shellQuote([]string{prompt})
+		return incus.ExecStreaming(ctx, server, cfg.ContainerName, opts,
+			cfg.LoginCmd("cd /workspace && "+genCmd),
+			os.Stdout, os.Stderr)
 	}
 
-	// Step 2: Show the generated config and ask if the user wants to refine it.
-	configPath := filepath.Join(cwd, ".silo.yml")
+	if err := generateConfig(); err != nil {
+		if _, statErr := os.Stat(configPath); statErr != nil {
+			// Generation failed and no config — likely needs login.
+			fmt.Println()
+			color.Info("%s needs to be logged in first.", agentName)
+			color.Info("Please log in, then exit the session (Ctrl+C or /exit) to continue.")
+			fmt.Println()
+
+			if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
+				cfg.LoginCmd("cd /workspace && "+baseCmd)); err != nil {
+				// Ignore — user exited after login.
+			}
+
+			// Sync credentials back so the retry picks them up.
+			agents.SyncOutOfHomeFromContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			// Re-sync into container for the retry.
+			agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+
+			// Retry generation.
+			fmt.Println()
+			if err := generateConfig(); err != nil {
+				color.Warn("agent exited: %v", err)
+			}
+		}
+	}
+
+	// Step 2: Show the generated config and offer to refine it.
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Println()
 		color.Success("Generated .silo.yml:")
 		fmt.Println()
 
-		// Display the config with syntax highlighting.
 		if data, err := os.ReadFile(configPath); err == nil {
 			highlightYAML(string(data))
 		}
@@ -156,16 +184,6 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 		}
 	} else {
 		color.Warn("No .silo.yml was generated.")
-		fmt.Fprintf(os.Stderr, "Open %s to create it interactively? [y/N] ", agentName)
-		reader := bufio.NewReader(os.Stdin)
-		answer, _ := reader.ReadString('\n')
-		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "y") {
-			fmt.Println()
-			if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
-				cfg.LoginCmd("cd /workspace && "+baseCmd)); err != nil {
-				color.Warn("agent exited: %v", err)
-			}
-		}
 	}
 
 	// Sync files back.
