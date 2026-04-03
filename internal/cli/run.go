@@ -5,6 +5,7 @@ import (
 
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 func newRunCmd() *cobra.Command {
@@ -41,9 +42,15 @@ func newRunCmd() *cobra.Command {
 			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 
 			shellCmd := shellQuote(args)
+			loginCmd := cfg.LoginCmd("cd /workspace && " + shellCmd)
+
+			if term.IsTerminal(int(os.Stdin.Fd())) {
+				opts.Env = cfg.HostEnv()
+				return incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, loginCmd)
+			}
 
 			return incus.ExecStreaming(ctx, server, cfg.ContainerName, opts,
-				cfg.LoginCmd("cd /workspace && "+shellCmd),
+				loginCmd,
 				os.Stdout, os.Stderr)
 		},
 	}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/gschlager/silo/internal/color"
 	"github.com/spf13/cobra"
@@ -113,15 +114,52 @@ func installZsh(rootCmd *cobra.Command) error {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return fmt.Errorf("creating %s: %w", dir, err)
 		}
-		color.Info("Created %s — add it to your fpath in .zshrc:", dir)
-		color.Info("  fpath=(%s $fpath)", dir)
 	}
 
 	path := filepath.Join(dir, "_silo")
 	if err := rootCmd.GenZshCompletionFile(path); err != nil {
 		return err
 	}
+
+	// Ensure fpath is configured in .zshrc.
+	if err := ensureZshFpath(home, dir); err != nil {
+		return err
+	}
+
 	color.Success("Installed zsh completions to %s", path)
+	color.Info("Restart your shell or run: exec zsh")
+	return nil
+}
+
+// ensureZshFpath checks if the completions dir is already in the user's .zshrc fpath,
+// and adds it if not.
+func ensureZshFpath(home, dir string) error {
+	zshrc := filepath.Join(home, ".zshrc")
+	content, err := os.ReadFile(zshrc)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading %s: %w", zshrc, err)
+	}
+
+	fpathLine := fmt.Sprintf("fpath=(%s $fpath)", dir)
+	if strings.Contains(string(content), dir) {
+		return nil
+	}
+
+	// Prepend fpath line before any compinit call, or append if no compinit.
+	updated := string(content)
+	if strings.Contains(updated, "compinit") {
+		updated = fpathLine + "\n" + updated
+	} else {
+		if len(updated) > 0 && !strings.HasSuffix(updated, "\n") {
+			updated += "\n"
+		}
+		updated += fpathLine + "\nautoload -Uz compinit && compinit\n"
+	}
+
+	if err := os.WriteFile(zshrc, []byte(updated), 0644); err != nil {
+		return fmt.Errorf("updating %s: %w", zshrc, err)
+	}
+	color.Info("Updated %s", zshrc)
 	return nil
 }
 
@@ -177,19 +215,13 @@ func installFish(rootCmd *cobra.Command) error {
 // registerCompletions sets up dynamic completions for various commands.
 func registerCompletions(rootCmd *cobra.Command) {
 	for _, cmd := range rootCmd.Commands() {
-		switch cmd.Use {
-		case "ra <agent> [prompt or file]":
+		switch cmd.Name() {
+		case "ra":
 			cmd.ValidArgsFunction = completeAgentNames
-		case "start <daemon>", "stop <daemon>":
+		case "start", "stop", "restart", "logs":
 			cmd.ValidArgsFunction = completeDaemonNames
-		case "reset <target>":
+		case "reset":
 			cmd.ValidArgsFunction = completeResetTargets
-		}
-	}
-
-	for _, cmd := range rootCmd.Commands() {
-		if cmd.Name() == "restart" || cmd.Name() == "logs" {
-			cmd.ValidArgsFunction = completeDaemonNames
 		}
 	}
 }
