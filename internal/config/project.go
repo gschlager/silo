@@ -86,23 +86,107 @@ func (d *DaemonConfig) UnmarshalYAML(value *yaml.Node) error {
 }
 
 // LoadProjectConfig reads .silo.yml (or .silo.yaml) from the given directory.
+// If .silo.local.yml (or .silo.local.yaml) exists, its values are merged on
+// top, allowing per-machine overrides without modifying the shared config.
 // Returns nil with no error if no config file is found.
 func LoadProjectConfig(dir string) (*ProjectConfig, error) {
-	for _, name := range []string{".silo.yml", ".silo.yaml"} {
+	cfg := loadProjectFile(dir, ".silo.yml", ".silo.yaml")
+	local := loadProjectFile(dir, ".silo.local.yml", ".silo.local.yaml")
+
+	if cfg == nil && local == nil {
+		return nil, nil
+	}
+
+	if cfg != nil && cfg.err != nil {
+		return nil, cfg.err
+	}
+	if local != nil && local.err != nil {
+		return nil, local.err
+	}
+
+	if cfg == nil {
+		return &local.config, nil
+	}
+	if local == nil {
+		return &cfg.config, nil
+	}
+
+	merged := mergeProjectConfigs(&cfg.config, &local.config)
+	return merged, nil
+}
+
+type projectFileResult struct {
+	config ProjectConfig
+	err    error
+}
+
+func loadProjectFile(dir string, names ...string) *projectFileResult {
+	for _, name := range names {
 		path := filepath.Join(dir, name)
 		data, err := os.ReadFile(path)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return nil, fmt.Errorf("reading %s: %w", path, err)
+			return &projectFileResult{err: fmt.Errorf("reading %s: %w", path, err)}
 		}
 
 		var cfg ProjectConfig
 		if err := yaml.Unmarshal(data, &cfg); err != nil {
-			return nil, fmt.Errorf("parsing %s: %w", path, err)
+			return &projectFileResult{err: fmt.Errorf("parsing %s: %w", path, err)}
 		}
-		return &cfg, nil
+		return &projectFileResult{config: cfg}
 	}
-	return nil, nil
+	return nil
+}
+
+// mergeProjectConfigs overlays local on top of base. Non-zero local values
+// replace base values; maps and slices from local replace (not append) base.
+func mergeProjectConfigs(base, local *ProjectConfig) *ProjectConfig {
+	m := *base
+
+	if local.Image != "" {
+		m.Image = local.Image
+	}
+	if local.Setup != nil {
+		m.Setup = local.Setup
+	}
+	if local.Sync != nil {
+		m.Sync = local.Sync
+	}
+	if local.Reset != nil {
+		m.Reset = local.Reset
+	}
+	if local.Update != nil {
+		m.Update = local.Update
+	}
+	if local.Ports != nil {
+		m.Ports = local.Ports
+	}
+	if local.Env != nil {
+		m.Env = local.Env
+	}
+	if local.Git.Settings != nil || local.Git.Credential != nil {
+		m.Git = local.Git
+	}
+	if local.Agents != nil {
+		m.Agents = local.Agents
+	}
+	if local.Mounts != nil {
+		m.Mounts = local.Mounts
+	}
+	if local.Tools != nil {
+		m.Tools = local.Tools
+	}
+	if local.Daemons != nil {
+		m.Daemons = local.Daemons
+	}
+	if local.Docker {
+		m.Docker = local.Docker
+	}
+	if local.Compose != "" {
+		m.Compose = local.Compose
+	}
+
+	return &m
 }
