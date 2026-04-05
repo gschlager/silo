@@ -254,9 +254,12 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		m.Tools = project.Tools
 	}
 
-	// Daemons: project-level only.
+	// Daemons: project-level only. Collect daemon ports into Ports.
 	if project != nil {
 		m.Daemons = project.Daemons
+		for _, daemon := range project.Daemons {
+			m.Ports = append(m.Ports, daemon.Ports...)
+		}
 	}
 
 	return m

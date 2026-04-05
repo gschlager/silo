@@ -314,10 +314,13 @@ The file format (all fields are optional):
   env:                      # Environment variables
     RAILS_ENV: development
   daemons:                  # Long-running processes (managed as systemd user services)
-    rails: bin/rails server -b 0.0.0.0
+    rails:
+      cmd: bin/rails server -b 0.0.0.0
+      ports: ["3000"]
     sidekiq:
       cmd: bundle exec sidekiq
       autostart: false
+      after: rails            # starts after rails (systemd dependency)
   nesting: false            # Enable container nesting (Docker, Podman, etc.)
 
 Important rules:

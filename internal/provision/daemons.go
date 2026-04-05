@@ -9,21 +9,6 @@ import (
 	"github.com/gschlager/silo/internal/incus"
 )
 
-const serviceTemplate = `[Unit]
-Description=silo daemon: %s
-
-[Service]
-Type=simple
-WorkingDirectory=/workspace
-ExecStart=/bin/sh -c '%s'
-Restart=no
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=default.target
-`
-
 // SetupDaemons generates systemd user service units inside the container.
 func SetupDaemons(ctx context.Context, server incuscli.InstanceServer, container, username string, daemons map[string]config.DaemonConfig) error {
 	if len(daemons) == 0 {
@@ -42,7 +27,7 @@ func SetupDaemons(ctx context.Context, server incuscli.InstanceServer, container
 
 	for name, daemon := range daemons {
 		serviceName := "silo-" + name
-		unitContent := fmt.Sprintf(serviceTemplate, name, daemon.Cmd)
+		unitContent := buildUnitFile(name, daemon)
 
 		// Write the unit file.
 		unitPath := fmt.Sprintf("%s/%s.service", unitDir, serviceName)
@@ -74,4 +59,25 @@ chown %s:%s %s`, unitPath, unitContent, username, username, unitPath),
 	}
 
 	return nil
+}
+
+func buildUnitFile(name string, daemon config.DaemonConfig) string {
+	unit := fmt.Sprintf("[Unit]\nDescription=silo daemon: %s\n", name)
+	if daemon.After != "" {
+		dep := "silo-" + daemon.After + ".service"
+		unit += fmt.Sprintf("After=%s\nRequires=%s\n", dep, dep)
+	}
+	unit += fmt.Sprintf(`
+[Service]
+Type=simple
+WorkingDirectory=/workspace
+ExecStart=/bin/sh -c '%s'
+Restart=no
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+`, daemon.Cmd)
+	return unit
 }

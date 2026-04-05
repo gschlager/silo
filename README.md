@@ -101,9 +101,9 @@ update:
   - sudo dnf update -y
 
 # Port forwards (container_port:host_port)
+# Ports can also be defined on daemons (see below).
 ports:
-  - 5432:15432
-  - 3000:13000
+  - 5432:15432   # PostgreSQL
 
 # Environment variables
 env:
@@ -111,9 +111,12 @@ env:
 
 # Long-running processes (managed as systemd user services)
 daemons:
-  rails: bin/rails server -b 0.0.0.0
+  rails:
+    cmd: bin/rails server -b 0.0.0.0
+    ports: ["3000:13000"]
   sidekiq:
     cmd: bundle exec sidekiq
+    after: rails              # systemd dependency (After + Requires)
     autostart: false
 
 # Per-project agent overrides

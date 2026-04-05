@@ -53,12 +53,14 @@ type ToolConfig struct {
 
 // DaemonConfig holds daemon configuration, supporting both string and object forms.
 type DaemonConfig struct {
-	Cmd       string `yaml:"cmd"`
-	Autostart bool   `yaml:"autostart"`
+	Cmd       string   `yaml:"cmd"`
+	Autostart bool     `yaml:"autostart"`
+	After     string   `yaml:"after"`
+	Ports     []string `yaml:"ports"`
 }
 
 // UnmarshalYAML implements custom unmarshaling for DaemonConfig.
-// Supports both "rails: bin/rails server" (string) and object form with cmd/autostart.
+// Supports both "rails: bin/rails server" (string) and object form with cmd/autostart/after/ports.
 func (d *DaemonConfig) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind == yaml.ScalarNode {
 		d.Cmd = value.Value
@@ -68,8 +70,10 @@ func (d *DaemonConfig) UnmarshalYAML(value *yaml.Node) error {
 
 	// Object form — need a temporary type to avoid infinite recursion.
 	type rawDaemon struct {
-		Cmd       string `yaml:"cmd"`
-		Autostart *bool  `yaml:"autostart"`
+		Cmd       string   `yaml:"cmd"`
+		Autostart *bool    `yaml:"autostart"`
+		After     string   `yaml:"after"`
+		Ports     []string `yaml:"ports"`
 	}
 	var raw rawDaemon
 	if err := value.Decode(&raw); err != nil {
@@ -81,6 +85,8 @@ func (d *DaemonConfig) UnmarshalYAML(value *yaml.Node) error {
 	} else {
 		d.Autostart = *raw.Autostart
 	}
+	d.After = raw.After
+	d.Ports = raw.Ports
 	return nil
 }
 
