@@ -1,0 +1,106 @@
+# silo project configuration for Discourse
+# https://github.com/discourse/discourse
+#
+# Uses Fedora 43 for PostgreSQL 18 (builtin C.UTF-8 locale), ImageMagick 7,
+# and Valkey (Redis-compatible). Manages Ruby and Node.js via mise.
+
+image: fedora/43
+
+setup:
+  # Build dependencies (Ruby is compiled from source by mise)
+  - sudo dnf install -y gcc make openssl-devel libyaml-devel readline-devel
+    zlib-ng-compat-devel rust
+
+  # Dependencies for Ruby gems
+  - sudo dnf install -y libpq-devel freetds-devel mysql-devel
+
+  # Dependencies for Discourse
+  - sudo dnf install -y ImageMagick pngquant oxipng jhead jpegoptim
+
+  # PostgreSQL
+  - sudo dnf install -y postgresql-server postgresql-contrib postgresql-pgvector
+  - sudo postgresql-setup --initdb -- --locale-provider=builtin --builtin-locale=C.UTF-8
+  - |
+    RAM_MB=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)
+    RAM_GB=$(expr $RAM_MB / 1024)
+    echo "shared_buffers = $(expr $RAM_GB / 10)GB" | sudo tee -a /var/lib/pgsql/data/postgresql.conf
+    echo "effective_cache_size = $(expr $RAM_GB / 2)GB" | sudo tee -a /var/lib/pgsql/data/postgresql.conf
+    echo "work_mem = $(expr $RAM_MB / 128)MB" | sudo tee -a /var/lib/pgsql/data/postgresql.conf
+    echo "maintenance_work_mem = $(expr $RAM_MB / 128)MB" | sudo tee -a /var/lib/pgsql/data/postgresql.conf
+  - sudo systemctl enable --now postgresql
+  - sudo -u postgres createuser -s dev
+
+  # Valkey (Redis-compatible)
+  - sudo dnf install -y valkey
+  - sudo systemctl enable --now valkey
+
+  # mise (manages Ruby via .ruby-version)
+  - curl https://mise.run | sh
+  - echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
+  - ~/.local/bin/mise install
+  - ~/.local/bin/mise exec -- gem install bundler
+  - ~/.local/bin/mise exec -- bundle config set --global jobs $(nproc)
+
+  # Node.js and pnpm (version pinned by Discourse's packageManager field)
+  - sudo dnf install -y nodejs
+  - sudo corepack enable
+
+  # Playwright (Chromium for system/JS tests)
+  - npx playwright install --with-deps chromium
+
+  # MailHog (local SMTP server for dev email)
+  - mkdir -p ~/bin
+  - curl -fsSL -o ~/bin/mailhog https://github.com/mailhog/MailHog/releases/download/v1.0.1/MailHog_linux_amd64
+  - chmod +x ~/bin/mailhog
+
+  # App setup
+  - bundle install
+  - pnpm install
+  - bin/rake db:create
+  - for db in discourse_development discourse_test discourse_test_multisite discourse_profile; do
+      psql -d $db -c "CREATE EXTENSION IF NOT EXISTS hstore; CREATE EXTENSION IF NOT EXISTS vector;";
+    done
+  - bin/rake db:migrate &
+    RAILS_ENV=test bin/rake db:migrate &
+    wait
+
+sync:
+  - bundle install
+  - pnpm install
+  - bundle exec rake db:migrate
+
+reset:
+  db:
+    - rm -rf public/uploads/* tmp/* log/*
+    - valkey-cli FLUSHALL
+    - bundle install
+    - pnpm install
+    - bin/rake db:drop
+    - bin/rake db:create
+    - for db in discourse_development discourse_test discourse_test_multisite discourse_profile; do
+        psql -d $db -c "CREATE EXTENSION IF NOT EXISTS hstore; CREATE EXTENSION IF NOT EXISTS vector;";
+      done
+    - bin/rake db:migrate &
+      RAILS_ENV=test bin/rake db:migrate &
+      wait
+
+update:
+  - sudo dnf update -y
+
+env:
+  RAILS_ENV: development
+  RUBY_YJIT_ENABLE: "1"
+  DISCOURSE_DEV_LOG_LEVEL: warn
+
+daemons:
+  mailhog:
+    cmd: ~/bin/mailhog
+    ports: ["8025"]
+  rails:
+    cmd: bin/rails server -b 0.0.0.0
+    after: mailhog
+    ports: ["3000"]
+  ember:
+    cmd: bin/ember-cli
+    after: rails
+    ports: ["4200"]
