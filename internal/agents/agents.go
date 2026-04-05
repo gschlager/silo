@@ -22,26 +22,27 @@ func GlobalDir(agent string) string {
 
 // ContainerHomeDir returns the host-side directory that is mounted into the
 // container as the agent's home path. e.g. /home/dev/.claude/
-// Host: ~/.config/silo/containers/silo-myapp/agents/claude/home/
-func ContainerHomeDir(agent, containerName string) string {
-	return filepath.Join(config.GlobalConfigDir(), "containers", containerName, "agents", agent, "home")
+// Host: ~/.config/silo/containers/silo-myapp/agents/claude/claude/home/
+// The mode subdirectory isolates data between auth modes (claude, console, bedrock, etc.).
+func ContainerHomeDir(agent, containerName, mode string) string {
+	return filepath.Join(config.GlobalConfigDir(), "containers", containerName, "agents", agent, mode, "home")
 }
 
 // ContainerFilesDir returns the host-side directory for files that target paths
 // outside the agent home. NOT mounted — synced via exec.
-// Host: ~/.config/silo/containers/silo-myapp/agents/claude/files/
-func ContainerFilesDir(agent, containerName string) string {
-	return filepath.Join(config.GlobalConfigDir(), "containers", containerName, "agents", agent, "files")
+// Host: ~/.config/silo/containers/silo-myapp/agents/claude/claude/files/
+func ContainerFilesDir(agent, containerName, mode string) string {
+	return filepath.Join(config.GlobalConfigDir(), "containers", containerName, "agents", agent, mode, "files")
 }
 
 // SyncToContainer copies files from the global agent dir into the container's
 // home/ or files/ subdirectory before launching an agent.
 // - In-home files go to containers/.../agents/claude/home/ (mounted)
 // - Out-of-home files go to containers/.../agents/claude/files/ (synced via exec)
-func SyncToContainer(agentName, containerName, agentHome, userHome string, rules []config.CopyRule) {
+func SyncToContainer(agentName, containerName, mode, agentHome, userHome string, rules []config.CopyRule) {
 	globalDir := GlobalDir(agentName)
-	homeDir := ContainerHomeDir(agentName, containerName)
-	filesDir := ContainerFilesDir(agentName, containerName)
+	homeDir := ContainerHomeDir(agentName, containerName, mode)
+	filesDir := ContainerFilesDir(agentName, containerName, mode)
 
 	os.MkdirAll(globalDir, 0700)
 	os.MkdirAll(homeDir, 0700)
@@ -67,10 +68,10 @@ func SyncToContainer(agentName, containerName, agentHome, userHome string, rules
 
 // SyncFromContainer copies files from the container's home/ and files/
 // subdirectories back to the global agent dir after an agent exits.
-func SyncFromContainer(agentName, containerName, agentHome, userHome string, rules []config.CopyRule) {
+func SyncFromContainer(agentName, containerName, mode, agentHome, userHome string, rules []config.CopyRule) {
 	globalDir := GlobalDir(agentName)
-	homeDir := ContainerHomeDir(agentName, containerName)
-	filesDir := ContainerFilesDir(agentName, containerName)
+	homeDir := ContainerHomeDir(agentName, containerName, mode)
+	filesDir := ContainerFilesDir(agentName, containerName, mode)
 
 	os.MkdirAll(globalDir, 0700)
 
@@ -103,13 +104,13 @@ func syncFile(src, dst string, keys []string) error {
 
 // ApplySet deep-merges the agent's set values into the appropriate files
 // in the container's home/ and files/ dirs. Must be called after SyncToContainer.
-func ApplySet(agentName, containerName, agentHome, userHome string, rules []config.CopyRule, setValues map[string]map[string]any) {
+func ApplySet(agentName, containerName, mode, agentHome, userHome string, rules []config.CopyRule, setValues map[string]map[string]any) {
 	if len(setValues) == 0 {
 		return
 	}
 
-	homeDir := ContainerHomeDir(agentName, containerName)
-	filesDir := ContainerFilesDir(agentName, containerName)
+	homeDir := ContainerHomeDir(agentName, containerName, mode)
+	filesDir := ContainerFilesDir(agentName, containerName, mode)
 
 	for target, values := range setValues {
 		// Find the matching copy rule to determine if this is in-home or out-of-home.
@@ -145,8 +146,8 @@ func ApplySet(agentName, containerName, agentHome, userHome string, rules []conf
 // SyncOutOfHomeToContainer writes files whose target is outside the agent home
 // directory into the running container via exec. Must be called after the
 // container is running and SetupAgentDirs has mounted the agent home.
-func SyncOutOfHomeToContainer(ctx context.Context, server incuscli.InstanceServer, container, agentName, containerName, agentHome, userHome string, rules []config.CopyRule) {
-	filesDir := ContainerFilesDir(agentName, containerName)
+func SyncOutOfHomeToContainer(ctx context.Context, server incuscli.InstanceServer, container, agentName, containerName, mode, agentHome, userHome string, rules []config.CopyRule) {
+	filesDir := ContainerFilesDir(agentName, containerName, mode)
 
 	for _, rule := range rules {
 		if rule.IsInsideHome(agentHome, userHome) {
@@ -186,8 +187,8 @@ func SyncOutOfHomeToContainer(ctx context.Context, server incuscli.InstanceServe
 
 // SyncOutOfHomeFromContainer reads files whose target is outside the agent home
 // directory from the running container and saves them to the container dir.
-func SyncOutOfHomeFromContainer(ctx context.Context, server incuscli.InstanceServer, container, agentName, containerName, agentHome, userHome string, rules []config.CopyRule) {
-	filesDir := ContainerFilesDir(agentName, containerName)
+func SyncOutOfHomeFromContainer(ctx context.Context, server incuscli.InstanceServer, container, agentName, containerName, mode, agentHome, userHome string, rules []config.CopyRule) {
+	filesDir := ContainerFilesDir(agentName, containerName, mode)
 
 	for _, rule := range rules {
 		if rule.IsInsideHome(agentHome, userHome) {
@@ -256,7 +257,7 @@ func SetupAgentDirs(ctx context.Context, server incuscli.InstanceServer, contain
 			continue
 		}
 
-		homeDir := ContainerHomeDir(name, containerName)
+		homeDir := ContainerHomeDir(name, containerName, agent.Mode)
 		if err := os.MkdirAll(homeDir, 0700); err != nil {
 			return fmt.Errorf("creating agent home dir for %q: %w", name, err)
 		}

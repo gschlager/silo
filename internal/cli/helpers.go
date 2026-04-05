@@ -33,7 +33,8 @@ func shellQuote(args []string) string {
 	return strings.Join(quoted, " ")
 }
 
-// loadConfig loads and merges the global and project configuration.
+// loadConfig loads and merges the global and project configuration,
+// then applies any per-container mode overrides from silo mode state.
 func loadConfig() (*config.MergedConfig, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -50,7 +51,21 @@ func loadConfig() (*config.MergedConfig, error) {
 		return nil, err
 	}
 
-	return config.Merge(global, project, cwd), nil
+	merged := config.Merge(global, project, cwd)
+
+	// Apply mode overrides from state file.
+	modes, err := config.LoadModeState(merged.ContainerName)
+	if err != nil {
+		return nil, err
+	}
+	for agentName, mode := range modes {
+		if agent, ok := merged.Agents[agentName]; ok {
+			agent.Mode = mode
+			merged.Agents[agentName] = agent
+		}
+	}
+
+	return merged, nil
 }
 
 // requireRunning checks that the container exists and is running.

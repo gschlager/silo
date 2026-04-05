@@ -243,11 +243,11 @@ func defaultGlobalConfig() *GlobalConfig {
 				Enabled: true,
 				Cmd:     "claude",
 				Install: "curl -fsSL https://claude.ai/install.sh | bash",
-				Mode:    "oauth",
+				Mode:    "claude",
 				Home: "/home/dev/.claude",
 				Copy: []CopyRule{
 					{File: ".credentials.json", Target: "~/.claude/.credentials.json"},
-					{File: "claude.json", Target: "~/.claude.json", Keys: []string{"oauthAccount", "userID", "hasCompletedOnboarding"}},
+					{File: "claude.json", Target: "~/.claude.json", Keys: []string{"oauthAccount", "userID", "hasCompletedOnboarding", "companion"}},
 					{File: "settings.json", Target: "~/.claude/settings.json"},
 					{File: "hooks/", Target: "~/.claude/hooks/"},
 				},
@@ -267,7 +267,7 @@ func defaultGlobalConfig() *GlobalConfig {
 				Cmd:     "codex",
 				Deps:    []string{"dnf install -y nodejs npm bubblewrap"},
 				Install: "npm install -g @openai/codex --prefix ~/.local",
-				Mode:    "api-key",
+				Mode:    "console",
 				Home: "/home/dev/.codex",
 				Copy: []CopyRule{
 					{File: "config.toml", Target: "~/.codex/config.toml"},

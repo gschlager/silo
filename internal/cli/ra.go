@@ -64,9 +64,9 @@ Examples:
 			}
 
 			// Sync files into the container dir and write out-of-home files.
-			agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
-			agents.ApplySet(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy, agentCfg.Set)
-			agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			agents.ApplySet(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy, agentCfg.Set)
+			agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 
 			// Build environment variables (host terminal env + agent-specific).
 			env := cfg.HostEnv()
@@ -97,8 +97,8 @@ Examples:
 			err = incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd))
 
 			// Sync files back (pick up token refreshes, setting changes).
-			agents.SyncOutOfHomeFromContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
-			agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			agents.SyncOutOfHomeFromContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 
 			return err
 		},

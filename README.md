@@ -207,6 +207,8 @@ Copy rules with `keys` sync only the listed top-level JSON keys, preserving ever
 | `silo ra claude` | Run a specific agent |
 | `silo ra claude "fix the tests"` | Run with an initial prompt |
 | `silo ra claude ./prompt.md` | Run with a prompt from a file |
+| `silo mode` | Show current mode for all agents |
+| `silo mode claude bedrock` | Switch agent to a different mode |
 
 ### Development workflow
 

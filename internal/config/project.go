@@ -42,7 +42,7 @@ type CredentialConfig struct {
 // AgentProjectConfig holds per-project agent settings.
 type AgentProjectConfig struct {
 	Enabled *bool             `yaml:"enabled"` // nil = use default (true)
-	Mode    string            `yaml:"mode"`    // "oauth", "bedrock", "api-key"
+	Mode    string            `yaml:"mode"`    // "claude", "console", "bedrock", "vertex", "foundry"
 	Env     map[string]string `yaml:"env"`
 }
 

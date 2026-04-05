@@ -119,9 +119,9 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 
 	// Sync files into the container dir and write out-of-home files.
 	agentCfg := cfg.Agents[agentName]
-	agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
-	agents.ApplySet(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy, agentCfg.Set)
-	agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+	agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+	agents.ApplySet(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy, agentCfg.Set)
+	agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 
 	// Build env and base command.
 	baseCmd := agentCfg.AgentCmd(agentName)
@@ -161,12 +161,12 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 			}
 
 			// Sync credentials back so the retry picks them up.
-			agents.SyncOutOfHomeFromContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
-			agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			agents.SyncOutOfHomeFromContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 			// Re-sync into container for the retry.
-			agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
-			agents.ApplySet(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy, agentCfg.Set)
-			agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			agents.ApplySet(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy, agentCfg.Set)
+			agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 
 			// Retry generation.
 			fmt.Println()
@@ -208,8 +208,8 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 	}
 
 	// Sync files back.
-	agents.SyncOutOfHomeFromContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
-	agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+	agents.SyncOutOfHomeFromContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+	agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 
 	// Final check.
 	if _, err := os.Stat(configPath); err == nil {
