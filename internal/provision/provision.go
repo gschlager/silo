@@ -87,6 +87,16 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		return err
 	}
 
+	// Clean up the container if provisioning fails.
+	success := false
+	defer func() {
+		if !success {
+			color.Warn("Provisioning failed. Removing container %s...", name)
+			incus.Stop(context.Background(), server, name)
+			incus.Delete(context.Background(), server, name)
+		}
+	}()
+
 	// Step 2: Wait for network.
 	status("Waiting for network...")
 	networkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -247,6 +257,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		color.Warn("could not create initial snapshot: %v", err)
 	}
 
+	success = true
 	status("Environment ready!")
 	return nil
 }
@@ -408,16 +419,22 @@ func setEnvironment(ctx context.Context, server incuscli.InstanceServer, contain
 
 func parsePortSpec(spec string) (containerPort, hostPort int, err error) {
 	parts := strings.SplitN(spec, ":", 2)
-	if len(parts) != 2 {
-		return 0, 0, fmt.Errorf("expected format container_port:host_port")
-	}
-	containerPort, err = strconv.Atoi(parts[0])
-	if err != nil {
-		return 0, 0, fmt.Errorf("invalid container port: %w", err)
-	}
-	hostPort, err = strconv.Atoi(parts[1])
-	if err != nil {
-		return 0, 0, fmt.Errorf("invalid host port: %w", err)
+	if len(parts) == 1 {
+		// Single port: use same port on both sides.
+		containerPort, err = strconv.Atoi(parts[0])
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid port: %w", err)
+		}
+		hostPort = containerPort
+	} else {
+		containerPort, err = strconv.Atoi(parts[0])
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid container port: %w", err)
+		}
+		hostPort, err = strconv.Atoi(parts[1])
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid host port: %w", err)
+		}
 	}
 	if containerPort < 1 || containerPort > 65535 {
 		return 0, 0, fmt.Errorf("container port %d out of range 1-65535", containerPort)

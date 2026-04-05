@@ -100,7 +100,7 @@ reset:
 update:
   - sudo dnf update -y
 
-# Port forwards (container_port:host_port)
+# Port forwards (container_port:host_port, or just port for same on both sides)
 # Ports can also be defined on daemons (see below).
 ports:
   - 5432:15432   # PostgreSQL
