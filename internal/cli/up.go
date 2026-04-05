@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"os"
-
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/gschlager/silo/internal/provision"
@@ -58,17 +56,6 @@ Subsequent: start the stopped container (~1 second).`,
 			color.Status("Starting %s...", name)
 			if err := incus.Start(ctx, server, name); err != nil {
 				return err
-			}
-
-			// Run docker compose on every start if configured.
-			if cfg.Compose != "" {
-				color.Status("Starting compose services...")
-				if err := incus.ExecStreaming(ctx, server, name,
-					incus.UserOpts(cfg.UserHome(), "/workspace"),
-					cfg.LoginCmd("cd /workspace && docker compose -f "+cfg.Compose+" up -d"),
-					os.Stdout, os.Stderr); err != nil {
-					color.Warn("compose up failed: %v", err)
-				}
 			}
 
 			color.Success("Environment ready!")

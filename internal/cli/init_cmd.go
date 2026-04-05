@@ -318,8 +318,7 @@ The file format (all fields are optional):
     sidekiq:
       cmd: bundle exec sidekiq
       autostart: false
-  docker: false             # Enable nested Docker
-  compose: ""               # Docker compose file to start on silo up
+  nesting: false            # Enable container nesting (Docker, Podman, etc.)
 
 Important rules:
 - setup commands run as the dev user. Use "sudo" for commands that need root (dnf, systemctl, etc.)

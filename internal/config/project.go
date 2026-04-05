@@ -22,8 +22,7 @@ type ProjectConfig struct {
 	Mounts  []string            `yaml:"mounts"`
 	Tools   map[string]ToolConfig `yaml:"tools"`
 	Daemons map[string]DaemonConfig `yaml:"daemons"`
-	Docker  bool                `yaml:"docker"`
-	Compose string              `yaml:"compose"`
+	Nesting bool                `yaml:"nesting"`
 }
 
 // GitConfig holds git settings and optional credential configuration.
@@ -181,11 +180,8 @@ func mergeProjectConfigs(base, local *ProjectConfig) *ProjectConfig {
 	if local.Daemons != nil {
 		m.Daemons = local.Daemons
 	}
-	if local.Docker {
-		m.Docker = local.Docker
-	}
-	if local.Compose != "" {
-		m.Compose = local.Compose
+	if local.Nesting {
+		m.Nesting = local.Nesting
 	}
 
 	return &m

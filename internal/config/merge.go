@@ -40,9 +40,8 @@ type MergedConfig struct {
 	// Daemons.
 	Daemons map[string]DaemonConfig
 
-	// Docker/Compose.
-	Docker  bool
-	Compose string
+	// Container nesting (required for Docker, Podman, etc.).
+	Nesting bool
 
 	// Global settings.
 	Shell         string
@@ -176,8 +175,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		m.Reset = project.Reset
 		m.Update = project.Update
 		m.Ports = project.Ports
-		m.Docker = project.Docker
-		m.Compose = project.Compose
+		m.Nesting = project.Nesting
 	}
 
 	// Env: project-level only.

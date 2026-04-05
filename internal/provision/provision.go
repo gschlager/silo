@@ -95,8 +95,8 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		return err
 	}
 
-	// Step 3: Docker nesting (must be set before services start).
-	if cfg.Docker {
+	// Step 3: Container nesting (required for Docker, Podman, etc.).
+	if cfg.Nesting {
 		status("Enabling container nesting...")
 		if err := incus.SetConfig(ctx, server, name, "security.nesting", "true"); err != nil {
 			return err

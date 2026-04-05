@@ -128,14 +128,15 @@ agents:
 #   codex:
 #     enabled: false
 
-# Enable nested Docker/Podman
-docker: false
-
-# Docker compose file to start on silo up
-compose: ""
+# Enable container nesting (Docker, Podman, etc.)
+nesting: false
 ```
 
 All fields are optional. Setup commands run as the `dev` user with a login shell — use `sudo` for commands that need root (dnf, systemctl, etc.).
+
+### Local overrides
+
+Create a `.silo.local.yml` alongside `.silo.yml` to override settings per machine without modifying the shared config. Non-zero values in the local file replace the base values. Add `.silo.local.yml` to your project's `.gitignore`.
 
 ## Global configuration
 
