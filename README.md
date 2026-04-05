@@ -263,6 +263,18 @@ Silo manages agent credentials in its own directory (`~/.config/silo/agents/<nam
 
 Files inside the agent home (e.g., `~/.claude/.credentials.json`) are handled via an Incus disk mount. Files outside the agent home (e.g., `~/.claude.json`) are synced into the container via exec.
 
+### Mode isolation
+
+Each agent mode (e.g., `claude`, `console`, `bedrock`) gets its own data directory. Switching modes keeps history, settings, and credentials fully isolated — data from your personal Claude plan won't leak into a Bedrock session and vice versa.
+
+```bash
+silo mode                       # show current mode for all agents
+silo mode claude bedrock        # switch claude to bedrock
+silo mode claude claude         # switch back to personal plan
+```
+
+The mode can also be set as a default in `.silo.yml` or `.silo.local.yml` via `agents.<name>.mode`. The `silo mode` command overrides this per project.
+
 **Directory structure**:
 
 ```
@@ -274,15 +286,20 @@ Files inside the agent home (e.g., `~/.claude/.credentials.json`) are handled vi
 │       └── settings.json
 └── containers/
     └── silo-myapp/
+        ├── mode.yml                        # mode overrides (from silo mode)
         └── agents/
             └── claude/
-                ├── home/                   # mounted as /home/dev/.claude/
-                │   ├── .credentials.json
-                │   ├── settings.json
-                │   ├── projects/           # per-project agent data
-                │   └── auto-memory/
-                └── files/                  # out-of-home files (exec-synced)
-                    └── claude.json         # → /home/dev/.claude.json
+                ├── claude/                 # data for "claude" mode
+                │   ├── home/              # mounted as /home/dev/.claude/
+                │   │   ├── .credentials.json
+                │   │   ├── settings.json
+                │   │   ├── projects/
+                │   │   └── auto-memory/
+                │   └── files/             # out-of-home files (exec-synced)
+                │       └── claude.json
+                └── bedrock/                # data for "bedrock" mode (isolated)
+                    ├── home/
+                    └── files/
 ```
 
 ## Building

@@ -24,7 +24,3 @@ update:
 
 env:
   GOFLAGS: ""
-
-agents:
-  claude:
-    mode: oauth
