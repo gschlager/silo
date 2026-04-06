@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"maps"
-	"os"
 	"slices"
 	"strings"
 
@@ -14,20 +13,30 @@ import (
 )
 
 func newRaCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "ra [agent] [prompt or file]",
+	cmd := &cobra.Command{
+		Use:   "ra [agent] [args...]",
 		Short: "Run an AI agent interactively inside the container",
 		Long: `Run an AI agent interactively inside the container.
 Copies agent-specific auth/config, then launches the agent with TTY attached.
 Without arguments, runs the default agent.
+Arguments after the agent name (or after --) are passed to the agent.
 
 Examples:
   silo ra
   silo ra claude
   silo ra claude "fix the failing tests"
-  silo ra claude ./prompt.md`,
-		Args: cobra.MaximumNArgs(2),
+  silo ra claude --resume
+  silo ra --resume                  (default agent with --resume)
+  silo ra claude --resume -p "fix"`,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// With DisableFlagParsing, handle --help manually.
+			for _, a := range args {
+				if a == "--help" || a == "-h" {
+					return cmd.Help()
+				}
+			}
+
 			ctx := cmd.Context()
 
 			cfg, err := loadConfig()
@@ -45,14 +54,16 @@ Examples:
 			}
 
 			agentName := cfg.ResolveDefaultAgent()
-			promptArgs := args
+			var extraArgs []string
 
 			// If first arg matches a configured agent, use it as agent name.
-			// Otherwise treat all args as prompt for the default agent.
+			// Otherwise treat all args as passthrough to the default agent.
 			if len(args) > 0 {
 				if _, ok := cfg.Agents[args[0]]; ok {
 					agentName = args[0]
-					promptArgs = args[1:]
+					extraArgs = args[1:]
+				} else {
+					extraArgs = args
 				}
 			}
 			if agentName == "" {
@@ -74,24 +85,11 @@ Examples:
 				env[k] = v
 			}
 
-			// Build the agent command.
-			baseCmd := agentCfg.AgentCmd(agentName)
-
-			// Handle prompt argument.
-			promptPart := ""
-			if len(promptArgs) > 0 {
-				prompt := promptArgs[0]
-				if info, err := os.Stat(prompt); err == nil && !info.IsDir() {
-					data, err := os.ReadFile(prompt)
-					if err != nil {
-						return fmt.Errorf("reading prompt file %q: %w", prompt, err)
-					}
-					prompt = string(data)
-				}
-				promptPart = " -p " + shellQuote([]string{prompt})
+			// Build the agent command with passthrough args.
+			shellCmd := "cd /workspace && " + agentCfg.AgentCmd(agentName)
+			if len(extraArgs) > 0 {
+				shellCmd += " " + shellQuote(extraArgs)
 			}
-
-			shellCmd := "cd /workspace && " + baseCmd + promptPart
 			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 			opts.Env = env
 			err = incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd))
@@ -103,6 +101,12 @@ Examples:
 			return err
 		},
 	}
+
+	// Allow flags like --resume to pass through to the agent instead of
+	// being parsed by cobra.
+	cmd.DisableFlagParsing = true
+
+	return cmd
 }
 
 func agentNames(cfg *config.MergedConfig) string {
