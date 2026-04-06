@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gschlager/silo/internal/incus"
@@ -59,6 +60,42 @@ func newStatusCmd() *cobra.Command {
 			fmt.Printf("%s %s\n", statusLabel.Render("User:"), cfg.User)
 			fmt.Printf("%s %s\n", statusLabel.Render("Shell:"), cfg.Shell)
 			fmt.Printf("%s %s\n", statusLabel.Render("Project:"), cfg.ProjectDir)
+
+			// Runtime info (only when running).
+			if inst.Status == "Running" {
+				if state, err := incus.GetInstanceState(server, name); err == nil {
+					// Memory.
+					if state.Memory.Usage > 0 {
+						fmt.Printf("%s %s\n", statusLabel.Render("Memory:"), formatBytes(state.Memory.Usage))
+					}
+
+					// Disk usage from storage volume.
+					if usage, err := incus.GetVolumeUsage(server, name); err == nil && usage > 0 {
+						fmt.Printf("%s %s\n", statusLabel.Render("Disk:"), formatBytes(usage))
+					}
+
+					// IP address.
+					if eth0, ok := state.Network["eth0"]; ok {
+						for _, addr := range eth0.Addresses {
+							if addr.Family == "inet" && addr.Scope == "global" {
+								fmt.Printf("%s %s\n", statusLabel.Render("IP:"), addr.Address)
+								break
+							}
+						}
+					}
+
+					// Uptime.
+					if state.Pid > 0 && !inst.LastUsedAt.IsZero() {
+						uptime := time.Since(inst.LastUsedAt).Truncate(time.Second)
+						fmt.Printf("%s %s\n", statusLabel.Render("Uptime:"), formatDuration(uptime))
+					}
+				}
+			}
+
+			// Snapshots.
+			if count := incus.SnapshotCount(server, name); count > 0 {
+				fmt.Printf("%s %d\n", statusLabel.Render("Snapshots:"), count)
+			}
 
 			// Port mappings.
 			if len(cfg.Ports) > 0 {
@@ -126,4 +163,32 @@ func newStatusCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func formatBytes(b int64) string {
+	const (
+		mib = 1024 * 1024
+		gib = 1024 * mib
+	)
+	switch {
+	case b >= gib:
+		return fmt.Sprintf("%.1f GiB", float64(b)/float64(gib))
+	case b >= mib:
+		return fmt.Sprintf("%.0f MiB", float64(b)/float64(mib))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
+}
+
+func formatDuration(d time.Duration) string {
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	minutes := int(d.Minutes()) % 60
+	if days > 0 {
+		return fmt.Sprintf("%dd %dh %dm", days, hours, minutes)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm", hours, minutes)
+	}
+	return fmt.Sprintf("%dm", minutes)
 }
