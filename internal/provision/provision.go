@@ -213,7 +213,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	// Step 13: Set environment variables.
 	if len(cfg.Env) > 0 {
 		status("Setting environment variables...")
-		if err := setEnvironment(ctx, server, name, cfg.User, cfg.Env); err != nil {
+		if err := setEnvironment(ctx, server, name, cfg.User, cfg.Shell, cfg.Env); err != nil {
 			return err
 		}
 	}
@@ -330,7 +330,7 @@ func setupTools(ctx context.Context, server incuscli.InstanceServer, container s
 
 		if envVar != "" {
 			env := map[string]string{envVar: token}
-			if err := setEnvironment(ctx, server, container, cfg.User, env); err != nil {
+			if err := setEnvironment(ctx, server, container, cfg.User, cfg.Shell, env); err != nil {
 				return fmt.Errorf("setting env for tool %q: %w", name, err)
 			}
 		}
@@ -374,7 +374,7 @@ func shellEscape(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-func setEnvironment(ctx context.Context, server incuscli.InstanceServer, container, username string, env map[string]string) error {
+func setEnvironment(ctx context.Context, server incuscli.InstanceServer, container, username, shell string, env map[string]string) error {
 	rootOpts := incus.ExecOpts{}
 
 	// Ensure directory exists (no user-controlled data in this command).
@@ -398,9 +398,13 @@ func setEnvironment(ctx context.Context, server incuscli.InstanceServer, contain
 		return fmt.Errorf("setting environment variables: %w", err)
 	}
 
-	// Also set in ~/.profile for login shell sessions.
-	// Use single-quoted values with proper escaping to prevent shell injection.
-	profilePath := fmt.Sprintf("/home/%s/.profile", username)
+	// Also set in the shell's login profile.
+	// zsh does not source ~/.profile — it uses ~/.zprofile instead.
+	profileFile := ".profile"
+	if shell == "zsh" {
+		profileFile = ".zprofile"
+	}
+	profilePath := fmt.Sprintf("/home/%s/%s", username, profileFile)
 	var profileLines []string
 	for k, v := range env {
 		profileLines = append(profileLines, fmt.Sprintf("export %s=%s", k, shellEscape(v)))

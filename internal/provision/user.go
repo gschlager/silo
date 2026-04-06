@@ -37,11 +37,16 @@ func CreateUser(ctx context.Context, server incuscli.InstanceServer, container, 
 		return fmt.Errorf("configuring sudo for %q: %w", username, err)
 	}
 
-	// Add ~/.local/bin to PATH in ~/.profile (sourced by all login shells).
+	// Add ~/.local/bin to PATH in the shell's login profile.
+	// zsh does not source ~/.profile — it uses ~/.zprofile instead.
 	pathLine := `export PATH="$HOME/.local/bin:$PATH"`
+	profileFile := ".profile"
+	if shell == "zsh" {
+		profileFile = ".zprofile"
+	}
 	userOpts := incus.ExecOpts{User: 1000, Home: "/home/" + username}
 	if _, err := incus.Exec(ctx, server, container, userOpts, []string{
-		"sh", "-c", fmt.Sprintf(`echo '%s' >> ~/.profile`, pathLine),
+		"sh", "-c", fmt.Sprintf(`echo '%s' >> ~/%s`, pathLine, profileFile),
 	}); err != nil {
 		return fmt.Errorf("setting PATH for %q: %w", username, err)
 	}
