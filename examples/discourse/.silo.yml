@@ -8,7 +8,7 @@ image: fedora/43
 
 setup:
   # Build dependencies (Ruby is compiled from source by mise)
-  - sudo dnf install -y gcc make openssl-devel libyaml-devel readline-devel
+  - sudo dnf install -y gcc gcc-c++ make openssl-devel libyaml-devel readline-devel
     zlib-ng-compat-devel rust
 
   # Dependencies for Ruby gems
@@ -34,19 +34,22 @@ setup:
   - sudo dnf install -y valkey
   - sudo systemctl enable --now valkey
 
-  # mise (manages Ruby via .ruby-version)
-  - curl https://mise.run | sh
-  - echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
-  - ~/.local/bin/mise install
-  - ~/.local/bin/mise exec -- gem install bundler
-  - ~/.local/bin/mise exec -- bundle config set --global jobs $(nproc)
+  # Ruby via mise (Discourse requires ~> 3.4)
+  - sudo dnf copr enable -y jdxcode/mise
+  - sudo dnf install -y mise
+  - echo 'eval "$(mise activate bash)"' >> ~/.profile
+  - echo 'eval "$(mise activate zsh)"' >> ~/.zprofile
+  - mise use -g ruby@3.4
+  - gem install bundler
+  - bundle config set --global jobs $(nproc)
 
   # Node.js and pnpm (version pinned by Discourse's packageManager field)
   - sudo dnf install -y nodejs
-  - sudo corepack enable
+  - sudo npm install -g corepack
+  - corepack enable
 
-  # Playwright (Chromium for system/JS tests)
-  - npx playwright install --with-deps chromium
+  # Playwright (Chromium for system tests)
+  - sudo dnf install -y chromium-headless
 
   # MailHog (local SMTP server for dev email)
   - mkdir -p ~/bin
@@ -55,8 +58,10 @@ setup:
 
   # App setup
   - bundle install
-  - pnpm install
+  - CI=true pnpm install
   - bin/rake db:create
+  - createdb discourse_test_multisite
+  - createdb discourse_profile
   - for db in discourse_development discourse_test discourse_test_multisite discourse_profile; do
       psql -d $db -c "CREATE EXTENSION IF NOT EXISTS hstore; CREATE EXTENSION IF NOT EXISTS vector;";
     done
@@ -66,7 +71,7 @@ setup:
 
 sync:
   - bundle install
-  - pnpm install
+  - CI=true pnpm install
   - bundle exec rake db:migrate
 
 reset:
@@ -74,7 +79,7 @@ reset:
     - rm -rf public/uploads/* tmp/* log/*
     - valkey-cli FLUSHALL
     - bundle install
-    - pnpm install
+    - CI=true pnpm install
     - bin/rake db:drop
     - bin/rake db:create
     - for db in discourse_development discourse_test discourse_test_multisite discourse_profile; do
@@ -91,6 +96,7 @@ env:
   RAILS_ENV: development
   RUBY_YJIT_ENABLE: "1"
   DISCOURSE_DEV_LOG_LEVEL: warn
+  PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: /usr/lib64/chromium-browser/headless_shell
 
 daemons:
   mailhog:
