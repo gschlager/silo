@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	incuscli "github.com/lxc/incus/v6/client"
 	"github.com/gschlager/silo/internal/color"
@@ -91,6 +92,28 @@ func SyncFromContainer(agentName, containerName, mode, agentHome, userHome strin
 			}
 		}
 	}
+}
+
+// StartPeriodicSync runs SyncOutOfHomeFromContainer and SyncFromContainer in
+// the background at the given interval so that token refreshes (including
+// out-of-home files like claude.json) are propagated to the global agent dir
+// while the agent is still running. Returns a stop function.
+func StartPeriodicSync(ctx context.Context, server incuscli.InstanceServer, interval time.Duration, container, agentName, containerName, mode, agentHome, userHome string, rules []config.CopyRule) func() {
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				SyncOutOfHomeFromContainer(ctx, server, container, agentName, containerName, mode, agentHome, userHome, rules)
+				SyncFromContainer(agentName, containerName, mode, agentHome, userHome, rules)
+			}
+		}
+	}()
+	return func() { close(done) }
 }
 
 // syncFile copies or merges a file. If keys is non-empty, only those

@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/gschlager/silo/internal/agents"
 	"github.com/gschlager/silo/internal/config"
@@ -90,9 +91,16 @@ Examples:
 			if len(extraArgs) > 0 {
 				shellCmd += " " + shellQuote(extraArgs)
 			}
+			// Periodically sync credentials back to the global agent dir so
+			// that other containers pick up token refreshes while this agent
+			// is still running.
+			stopSync := agents.StartPeriodicSync(ctx, server, 5*time.Minute, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+
 			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
 			opts.Env = env
 			err = incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd))
+
+			stopSync()
 
 			// Sync files back (pick up token refreshes, setting changes).
 			agents.SyncOutOfHomeFromContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
