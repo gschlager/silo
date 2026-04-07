@@ -78,7 +78,7 @@ Create a `.silo.yml` in your project root (or run `silo init` to generate one):
 image: fedora/43
 
 # Commands run once on first provisioning (as dev user with sudo).
-# Runs with a login shell so ~/.profile is sourced between commands.
+# Runs with a login shell so the shell profile is sourced between commands.
 setup:
   - sudo dnf install -y postgresql16-server redis ruby nodejs
   - sudo systemctl enable --now postgresql redis
@@ -174,7 +174,7 @@ agents:
         target: ~/.claude/.credentials.json
       - file: claude.json
         target: ~/.claude.json
-        keys: [oauthAccount, userID, hasCompletedOnboarding]
+        keys: [oauthAccount, userID, hasCompletedOnboarding, companion]
     set:
       ~/.claude.json:
         projects:
@@ -205,8 +205,9 @@ Copy rules with `keys` sync only the listed top-level JSON keys, preserving ever
 |---------|-------------|
 | `silo ra` | Run the default agent interactively |
 | `silo ra claude` | Run a specific agent |
-| `silo ra claude "fix the tests"` | Run with an initial prompt |
-| `silo ra claude ./prompt.md` | Run with a prompt from a file |
+| `silo ra claude "fix the tests"` | Run with a prompt |
+| `silo ra claude --resume` | Pass flags through to the agent |
+| `silo ra --resume` | Default agent with flags |
 | `silo mode` | Show current mode for all agents |
 | `silo mode claude bedrock` | Switch agent to a different mode |
 
