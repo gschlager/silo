@@ -69,11 +69,7 @@ func newStatusCmd() *cobra.Command {
 						fmt.Printf("%s %s\n", statusLabel.Render("Memory:"), formatBytes(state.Memory.Usage))
 					}
 
-					// Disk usage from storage volume.
-					if usage, err := incus.GetVolumeUsage(server, name); err == nil && usage > 0 {
-						fmt.Printf("%s %s\n", statusLabel.Render("Disk:"), formatBytes(usage))
-					}
-
+	
 					// IP address.
 					if eth0, ok := state.Network["eth0"]; ok {
 						for _, addr := range eth0.Addresses {

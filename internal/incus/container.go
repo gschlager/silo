@@ -215,33 +215,3 @@ func SnapshotCount(server incuscli.InstanceServer, name string) int {
 	return len(snaps)
 }
 
-// GetVolumeUsage returns the total disk usage (including snapshots) for a container's
-// storage volume. Returns -1 if the usage cannot be determined.
-func GetVolumeUsage(server incuscli.InstanceServer, name string) (int64, error) {
-	// Find which storage pool the container uses.
-	inst, _, err := server.GetInstance(name)
-	if err != nil {
-		return -1, err
-	}
-
-	pool := ""
-	for _, dev := range inst.ExpandedDevices {
-		if dev["type"] == "disk" && dev["path"] == "/" {
-			pool = dev["pool"]
-			break
-		}
-	}
-	if pool == "" {
-		return -1, fmt.Errorf("no root disk found")
-	}
-
-	state, err := server.GetStoragePoolVolumeState(pool, "container", name)
-	if err != nil {
-		return -1, err
-	}
-	if state == nil || state.Usage == nil {
-		return -1, fmt.Errorf("no usage data")
-	}
-
-	return int64(state.Usage.Used), nil
-}
