@@ -79,8 +79,8 @@ Examples:
 			agents.ApplySet(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy, agentCfg.Set)
 			agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 
-			// Build environment variables (host terminal env + agent-specific).
-			env := cfg.HostEnv()
+			// Build environment variables (host env + tool credentials + agent-specific).
+			env := sessionEnv(cfg)
 			for k, v := range agentCfg.Env {
 				env[k] = v
 			}

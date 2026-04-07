@@ -184,10 +184,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 10: Set up tools.
-	if err := setupTools(ctx, server, name, cfg); err != nil {
-		return err
-	}
+	// Step 10: Resolve tool credentials (passed at runtime, not baked in).
 
 	// Step 11: Install agents.
 	if len(cfg.Agents) > 0 {
@@ -307,35 +304,29 @@ func runCommands(ctx context.Context, server incuscli.InstanceServer, container 
 	return nil
 }
 
-func setupTools(ctx context.Context, server incuscli.InstanceServer, container string, cfg *config.MergedConfig) error {
-	for name, tool := range cfg.Tools {
+// ResolveToolEnv resolves tool credentials into environment variables.
+// Runs on the host — suitable for passing as env to exec sessions.
+func ResolveToolEnv(tools map[string]config.ToolConfig) map[string]string {
+	env := make(map[string]string)
+	for name, tool := range tools {
 		if tool.Credential == nil {
 			continue
 		}
-		status("Setting up tool %q...", name)
 
 		token, err := resolveCredential(tool.Credential)
 		if err != nil {
-			return fmt.Errorf("resolving credential for tool %q: %w", name, err)
+			color.Warn("could not resolve credential for tool %q: %v", name, err)
+			continue
 		}
 
-		// Set the appropriate environment variable based on tool name.
-		envVar := ""
 		switch name {
 		case "gh":
-			envVar = "GH_TOKEN"
+			env["GH_TOKEN"] = token
 		default:
-			envVar = strings.ToUpper(name) + "_TOKEN"
-		}
-
-		if envVar != "" {
-			env := map[string]string{envVar: token}
-			if err := setEnvironment(ctx, server, container, cfg.User, cfg.Shell, env); err != nil {
-				return fmt.Errorf("setting env for tool %q: %w", name, err)
-			}
+			env[strings.ToUpper(name)+"_TOKEN"] = token
 		}
 	}
-	return nil
+	return env
 }
 
 func configureTimezoneAndLocale(ctx context.Context, server incuscli.InstanceServer, container string) error {

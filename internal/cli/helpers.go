@@ -8,6 +8,7 @@ import (
 	incuscli "github.com/lxc/incus/v6/client"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	"github.com/gschlager/silo/internal/provision"
 	"github.com/spf13/cobra"
 )
 
@@ -66,6 +67,16 @@ func loadConfig() (*config.MergedConfig, error) {
 	}
 
 	return merged, nil
+}
+
+// sessionEnv returns environment variables for an interactive container session:
+// host terminal env (PassEnv), tool credentials, and project env.
+func sessionEnv(cfg *config.MergedConfig) map[string]string {
+	env := cfg.HostEnv()
+	for k, v := range provision.ResolveToolEnv(cfg.Tools) {
+		env[k] = v
+	}
+	return env
 }
 
 // requireRunning checks that the container exists and is running.

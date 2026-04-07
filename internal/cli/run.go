@@ -45,7 +45,7 @@ func newRunCmd() *cobra.Command {
 			loginCmd := cfg.LoginCmd("cd /workspace && " + shellCmd)
 
 			if term.IsTerminal(int(os.Stdin.Fd())) {
-				opts.Env = cfg.HostEnv()
+				opts.Env = sessionEnv(cfg)
 				return incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, loginCmd)
 			}
 
