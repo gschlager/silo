@@ -55,7 +55,7 @@ With --manual, runs a simple scaffolding wizard instead.`,
 				if err != nil {
 					return err
 				}
-				cfg := config.Merge(global, nil, cwd)
+				cfg := config.Merge(global, nil, nil, cwd)
 				agentName = cfg.ResolveDefaultAgent()
 				if agentName == "" {
 					return fmt.Errorf("no agents configured; use --agent to specify one")
@@ -82,7 +82,7 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 	}
 
 	// Build a minimal merged config for the temp container.
-	cfg := config.Merge(global, nil, cwd)
+	cfg := config.Merge(global, nil, nil, cwd)
 	cfg.ContainerName = "silo-init-" + randomSuffix()
 
 	server, err := incus.Connect()
@@ -250,10 +250,17 @@ func runInteractiveInit(cwd string) error {
 		var ref string
 		fmt.Scanln(&ref)
 		if ref != "" {
-			cfg.Git.Credential = &config.CredentialConfig{
-				Source: "1password",
-				Ref:    ref,
+			containerName := config.ContainerName(cwd)
+			containerCfg := &config.ContainerConfig{
+				GitCredential: &config.CredentialConfig{
+					Source: "1password",
+					Ref:    ref,
+				},
 			}
+			if err := config.SaveContainerConfig(containerName, containerCfg); err != nil {
+				return fmt.Errorf("saving container credentials: %w", err)
+			}
+			fmt.Printf("  Saved credential to %s\n", config.ContainerConfigPath(containerName))
 		}
 	}
 

@@ -142,9 +142,10 @@ func (m *MergedConfig) LoginCmd(cmd string) []string {
 	return []string{m.ShellPath(), "-lc", cmd}
 }
 
-// Merge combines global and project configs into a single resolved config.
+// Merge combines global, project, and container configs into a single resolved config.
 // projectDir is the absolute path to the project directory.
-func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *MergedConfig {
+// container may be nil if no per-container config exists.
+func Merge(global *GlobalConfig, project *ProjectConfig, container *ContainerConfig, projectDir string) *MergedConfig {
 	m := &MergedConfig{
 		ContainerName: ContainerName(projectDir),
 		ProjectDir:    projectDir,
@@ -201,7 +202,11 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 			}
 			m.Git[k] = v
 		}
-		m.GitCredential = project.Git.Credential
+	}
+
+	// Git credential: sourced from container config, not project config.
+	if container != nil {
+		m.GitCredential = container.GitCredential
 	}
 
 	// Agents: build from global (preserving order), project overrides per agent.
@@ -249,9 +254,9 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		}
 	}
 
-	// Tools: project-level only.
-	if project != nil {
-		m.Tools = project.Tools
+	// Tools: credentials come exclusively from container config.
+	if container != nil && container.Tools != nil {
+		m.Tools = container.Tools
 	}
 
 	// Daemons: project-level only. Collect daemon ports into Ports.

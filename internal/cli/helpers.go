@@ -52,7 +52,14 @@ func loadConfig() (*config.MergedConfig, error) {
 		return nil, err
 	}
 
-	merged := config.Merge(global, project, cwd)
+	// Load per-container secrets config.
+	containerName := config.ContainerName(cwd)
+	container, err := config.LoadContainerConfig(containerName)
+	if err != nil {
+		return nil, err
+	}
+
+	merged := config.Merge(global, project, container, cwd)
 
 	// Apply mode overrides from state file.
 	modes, err := config.LoadModeState(merged.ContainerName)
