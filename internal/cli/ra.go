@@ -5,8 +5,10 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/gschlager/silo/internal/agents"
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
@@ -72,6 +74,14 @@ Examples:
 			agentCfg, ok := cfg.Agents[agentName]
 			if !ok {
 				return fmt.Errorf("unknown agent %q (configured agents: %s)", agentName, agentNames(cfg))
+			}
+
+			// Take a pre-session snapshot for rollback, then clean up old ones.
+			snapName := "pre-session-" + time.Now().Format("20060102-150405")
+			if err := incus.CreateSnapshot(ctx, server, cfg.ContainerName, snapName); err != nil {
+				color.Warn("could not create pre-session snapshot: %v", err)
+			} else {
+				incus.CleanupSnapshots(ctx, server, cfg.ContainerName, "pre-session-", 3)
 			}
 
 			// Ensure the agent mode directory exists and is seeded.

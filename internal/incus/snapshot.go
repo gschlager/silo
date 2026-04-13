@@ -3,6 +3,8 @@ package incus
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	incuscli "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/shared/api"
@@ -77,6 +79,35 @@ func ListSnapshots(server incuscli.InstanceServer, container string) ([]Snapshot
 		})
 	}
 	return result, nil
+}
+
+// CleanupSnapshots deletes old snapshots whose names start with the given
+// prefix, keeping the most recent `keep` snapshots. Errors are silently
+// ignored (best-effort cleanup).
+func CleanupSnapshots(ctx context.Context, server incuscli.InstanceServer, container, prefix string, keep int) {
+	snapshots, err := server.GetInstanceSnapshots(container)
+	if err != nil {
+		return
+	}
+
+	var matching []api.InstanceSnapshot
+	for _, s := range snapshots {
+		if strings.HasPrefix(s.Name, prefix) {
+			matching = append(matching, s)
+		}
+	}
+
+	if len(matching) <= keep {
+		return
+	}
+
+	sort.Slice(matching, func(i, j int) bool {
+		return matching[i].CreatedAt.Before(matching[j].CreatedAt)
+	})
+
+	for _, s := range matching[:len(matching)-keep] {
+		DeleteSnapshot(ctx, server, container, s.Name)
+	}
 }
 
 // DeleteSnapshot removes a snapshot from a container.
