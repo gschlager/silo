@@ -39,10 +39,10 @@ func newRunCmd() *cobra.Command {
 				return err
 			}
 
-			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
+			opts := incus.UserOpts(cfg.UserHome(), cfg.WorkspacePath())
 
 			shellCmd := shellQuote(args)
-			loginCmd := cfg.LoginCmd("cd /workspace && " + shellCmd)
+			loginCmd := cfg.LoginCmd("cd " + cfg.WorkspacePath() + " && " + shellCmd)
 
 			if term.IsTerminal(int(os.Stdin.Fd())) {
 				opts.Env = sessionEnv(cfg)

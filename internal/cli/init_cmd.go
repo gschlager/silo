@@ -117,11 +117,9 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 		return err
 	}
 
-	// Sync files into the container dir and write out-of-home files.
+	// Ensure the agent mode directory exists and is seeded.
 	agentCfg := cfg.Agents[agentName]
-	agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
-	agents.ApplySet(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy, agentCfg.Set)
-	agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+	agents.EnsureModeDir(agentName, agentCfg.Mode, agentCfg.Links)
 
 	// Build env and base command.
 	baseCmd := agentCfg.AgentCmd(agentName)
@@ -129,7 +127,7 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 	for k, v := range agentCfg.Env {
 		env[k] = v
 	}
-	opts := incus.UserOpts(cfg.UserHome(), "/workspace")
+	opts := incus.UserOpts(cfg.UserHome(), cfg.WorkspacePath())
 	opts.Env = env
 
 	// Step 1: Run the agent non-interactively to generate a draft .silo.yml.
@@ -141,7 +139,7 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 		fmt.Println()
 		genCmd := baseCmd + " -p " + shellQuote([]string{prompt})
 		return incus.ExecStreaming(ctx, server, cfg.ContainerName, opts,
-			cfg.LoginCmd("cd /workspace && "+genCmd),
+			cfg.LoginCmd("cd "+cfg.WorkspacePath()+" && "+genCmd),
 			os.Stdout, os.Stderr)
 	}
 
@@ -156,17 +154,11 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 			fmt.Scanln()
 
 			if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
-				cfg.LoginCmd("cd /workspace && "+baseCmd)); err != nil {
+				cfg.LoginCmd("cd "+cfg.WorkspacePath()+" && "+baseCmd)); err != nil {
 				// Ignore — user exited after login.
 			}
 
-			// Sync credentials back so the retry picks them up.
-			agents.SyncOutOfHomeFromContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
-			agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
-			// Re-sync into container for the retry.
-			agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
-			agents.ApplySet(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy, agentCfg.Set)
-			agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			// Credentials are live-mounted, no sync needed.
 
 			// Retry generation.
 			fmt.Println()
@@ -199,17 +191,13 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 		if strings.HasPrefix(strings.ToLower(answer), "y") {
 			fmt.Println()
 			if err := incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
-				cfg.LoginCmd("cd /workspace && "+baseCmd)); err != nil {
+				cfg.LoginCmd("cd "+cfg.WorkspacePath()+" && "+baseCmd)); err != nil {
 				color.Warn("agent exited: %v", err)
 			}
 		}
 	} else {
 		color.Warn("No .silo.yml was generated.")
 	}
-
-	// Sync files back.
-	agents.SyncOutOfHomeFromContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
-	agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 
 	// Final check.
 	if _, err := os.Stat(configPath); err == nil {
@@ -287,10 +275,11 @@ func runInteractiveInit(cwd string) error {
 }
 
 func autoInitPrompt(cfg *config.MergedConfig) string {
-	prompt := `You are helping generate a .silo.yml configuration file for a project.
+	wsPath := cfg.WorkspacePath()
+	prompt := fmt.Sprintf(`You are helping generate a .silo.yml configuration file for a project.
 
 .silo.yml configures an isolated development environment using Incus system containers.
-Analyze the project in /workspace and generate a complete .silo.yml.
+Analyze the project in %s and generate a complete .silo.yml.`, wsPath) + `
 
 The file format (all fields are optional):
 
@@ -328,7 +317,7 @@ Important rules:
 - sync should be incremental (fast) — not a full rebuild
 - Look at the project files to determine: language, package manager, services needed, ports
 - Check for Dockerfile, docker-compose.yml, Gemfile, package.json, go.mod, requirements.txt, etc.
-- Write the file to /workspace/.silo.yml
+- Write the file to ` + wsPath + `/.silo.yml
 - Start the file with these comment lines:
   # silo project configuration
   # https://github.com/gschlager/silo#project-configuration

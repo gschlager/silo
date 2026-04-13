@@ -41,11 +41,11 @@ func newResetCmd() *cobra.Command {
 				return err
 			}
 
-			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
+			opts := incus.UserOpts(cfg.UserHome(), cfg.WorkspacePath())
 			for _, resetCmd := range commands {
 				color.Status("%s", resetCmd)
 				if err := incus.ExecStreaming(ctx, server, cfg.ContainerName, opts,
-					cfg.LoginCmd("cd /workspace && "+resetCmd),
+					cfg.LoginCmd("cd "+cfg.WorkspacePath()+" && "+resetCmd),
 					os.Stdout, os.Stderr); err != nil {
 					return fmt.Errorf("reset command %q: %w", resetCmd, err)
 				}

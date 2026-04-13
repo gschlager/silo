@@ -62,22 +62,8 @@ func newRmCmd() *cobra.Command {
 				return err
 			}
 
-			// Ask about agent data.
-			if len(cfg.Agents) > 0 {
-				deleteAgents := yes
-				if !yes {
-					fmt.Fprintf(os.Stderr, "Also delete agent data directories (sessions, memory)? [y/N] ")
-					reader := bufio.NewReader(os.Stdin)
-					answer, _ := reader.ReadString('\n')
-					deleteAgents = strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "y")
-				}
-				if deleteAgents {
-					if err := agents.CleanupContainerDirs(cfg.ContainerName); err != nil {
-						return err
-					}
-					fmt.Fprintln(os.Stderr, "Agent data removed.")
-				}
-			}
+			// Clean up per-container state (mode overrides, etc.).
+			agents.CleanupContainerDirs(cfg.ContainerName)
 
 			fmt.Fprintln(os.Stderr, "Done.")
 			return nil

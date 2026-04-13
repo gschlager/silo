@@ -34,7 +34,7 @@ func ProvisionMinimal(ctx context.Context, server incuscli.InstanceServer, cfg *
 
 	// Mount project directory.
 	status("Mounting project directory...")
-	if err := incus.AddDiskDevice(ctx, server, name, "workspace", cfg.ProjectDir, "/workspace", false); err != nil {
+	if err := incus.AddDiskDevice(ctx, server, name, "workspace", cfg.ProjectDir, cfg.WorkspacePath(), false); err != nil {
 		return err
 	}
 
@@ -65,7 +65,7 @@ func ProvisionMinimal(ctx context.Context, server incuscli.InstanceServer, cfg *
 	}
 
 	// Set up agent data directory.
-	if agentCfg.Home != "" {
+	if len(agentCfg.Links) > 0 {
 		status("Setting up agent directory...")
 		singleAgent := map[string]config.MergedAgentConfig{agentName: agentCfg}
 		if err := agents.SetupAgentDirs(ctx, server, name, cfg.ContainerName, singleAgent); err != nil {
@@ -128,7 +128,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 
 	// Step 4: Mount the project directory.
 	status("Mounting project directory...")
-	if err := incus.AddDiskDevice(ctx, server, name, "workspace", cfg.ProjectDir, "/workspace", false); err != nil {
+	if err := incus.AddDiskDevice(ctx, server, name, "workspace", cfg.ProjectDir, cfg.WorkspacePath(), false); err != nil {
 		return err
 	}
 
@@ -218,7 +218,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	// Step 14: Run project setup (as dev user with login shell).
 	if len(cfg.Setup) > 0 {
 		status("Running project setup...")
-		userOpts := incus.UserOpts("/home/"+cfg.User, "/workspace")
+		userOpts := incus.UserOpts("/home/"+cfg.User, cfg.WorkspacePath())
 		if err := runUserCommands(ctx, server, name, userOpts, cfg.Shell, cfg.Setup); err != nil {
 			return fmt.Errorf("setup failed: %w", err)
 		}
@@ -227,7 +227,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	// Step 15: Set up daemons.
 	if len(cfg.Daemons) > 0 {
 		status("Setting up daemons...")
-		if err := SetupDaemons(ctx, server, name, cfg.User, cfg.Daemons); err != nil {
+		if err := SetupDaemons(ctx, server, name, cfg.User, cfg.WorkspacePath(), cfg.Daemons); err != nil {
 			return err
 		}
 	}

@@ -5,7 +5,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/gschlager/silo/internal/agents"
 	"github.com/gschlager/silo/internal/config"
@@ -75,10 +74,8 @@ Examples:
 				return fmt.Errorf("unknown agent %q (configured agents: %s)", agentName, agentNames(cfg))
 			}
 
-			// Sync files into the container dir and write out-of-home files.
-			agents.SyncToContainer(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
-			agents.ApplySet(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy, agentCfg.Set)
-			agents.SyncOutOfHomeToContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
+			// Ensure the agent mode directory exists and is seeded.
+			agents.EnsureModeDir(agentName, agentCfg.Mode, agentCfg.Links)
 
 			// Build environment variables (host env + tool credentials + agent-specific).
 			env := sessionEnv(cfg)
@@ -87,26 +84,14 @@ Examples:
 			}
 
 			// Build the agent command with passthrough args.
-			shellCmd := "cd /workspace && " + agentCfg.AgentCmd(agentName)
+			shellCmd := "cd " + cfg.WorkspacePath() + " && " + agentCfg.AgentCmd(agentName)
 			if len(extraArgs) > 0 {
 				shellCmd += " " + shellQuote(extraArgs)
 			}
-			// Periodically sync credentials back to the global agent dir so
-			// that other containers pick up token refreshes while this agent
-			// is still running.
-			stopSync := agents.StartPeriodicSync(ctx, server, 5*time.Minute, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
 
-			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
+			opts := incus.UserOpts(cfg.UserHome(), cfg.WorkspacePath())
 			opts.Env = env
-			err = incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd))
-
-			stopSync()
-
-			// Sync files back (pick up token refreshes, setting changes).
-			agents.SyncOutOfHomeFromContainer(ctx, server, cfg.ContainerName, agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
-			agents.SyncFromContainer(agentName, cfg.ContainerName, agentCfg.Mode, agentCfg.Home, cfg.UserHome(), agentCfg.Copy)
-
-			return err
+			return incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd))
 		},
 	}
 

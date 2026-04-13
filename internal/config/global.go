@@ -42,16 +42,16 @@ type AgentGlobalConfig struct {
 	Deps    []string   `yaml:"deps"`
 	Install string     `yaml:"install"`
 	Mode    string     `yaml:"mode"`
-	Home    string                       `yaml:"home"`
-	Copy    []CopyRule                   `yaml:"copy"`
-	Set     map[string]map[string]any    `yaml:"set,omitempty"`
+	Links   []LinkRule                   `yaml:"links"`
 }
 
-// CopyRule defines how a file is synced between silo's agent directory and the container.
-type CopyRule struct {
-	File   string   `yaml:"file"`           // name in silo's agent dir
-	Target string   `yaml:"target"`         // path inside container (supports ~/)
-	Keys   []string `yaml:"keys,omitempty"` // for JSON files: only sync these top-level keys
+// LinkRule defines a file or directory in the agent mode directory and where
+// it should appear inside the container via symlink. The mode directory is
+// mounted at /run/silo/<agent>/ and symlinks point from the target path to
+// the corresponding source within the mount.
+type LinkRule struct {
+	Source string `yaml:"source"` // path relative to mode dir (e.g. ".claude/", ".claude.json")
+	Target string `yaml:"target"` // symlink path in container (supports ~/)
 }
 
 // agentOverride is used during config parsing to detect explicit enabled: false.
@@ -157,14 +157,8 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 				if ua.Mode != "" {
 					da.Mode = ua.Mode
 				}
-				if ua.Home != "" {
-					da.Home = ua.Home
-				}
-				if len(ua.Copy) > 0 {
-					da.Copy = ua.Copy
-				}
-				if len(ua.Set) > 0 {
-					da.Set = ua.Set
+				if len(ua.Links) > 0 {
+					da.Links = ua.Links
 				}
 				if ep, ok := enabledOverrides[ua.Name]; ok {
 					da.Enabled = *ep
@@ -243,22 +237,10 @@ func defaultGlobalConfig() *GlobalConfig {
 				Enabled: true,
 				Cmd:     "claude",
 				Install: "curl -fsSL https://claude.ai/install.sh | bash",
-				Mode:    "claude",
-				Home: "/home/dev/.claude",
-				Copy: []CopyRule{
-					{File: ".credentials.json", Target: "~/.claude/.credentials.json"},
-					{File: "claude.json", Target: "~/.claude.json", Keys: []string{"oauthAccount", "userID", "hasCompletedOnboarding", "companion"}},
-					{File: "settings.json", Target: "~/.claude/settings.json"},
-					{File: "hooks/", Target: "~/.claude/hooks/"},
-				},
-				Set: map[string]map[string]any{
-					"~/.claude.json": {
-						"projects": map[string]any{
-							"/workspace": map[string]any{
-								"hasTrustDialogAccepted": true,
-							},
-						},
-					},
+				Mode:    "oauth",
+				Links: []LinkRule{
+					{Source: ".claude/", Target: "~/.claude/"},
+					{Source: ".claude.json", Target: "~/.claude.json"},
 				},
 			},
 			{
@@ -268,9 +250,8 @@ func defaultGlobalConfig() *GlobalConfig {
 				Deps:    []string{"dnf install -y nodejs npm bubblewrap"},
 				Install: "npm install -g @openai/codex --prefix ~/.local",
 				Mode:    "console",
-				Home: "/home/dev/.codex",
-				Copy: []CopyRule{
-					{File: "config.toml", Target: "~/.codex/config.toml"},
+				Links: []LinkRule{
+					{Source: ".codex/", Target: "~/.codex/"},
 				},
 			},
 		},

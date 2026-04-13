@@ -10,7 +10,7 @@ import (
 func TestBuildUnitFile(t *testing.T) {
 	t.Run("simple daemon", func(t *testing.T) {
 		d := config.DaemonConfig{Cmd: "bin/rails server"}
-		unit := buildUnitFile("rails", d)
+		unit := buildUnitFile("rails", "/workspace/myapp", d)
 
 		assertContains(t, unit, "Description=silo daemon: rails")
 		assertContains(t, unit, "ExecStart=/bin/sh -c 'bin/rails server'")
@@ -20,7 +20,7 @@ func TestBuildUnitFile(t *testing.T) {
 
 	t.Run("daemon with dependency", func(t *testing.T) {
 		d := config.DaemonConfig{Cmd: "bin/ember-cli", After: "rails"}
-		unit := buildUnitFile("ember", d)
+		unit := buildUnitFile("ember", "/workspace/myapp", d)
 
 		assertContains(t, unit, "Description=silo daemon: ember")
 		assertContains(t, unit, "After=silo-rails.service")

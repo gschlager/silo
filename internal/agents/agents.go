@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	incuscli "github.com/lxc/incus/v6/client"
 	"github.com/gschlager/silo/internal/color"
@@ -15,243 +14,97 @@ import (
 	"github.com/gschlager/silo/internal/incus"
 )
 
-// GlobalDir returns the host-side shared agent directory.
-// e.g. ~/.config/silo/agents/claude/
-func GlobalDir(agent string) string {
-	return filepath.Join(config.GlobalConfigDir(), "agents", agent)
+// ModeDir returns the host-side shared directory for an agent mode.
+// e.g. ~/.config/silo/agents/claude/oauth/
+func ModeDir(agent, mode string) string {
+	return filepath.Join(config.GlobalConfigDir(), "agents", agent, mode)
 }
 
-// ContainerHomeDir returns the host-side directory that is mounted into the
-// container as the agent's home path. e.g. /home/dev/.claude/
-// Host: ~/.config/silo/containers/silo-myapp/agents/claude/claude/home/
-// The mode subdirectory isolates data between auth modes (claude, console, bedrock, etc.).
-func ContainerHomeDir(agent, containerName, mode string) string {
-	return filepath.Join(config.GlobalConfigDir(), "containers", containerName, "agents", agent, mode, "home")
-}
+// EnsureModeDir creates the mode directory if it doesn't exist and seeds it
+// with files from the host. Idempotent — does nothing if the dir already has content.
+func EnsureModeDir(agent, mode string, links []config.LinkRule) error {
+	modeDir := ModeDir(agent, mode)
 
-// ContainerFilesDir returns the host-side directory for files that target paths
-// outside the agent home. NOT mounted — synced via exec.
-// Host: ~/.config/silo/containers/silo-myapp/agents/claude/claude/files/
-func ContainerFilesDir(agent, containerName, mode string) string {
-	return filepath.Join(config.GlobalConfigDir(), "containers", containerName, "agents", agent, mode, "files")
-}
-
-// SyncToContainer copies files from the global agent dir into the container's
-// home/ or files/ subdirectory before launching an agent.
-// - In-home files go to containers/.../agents/claude/home/ (mounted)
-// - Out-of-home files go to containers/.../agents/claude/files/ (synced via exec)
-func SyncToContainer(agentName, containerName, mode, agentHome, userHome string, rules []config.CopyRule) {
-	globalDir := GlobalDir(agentName)
-	homeDir := ContainerHomeDir(agentName, containerName, mode)
-	filesDir := ContainerFilesDir(agentName, containerName, mode)
-
-	os.MkdirAll(globalDir, 0700)
-	os.MkdirAll(homeDir, 0700)
-	os.MkdirAll(filesDir, 0700)
-
-	for _, rule := range rules {
-		src := filepath.Join(globalDir, rule.File)
-
-		var dst string
-		if rel := rule.RelPath(agentHome, userHome); rel != "" {
-			dst = filepath.Join(homeDir, rel)
-		} else {
-			dst = filepath.Join(filesDir, rule.File)
-		}
-
-		if err := syncFile(src, dst, rule.Keys); err != nil {
-			if !os.IsNotExist(err) {
-				color.Warn("could not sync %q to container: %v", rule.File, err)
-			}
-		}
-	}
-}
-
-// SyncFromContainer copies files from the container's home/ and files/
-// subdirectories back to the global agent dir after an agent exits.
-func SyncFromContainer(agentName, containerName, mode, agentHome, userHome string, rules []config.CopyRule) {
-	globalDir := GlobalDir(agentName)
-	homeDir := ContainerHomeDir(agentName, containerName, mode)
-	filesDir := ContainerFilesDir(agentName, containerName, mode)
-
-	os.MkdirAll(globalDir, 0700)
-
-	for _, rule := range rules {
-		var src string
-		if rel := rule.RelPath(agentHome, userHome); rel != "" {
-			src = filepath.Join(homeDir, rel)
-		} else {
-			src = filepath.Join(filesDir, rule.File)
-		}
-
-		dst := filepath.Join(globalDir, rule.File)
-
-		if err := syncFile(src, dst, rule.Keys); err != nil {
-			if !os.IsNotExist(err) {
-				color.Warn("could not sync %q from container: %v", rule.File, err)
-			}
-		}
-	}
-}
-
-// StartPeriodicSync runs SyncOutOfHomeFromContainer and SyncFromContainer in
-// the background at the given interval so that token refreshes (including
-// out-of-home files like claude.json) are propagated to the global agent dir
-// while the agent is still running. Returns a stop function.
-func StartPeriodicSync(ctx context.Context, server incuscli.InstanceServer, interval time.Duration, container, agentName, containerName, mode, agentHome, userHome string, rules []config.CopyRule) func() {
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				SyncOutOfHomeFromContainer(ctx, server, container, agentName, containerName, mode, agentHome, userHome, rules)
-				SyncFromContainer(agentName, containerName, mode, agentHome, userHome, rules)
-			}
-		}
-	}()
-	return func() { close(done) }
-}
-
-// syncFile copies or merges a file. If keys is non-empty, only those
-// JSON keys are merged; otherwise the whole file/dir is copied.
-func syncFile(src, dst string, keys []string) error {
-	if len(keys) > 0 {
-		return mergeJSONKeys(src, dst, keys)
-	}
-	return copyPath(src, dst)
-}
-
-// ApplySet deep-merges the agent's set values into the appropriate files
-// in the container's home/ and files/ dirs. Must be called after SyncToContainer.
-func ApplySet(agentName, containerName, mode, agentHome, userHome string, rules []config.CopyRule, setValues map[string]map[string]any) {
-	if len(setValues) == 0 {
-		return
+	// Check if already populated (has any content beyond README).
+	if entries, err := os.ReadDir(modeDir); err == nil && hasNonREADME(entries) {
+		return nil
 	}
 
-	homeDir := ContainerHomeDir(agentName, containerName, mode)
-	filesDir := ContainerFilesDir(agentName, containerName, mode)
+	if err := os.MkdirAll(modeDir, 0700); err != nil {
+		return fmt.Errorf("creating mode dir for %s/%s: %w", agent, mode, err)
+	}
 
-	for target, values := range setValues {
-		// Find the matching copy rule to determine if this is in-home or out-of-home.
-		resolved := target
-		if strings.HasPrefix(target, "~/") {
-			resolved = filepath.Join("/home", "dev", target[2:]) // approximate
-		}
+	// Write a README so the directory doesn't look empty (hidden files).
+	writeREADME(modeDir, agent, mode)
 
-		var filePath string
-		for _, rule := range rules {
-			if rule.Target == target {
-				if rel := rule.RelPath(agentHome, userHome); rel != "" {
-					filePath = filepath.Join(homeDir, rel)
-				} else {
-					filePath = filepath.Join(filesDir, rule.File)
+	// Seed from host: for each link rule, copy from the host path if source doesn't exist.
+	hostHome, _ := os.UserHomeDir()
+	if hostHome != "" {
+		for _, link := range links {
+			src := link.ResolveTarget(hostHome)
+			dst := filepath.Join(modeDir, link.Source)
+
+			if err := copyPath(src, dst); err != nil {
+				if !os.IsNotExist(err) {
+					color.Warn("could not seed %q from host: %v", link.Source, err)
 				}
-				break
 			}
 		}
-
-		if filePath == "" {
-			// No matching copy rule — write directly to files dir using sanitized target.
-			sanitized := strings.ReplaceAll(strings.TrimPrefix(resolved, "/"), "/", "-")
-			filePath = filepath.Join(filesDir, sanitized)
-		}
-
-		if err := deepMergeJSONFile(filePath, values); err != nil {
-			color.Warn("could not apply set values to %q: %v", target, err)
-		}
 	}
+
+	return nil
 }
 
-// SyncOutOfHomeToContainer writes files whose target is outside the agent home
-// directory into the running container via exec. Must be called after the
-// container is running and SetupAgentDirs has mounted the agent home.
-func SyncOutOfHomeToContainer(ctx context.Context, server incuscli.InstanceServer, container, agentName, containerName, mode, agentHome, userHome string, rules []config.CopyRule) {
-	filesDir := ContainerFilesDir(agentName, containerName, mode)
+// SetupAgentDirs mounts agent mode directories into the container and creates
+// symlinks from where agents expect their config files.
+func SetupAgentDirs(ctx context.Context, server incuscli.InstanceServer, container, containerName string, agents map[string]config.MergedAgentConfig) error {
+	userHome := "/home/dev"
 
-	for _, rule := range rules {
-		if rule.IsInsideHome(agentHome, userHome) {
+	for name, agent := range agents {
+		if !agent.Enabled || len(agent.Links) == 0 {
 			continue
 		}
 
-		target := rule.ResolveTarget(userHome)
-		src := filepath.Join(filesDir, rule.File)
-
-		// Read the full file from the container's files dir. This has
-		// all the runtime data from the previous session.
-		data, err := os.ReadFile(src)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				color.Warn("could not read %q for container: %v", rule.File, err)
-			}
-			continue
+		modeDir := ModeDir(name, agent.Mode)
+		if err := os.MkdirAll(modeDir, 0700); err != nil {
+			return fmt.Errorf("creating mode dir for %q: %w", name, err)
 		}
 
-		// Create parent dir and write file inside container.
-		parentDir := filepath.Dir(target)
-		incus.Exec(ctx, server, container, incus.ExecOpts{}, []string{
-			"mkdir", "-p", parentDir,
-		})
-		if _, err := incus.ExecWithStdin(ctx, server, container, incus.ExecOpts{}, []string{
-			"tee", target,
-		}, data); err != nil {
-			color.Warn("could not write %q in container: %v", target, err)
-			continue
-		}
-		// Fix ownership.
-		incus.Exec(ctx, server, container, incus.ExecOpts{}, []string{
-			"chown", "1000:1000", target,
-		})
-	}
-}
-
-// SyncOutOfHomeFromContainer reads files whose target is outside the agent home
-// directory from the running container and saves them to the container dir.
-func SyncOutOfHomeFromContainer(ctx context.Context, server incuscli.InstanceServer, container, agentName, containerName, mode, agentHome, userHome string, rules []config.CopyRule) {
-	filesDir := ContainerFilesDir(agentName, containerName, mode)
-
-	for _, rule := range rules {
-		if rule.IsInsideHome(agentHome, userHome) {
-			continue
+		// Mount the entire mode dir at /run/silo/<agent>/.
+		mountPath := fmt.Sprintf("/run/silo/%s", name)
+		deviceName := fmt.Sprintf("agent-%s", name)
+		if err := incus.AddDiskDevice(ctx, server, container, deviceName, modeDir, mountPath, false); err != nil {
+			return fmt.Errorf("mounting mode dir for %q: %w", name, err)
 		}
 
-		target := rule.ResolveTarget(userHome)
-		dst := filepath.Join(filesDir, rule.File)
+		// Create symlinks inside the container for each link rule.
+		for _, link := range agent.Links {
+			target := link.ResolveTarget(userHome)
+			symlinkSrc := fmt.Sprintf("%s/%s", mountPath, link.Source)
 
-		// Read file from container.
-		content, err := incus.Exec(ctx, server, container, incus.ExecOpts{}, []string{
-			"cat", target,
-		})
-		if err != nil {
-			// File might not exist yet (first run).
-			continue
-		}
+			// Remove trailing slash for symlink creation.
+			target = strings.TrimRight(target, "/")
+			symlinkSrc = strings.TrimRight(symlinkSrc, "/")
 
-		if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
-			color.Warn("could not create dir for %q: %v", rule.File, err)
-			continue
-		}
-
-		if len(rule.Keys) > 0 {
-			// Write the full content first, then merge keys into the global file.
-			if err := os.WriteFile(dst, []byte(content), 0600); err != nil {
-				color.Warn("could not write %q: %v", rule.File, err)
-			}
-		} else {
-			if err := os.WriteFile(dst, []byte(content), 0600); err != nil {
-				color.Warn("could not write %q: %v", rule.File, err)
-			}
+			// Ensure parent dir exists, remove any existing file/dir, create symlink.
+			parentDir := filepath.Dir(target)
+			incus.Exec(ctx, server, container, incus.ExecOpts{}, []string{
+				"sh", "-c", fmt.Sprintf("mkdir -p %s && rm -rf %s && ln -sf %s %s",
+					parentDir, target, symlinkSrc, target),
+			})
+			// Fix symlink ownership.
+			incus.Exec(ctx, server, container, incus.ExecOpts{}, []string{
+				"chown", "-h", "1000:1000", target,
+			})
 		}
 	}
+	return nil
 }
 
 // InstallAgents runs deps and install commands for each enabled agent.
 func InstallAgents(ctx context.Context, server incuscli.InstanceServer, container, username, shell string, agents map[string]config.MergedAgentConfig, verbose bool) error {
 	rootOpts := incus.ExecOpts{}
-	userOpts := incus.UserOpts("/home/"+username, "/workspace")
+	userOpts := incus.UserOpts("/home/"+username, "/home/"+username)
 	for name, agent := range agents {
 		if !agent.Enabled || agent.Install == "" {
 			continue
@@ -272,27 +125,6 @@ func InstallAgents(ctx context.Context, server incuscli.InstanceServer, containe
 	return nil
 }
 
-// SetupAgentDirs creates per-container agent directories on the host and
-// adds Incus disk devices to mount them into the container.
-func SetupAgentDirs(ctx context.Context, server incuscli.InstanceServer, container, containerName string, agents map[string]config.MergedAgentConfig) error {
-	for name, agent := range agents {
-		if !agent.Enabled || agent.Home == "" {
-			continue
-		}
-
-		homeDir := ContainerHomeDir(name, containerName, agent.Mode)
-		if err := os.MkdirAll(homeDir, 0700); err != nil {
-			return fmt.Errorf("creating agent home dir for %q: %w", name, err)
-		}
-
-		deviceName := fmt.Sprintf("agent-%s", name)
-		if err := incus.AddDiskDevice(ctx, server, container, deviceName, homeDir, agent.Home, false); err != nil {
-			return fmt.Errorf("mounting agent home dir for %q: %w", name, err)
-		}
-	}
-	return nil
-}
-
 // CleanupContainerDirs removes the host-side per-container data directory.
 func CleanupContainerDirs(containerName string) error {
 	containerBase := filepath.Join(config.GlobalConfigDir(), "containers", containerName)
@@ -306,6 +138,26 @@ func execCmd(ctx context.Context, server incuscli.InstanceServer, container stri
 	}
 	_, err := incus.Exec(ctx, server, container, opts, command)
 	return err
+}
+
+func hasNonREADME(entries []os.DirEntry) bool {
+	for _, e := range entries {
+		if e.Name() != "README" {
+			return true
+		}
+	}
+	return false
+}
+
+func writeREADME(modeDir, agent, mode string) {
+	content := fmt.Sprintf(`This directory contains %s configuration for the %q authentication mode.
+It is shared across all silo containers using this mode.
+
+Files here are mounted into containers at /run/silo/%s/ and symlinked
+into the home directory. Changes made by the agent inside any container
+are immediately visible to all containers sharing this mode.
+`, agent, mode, agent)
+	os.WriteFile(filepath.Join(modeDir, "README"), []byte(content), 0644)
 }
 
 // copyPath copies a file or directory from src to dst, creating parent dirs.
@@ -361,3 +213,4 @@ func copyFile(src, dst string) error {
 	srcInfo, _ := os.Stat(src)
 	return os.Chmod(dst, srcInfo.Mode())
 }
+

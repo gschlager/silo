@@ -35,11 +35,11 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			opts := incus.UserOpts(cfg.UserHome(), "/workspace")
+			opts := incus.UserOpts(cfg.UserHome(), cfg.WorkspacePath())
 			for _, updateCmd := range cfg.Update {
 				color.Status("%s", updateCmd)
 				if err := incus.ExecStreaming(ctx, server, cfg.ContainerName, opts,
-					cfg.LoginCmd("cd /workspace && "+updateCmd),
+					cfg.LoginCmd("cd "+cfg.WorkspacePath()+" && "+updateCmd),
 					os.Stdout, os.Stderr); err != nil {
 					return fmt.Errorf("update command %q: %w", updateCmd, err)
 				}

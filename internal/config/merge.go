@@ -57,41 +57,17 @@ type MergedAgentConfig struct {
 	Deps    []string
 	Install string
 	Mode    string
-	Home    string
-	Copy    []CopyRule
-	Set     map[string]map[string]any
+	Links   []LinkRule
 	Env     map[string]string
 	Enabled bool
 }
 
 // ResolveTarget expands ~/ in the target path to the user home directory.
-func (r CopyRule) ResolveTarget(userHome string) string {
+func (r LinkRule) ResolveTarget(userHome string) string {
 	if strings.HasPrefix(r.Target, "~/") {
 		return filepath.Join(userHome, r.Target[2:])
 	}
 	return r.Target
-}
-
-// IsInsideHome returns true if the target resolves to a path under the agent home.
-func (r CopyRule) IsInsideHome(agentHome, userHome string) bool {
-	resolved := r.ResolveTarget(userHome)
-	return strings.HasPrefix(resolved, agentHome+"/") || resolved == agentHome
-}
-
-// RelPath returns the path within the agent home where this file should be
-// placed. Returns empty string if the target is outside agent home.
-func (r CopyRule) RelPath(agentHome, userHome string) string {
-	resolved := r.ResolveTarget(userHome)
-	rel, err := filepath.Rel(agentHome, resolved)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return ""
-	}
-	return rel
-}
-
-// IsDir returns true if this rule refers to a directory.
-func (r CopyRule) IsDir() bool {
-	return strings.HasSuffix(r.File, "/")
 }
 
 // AgentCmd returns the launch command for an agent. If Cmd is set, it's
@@ -140,6 +116,13 @@ func (m *MergedConfig) ShellPath() string {
 // LoginCmd returns a login shell command that executes the given command string.
 func (m *MergedConfig) LoginCmd(cmd string) []string {
 	return []string{m.ShellPath(), "-lc", cmd}
+}
+
+// WorkspacePath returns the container-side workspace path for this project.
+// Each project gets its own subdirectory under /workspace/ to avoid config
+// collisions in agents that key settings by workspace path.
+func (m *MergedConfig) WorkspacePath() string {
+	return "/workspace/" + filepath.Base(m.ProjectDir)
 }
 
 // Merge combines global and project configs into a single resolved config.
@@ -215,9 +198,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 			Deps:    ga.Deps,
 			Install: ga.Install,
 			Mode:    ga.Mode,
-			Home:    ga.Home,
-			Copy:    ga.Copy,
-			Set:     ga.Set,
+			Links:   ga.Links,
 			Enabled: true,
 		}
 	}
@@ -231,14 +212,12 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 			if pa.Enabled != nil {
 				merged.Enabled = *pa.Enabled
 			}
-			// Keep deps, install, home and seed from global if this agent exists there.
+			// Keep deps, install, links and set from global if this agent exists there.
 			if ga, ok := globalAgents[name]; ok {
 				merged.Cmd = ga.Cmd
 				merged.Deps = ga.Deps
 				merged.Install = ga.Install
-				merged.Home = ga.Home
-				merged.Copy = ga.Copy
-				merged.Set = ga.Set
+				merged.Links = ga.Links
 			}
 			if merged.Mode == "" {
 				if ga, ok := globalAgents[name]; ok {
