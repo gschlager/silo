@@ -47,10 +47,8 @@ With a daemon name, restarts that specific daemon.`,
 				return fmt.Errorf("unknown daemon %q", daemon)
 			}
 
-			_, err = incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{}, []string{
-				"su", "-", cfg.User, "-c",
-				fmt.Sprintf("systemctl --user restart silo-%s", daemon),
-			})
+			_, err = incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{},
+				systemctlUser(cfg.User, "restart", "silo-"+daemon))
 			return err
 		},
 	}

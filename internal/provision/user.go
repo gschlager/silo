@@ -51,12 +51,15 @@ func CreateUser(ctx context.Context, server incuscli.InstanceServer, container, 
 		return fmt.Errorf("setting PATH for %q: %w", username, err)
 	}
 
-	// Enable systemd user linger so user services start at boot.
-	if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
+	// Enable systemd user linger so user services start at boot, then
+	// start the user session explicitly. loginctl enable-linger creates
+	// the marker but user@.service may not start until the next boot.
+	incus.Exec(ctx, server, container, rootOpts, []string{
 		"loginctl", "enable-linger", username,
-	}); err != nil {
-		return fmt.Errorf("enabling linger for %q: %w", username, err)
-	}
+	})
+	incus.Exec(ctx, server, container, rootOpts, []string{
+		"systemctl", "start", "user@1000.service",
+	})
 
 	return nil
 }

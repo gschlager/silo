@@ -3,6 +3,7 @@ package provision
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	incuscli "github.com/lxc/incus/v6/client"
 	"github.com/gschlager/silo/internal/config"
@@ -40,25 +41,33 @@ chown %s:%s %s`, unitPath, unitContent, username, username, unitPath),
 			return fmt.Errorf("writing unit file for daemon %q: %w", name, err)
 		}
 
-		// Reload systemd user daemon.
-		if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
-			"su", "-", username, "-c", "systemctl --user daemon-reload",
-		}); err != nil {
+		// Reload systemd user daemon. XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS
+		// must be set explicitly because su - doesn't provide them.
+		if _, err := incus.Exec(ctx, server, container, rootOpts,
+			systemctlUserCmd(username, "daemon-reload")); err != nil {
 			return fmt.Errorf("reloading systemd for daemon %q: %w", name, err)
 		}
 
 		// Enable autostart daemons.
 		if daemon.Autostart {
-			if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
-				"su", "-", username, "-c",
-				fmt.Sprintf("systemctl --user enable %s.service", serviceName),
-			}); err != nil {
+			if _, err := incus.Exec(ctx, server, container, rootOpts,
+				systemctlUserCmd(username, "enable", serviceName+".service")); err != nil {
 				return fmt.Errorf("enabling daemon %q: %w", name, err)
 			}
 		}
 	}
 
 	return nil
+}
+
+// systemctlUserCmd returns exec args for running a systemctl --user command
+// with the required XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS env vars.
+func systemctlUserCmd(username string, args ...string) []string {
+	cmd := fmt.Sprintf(
+		"XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus systemctl --user %s",
+		fmt.Sprintf("%s", strings.Join(args, " ")),
+	)
+	return []string{"su", "-", username, "-c", cmd}
 }
 
 func buildUnitFile(name, workspacePath string, daemon config.DaemonConfig) string {
