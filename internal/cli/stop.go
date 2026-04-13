@@ -34,10 +34,8 @@ func newStopCmd() *cobra.Command {
 				return fmt.Errorf("unknown daemon %q", daemon)
 			}
 
-			_, err = incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{}, []string{
-				"su", "-", cfg.User, "-c",
-				fmt.Sprintf("systemctl --user stop silo-%s", daemon),
-			})
+			_, err = incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{},
+				systemctlUser(cfg.User, "stop", "silo-"+daemon))
 			return err
 		},
 	}

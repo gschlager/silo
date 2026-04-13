@@ -79,6 +79,17 @@ func sessionEnv(cfg *config.MergedConfig) map[string]string {
 	return env
 }
 
+// systemctlUser returns exec args for running a systemctl --user command
+// inside the container. Sets XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS
+// which are required for the user session bus but not set by su -.
+func systemctlUser(username string, systemctlArgs ...string) []string {
+	cmd := fmt.Sprintf(
+		"XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus systemctl --user %s",
+		strings.Join(systemctlArgs, " "),
+	)
+	return []string{"su", "-", username, "-c", cmd}
+}
+
 // requireRunning checks that the container exists and is running.
 func requireRunning(server incuscli.InstanceServer, name string) error {
 	if !incus.Exists(server, name) {

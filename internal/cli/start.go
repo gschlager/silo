@@ -34,10 +34,8 @@ func newStartCmd() *cobra.Command {
 				return fmt.Errorf("unknown daemon %q", daemon)
 			}
 
-			_, err = incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{}, []string{
-				"su", "-", cfg.User, "-c",
-				fmt.Sprintf("systemctl --user start silo-%s", daemon),
-			})
+			_, err = incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{},
+				systemctlUser(cfg.User, "start", "silo-"+daemon))
 			return err
 		},
 	}

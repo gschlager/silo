@@ -425,25 +425,20 @@ assert_output_not_contains "silo snapshot list after rm" "test-snap" \
 
 section "Daemons"
 
-# Note: systemd user linger may not work in CI (e.g. "Failed to connect to bus").
-# If start fails, skip the dependent stop/restart tests.
-DAEMONS_WORK=false
-if output=$("$SILO" start httpd 2>&1); then
-  pass "silo start httpd"
-  DAEMONS_WORK=true
-  sleep 2
+assert_exit_0 "silo start httpd" \
+  "$SILO" start httpd
 
-  assert_exit_0 "silo stop httpd" \
-    "$SILO" stop httpd
+# Give the daemon a moment to start.
+sleep 2
 
-  assert_exit_0 "silo restart httpd" \
-    "$SILO" restart httpd
+assert_exit_0 "silo stop httpd" \
+  "$SILO" stop httpd
 
-  assert_exit_0 "silo stop httpd (cleanup)" \
-    "$SILO" stop httpd
-else
-  echo "  SKIP: daemon start/stop/restart (systemd user session not available)"
-fi
+assert_exit_0 "silo restart httpd" \
+  "$SILO" restart httpd
+
+assert_exit_0 "silo stop httpd (cleanup)" \
+  "$SILO" stop httpd
 
 assert_exit_nonzero "silo start unknown daemon" \
   "$SILO" start nonexistent
