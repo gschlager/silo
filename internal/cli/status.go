@@ -11,11 +11,11 @@ import (
 )
 
 var (
-	statusLabel = lipgloss.NewStyle().Bold(true).Width(12)
+	statusLabel   = lipgloss.NewStyle().Bold(true).Width(12)
 	statusSection = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3")) // yellow
-	statusGreen = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	statusRed   = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	statusDim   = lipgloss.NewStyle().Faint(true)
+	statusGreen   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	statusRed     = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	statusDim     = lipgloss.NewStyle().Faint(true)
 )
 
 func newStatusCmd() *cobra.Command {
@@ -37,22 +37,16 @@ func newStatusCmd() *cobra.Command {
 			}
 
 			name := cfg.ContainerName
+			exists := incus.Exists(server, name)
+			running := exists && incus.IsRunning(server, name)
 
-			if !incus.Exists(server, name) {
-				fmt.Printf("%s %s\n", statusLabel.Render("Container:"), name)
-				fmt.Printf("%s %s\n", statusLabel.Render("Status:"), statusDim.Render("not created"))
-				return nil
-			}
-
-			inst, err := incus.GetInstance(server, name)
-			if err != nil {
-				return err
-			}
-
-			// Container info.
-			containerStatus := statusRed.Render(inst.Status)
-			if inst.Status == "Running" {
-				containerStatus = statusGreen.Render(inst.Status)
+			// Container info — always shown.
+			containerStatus := statusDim.Render("not created")
+			if exists {
+				containerStatus = statusRed.Render("Stopped")
+				if running {
+					containerStatus = statusGreen.Render("Running")
+				}
 			}
 			fmt.Printf("%s %s\n", statusLabel.Render("Container:"), name)
 			fmt.Printf("%s %s\n", statusLabel.Render("Status:"), containerStatus)
@@ -62,38 +56,38 @@ func newStatusCmd() *cobra.Command {
 			fmt.Printf("%s %s\n", statusLabel.Render("Project:"), cfg.ProjectDir)
 
 			// Runtime info (only when running).
-			if inst.Status == "Running" {
-				if state, err := incus.GetInstanceState(server, name); err == nil {
-					// Memory.
-					if state.Memory.Usage > 0 {
-						fmt.Printf("%s %s\n", statusLabel.Render("Memory:"), formatBytes(state.Memory.Usage))
-					}
+			if running {
+				if inst, err := incus.GetInstance(server, name); err == nil {
+					if state, err := incus.GetInstanceState(server, name); err == nil {
+						if state.Memory.Usage > 0 {
+							fmt.Printf("%s %s\n", statusLabel.Render("Memory:"), formatBytes(state.Memory.Usage))
+						}
 
-	
-					// IP address.
-					if eth0, ok := state.Network["eth0"]; ok {
-						for _, addr := range eth0.Addresses {
-							if addr.Family == "inet" && addr.Scope == "global" {
-								fmt.Printf("%s %s\n", statusLabel.Render("IP:"), addr.Address)
-								break
+						if eth0, ok := state.Network["eth0"]; ok {
+							for _, addr := range eth0.Addresses {
+								if addr.Family == "inet" && addr.Scope == "global" {
+									fmt.Printf("%s %s\n", statusLabel.Render("IP:"), addr.Address)
+									break
+								}
 							}
 						}
-					}
 
-					// Uptime.
-					if state.Pid > 0 && !inst.LastUsedAt.IsZero() {
-						uptime := time.Since(inst.LastUsedAt).Truncate(time.Second)
-						fmt.Printf("%s %s\n", statusLabel.Render("Uptime:"), formatDuration(uptime))
+						if state.Pid > 0 && !inst.LastUsedAt.IsZero() {
+							uptime := time.Since(inst.LastUsedAt).Truncate(time.Second)
+							fmt.Printf("%s %s\n", statusLabel.Render("Uptime:"), formatDuration(uptime))
+						}
 					}
 				}
 			}
 
 			// Snapshots.
-			if count := incus.SnapshotCount(server, name); count > 0 {
-				fmt.Printf("%s %d\n", statusLabel.Render("Snapshots:"), count)
+			if exists {
+				if count := incus.SnapshotCount(server, name); count > 0 {
+					fmt.Printf("%s %d\n", statusLabel.Render("Snapshots:"), count)
+				}
 			}
 
-			// Port mappings.
+			// Port mappings — from config.
 			if len(cfg.Ports) > 0 {
 				fmt.Printf("\n%s\n", statusSection.Render("Ports"))
 				for _, p := range cfg.Ports {
@@ -106,10 +100,14 @@ func newStatusCmd() *cobra.Command {
 				}
 			}
 
-			// Agents.
+			// Agents — from config.
 			if len(cfg.Agents) > 0 {
 				fmt.Printf("\n%s\n", statusSection.Render("Agents"))
-				for agentName, agent := range cfg.Agents {
+				for _, agentName := range cfg.AgentOrder {
+					agent, ok := cfg.Agents[agentName]
+					if !ok {
+						continue
+					}
 					mode := statusDim.Render(agent.Mode)
 					state := statusGreen.Render("enabled")
 					if !agent.Enabled {
@@ -119,12 +117,12 @@ func newStatusCmd() *cobra.Command {
 				}
 			}
 
-			// Daemons.
+			// Daemons — from config, with live status when running.
 			if len(cfg.Daemons) > 0 {
 				fmt.Printf("\n%s\n", statusSection.Render("Daemons"))
 				for daemon, dcfg := range cfg.Daemons {
 					state := statusDim.Render("stopped")
-					if inst.Status == "Running" {
+					if running {
 						out, err := incus.Exec(ctx, server, name, incus.ExecOpts{}, []string{
 							"su", "-", cfg.User, "-c",
 							fmt.Sprintf("systemctl --user is-active silo-%s 2>/dev/null || true", daemon),
@@ -137,7 +135,7 @@ func newStatusCmd() *cobra.Command {
 								state = statusRed.Render("failed")
 							}
 						}
-					} else {
+					} else if exists {
 						state = statusDim.Render("container stopped")
 					}
 					extra := ""
@@ -148,7 +146,7 @@ func newStatusCmd() *cobra.Command {
 				}
 			}
 
-			// Mounts.
+			// Mounts — from config.
 			if len(cfg.Mounts) > 0 {
 				fmt.Printf("\n%s\n", statusSection.Render("Mounts"))
 				for _, m := range cfg.Mounts {
@@ -156,9 +154,33 @@ func newStatusCmd() *cobra.Command {
 				}
 			}
 
+			// Environment variables — from config (names only, values may be secrets).
+			if len(cfg.Env) > 0 {
+				fmt.Printf("\n%s\n", statusSection.Render("Environment"))
+				for _, k := range sortedKeys(cfg.Env) {
+					fmt.Printf("  %s\n", k)
+				}
+			}
+
 			return nil
 		},
 	}
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	// Use simple sort since maps package may not have sorted keys helper.
+	for i := 0; i < len(keys); i++ {
+		for j := i + 1; j < len(keys); j++ {
+			if keys[i] > keys[j] {
+				keys[i], keys[j] = keys[j], keys[i]
+			}
+		}
+	}
+	return keys
 }
 
 func formatBytes(b int64) string {

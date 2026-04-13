@@ -188,67 +188,67 @@ Copy rules with `keys` sync only the listed top-level JSON keys, preserving ever
 
 ### Environment
 
-| Command | Description |
-|---------|-------------|
-| `silo up` | Start the environment (first run: provision; subsequent: resume) |
-| `silo down` | Stop the container (preserves state) |
-| `silo rm` | Remove the container and its data |
-| `silo enter` | Open a shell inside the container |
-| `silo run <cmd>` | Run a command inside the container |
-| `silo cp <src> <dst>` | Copy files between host and container (`:` prefix) |
-| `silo list` | List all silo containers |
-| `silo status` | Show container state, config, and daemons |
+| Command                        | Description                                              |
+|--------------------------------|----------------------------------------------------------|
+| `silo up`                      | Start the environment (first run: provision; subsequent: resume) |
+| `silo down`                    | Stop the container (preserves state)                     |
+| `silo rm`                      | Remove the container and its data                        |
+| `silo enter`                   | Open a shell inside the container                        |
+| `silo run <cmd>`               | Run a command inside the container                       |
+| `silo cp <src> <dst>`          | Copy files between host and container (`:` prefix)       |
+| `silo list`                    | List all silo containers                                 |
+| `silo status`                  | Show container state, config, and daemons                |
 
 ### Agents
 
-| Command | Description |
-|---------|-------------|
-| `silo ra` | Run the default agent interactively |
-| `silo ra claude` | Run a specific agent |
-| `silo ra claude "fix the tests"` | Run with a prompt |
-| `silo ra claude --resume` | Pass flags through to the agent |
-| `silo ra --resume` | Default agent with flags |
-| `silo mode` | Show current mode for all agents |
-| `silo mode claude bedrock` | Switch agent to a different mode |
+| Command                        | Description                                              |
+|--------------------------------|----------------------------------------------------------|
+| `silo ra`                      | Run the default agent interactively                      |
+| `silo ra claude`               | Run a specific agent                                     |
+| `silo ra claude "fix the tests"` | Run with a prompt                                      |
+| `silo ra claude --resume`      | Pass flags through to the agent                          |
+| `silo ra --resume`             | Default agent with flags                                 |
+| `silo mode`                    | Show current mode for all agents                         |
+| `silo mode claude bedrock`     | Switch agent to a different mode                         |
 
 ### Development workflow
 
-| Command | Description |
-|---------|-------------|
-| `silo sync` | Run sync commands (after code changes) |
-| `silo pull` | Git pull + sync |
-| `silo reset <target>` | Run a named reset target |
-| `silo update` | Run system-level update commands |
+| Command                        | Description                                              |
+|--------------------------------|----------------------------------------------------------|
+| `silo sync`                    | Run sync commands (after code changes)                   |
+| `silo pull`                    | Git pull + sync                                          |
+| `silo reset <target>`          | Run a named reset target                                 |
+| `silo update`                  | Run system-level update commands                         |
 
 ### Daemons
 
-| Command | Description |
-|---------|-------------|
-| `silo start <name>` | Start a daemon |
-| `silo stop <name>` | Stop a daemon |
-| `silo restart <name>` | Restart a daemon |
-| `silo logs [name]` | Tail daemon logs |
+| Command                        | Description                                              |
+|--------------------------------|----------------------------------------------------------|
+| `silo start <name>`            | Start a daemon                                           |
+| `silo stop <name>`             | Stop a daemon                                            |
+| `silo restart <name>`          | Restart a daemon                                         |
+| `silo logs [name]`             | Tail daemon logs                                         |
 
 ### Data management
 
-| Command | Description |
-|---------|-------------|
-| `silo snapshot create [name]` | Take a snapshot |
-| `silo snapshot list` | List snapshots |
-| `silo snapshot restore <name>` | Restore a snapshot |
-| `silo snapshot rm <name>` | Delete a snapshot |
+| Command                        | Description                                              |
+|--------------------------------|----------------------------------------------------------|
+| `silo snapshot create [name]`  | Take a snapshot                                          |
+| `silo snapshot list`           | List snapshots                                           |
+| `silo snapshot restore <name>` | Restore a snapshot                                       |
+| `silo snapshot rm <name>`      | Delete a snapshot                                        |
 
 ### Configuration
 
-| Command | Description |
-|---------|-------------|
-| `silo init` | Generate `.silo.yml` with AI (default) |
-| `silo init -m` | Generate `.silo.yml` with interactive wizard |
-| `silo init --agent codex` | Use a specific agent for generation |
-| `silo config show` | Print resolved global config with syntax highlighting |
-| `silo config edit` | Open global config in `$EDITOR` |
-| `silo config path` | Print config file path |
-| `silo completion install` | Auto-install shell completions |
+| Command                        | Description                                              |
+|--------------------------------|----------------------------------------------------------|
+| `silo init`                    | Generate `.silo.yml` with AI (default)                   |
+| `silo init -m`                 | Generate `.silo.yml` with interactive wizard             |
+| `silo init --agent codex`      | Use a specific agent for generation                      |
+| `silo config show`             | Print resolved global config with syntax highlighting    |
+| `silo config edit`             | Open global config in `$EDITOR`                          |
+| `silo config path`             | Print config file path                                   |
+| `silo completion install`      | Auto-install shell completions                           |
 
 ## Agent credentials
 
@@ -302,6 +302,29 @@ The mode can also be set as a default in `.silo.yml` or `.silo.local.yml` via `a
                     ├── home/
                     └── files/
 ```
+
+## Security model
+
+Silo isolates AI agents in Linux system containers (Incus/LXC) with kernel-level namespaces. Each container has its own filesystem root, process tree, network stack, and user namespace.
+
+| Threat                                     | Mitigated? | How                                                               |
+|--------------------------------------------|------------|-------------------------------------------------------------------|
+| Agent reads host credentials               | Yes        | Not in container — structurally absent                            |
+| Agent modifies files outside project       | Yes        | Only project directory is bind-mounted                            |
+| Agent runs destructive host commands       | Yes        | Separate process and user namespace                               |
+| Agent corrupts project environment         | Yes        | Pre-session snapshots enable rollback                             |
+| Agent accesses other projects' data        | Yes        | Each project gets its own container                               |
+| Agent escapes via symlink/path traversal   | Yes        | Host paths don't exist in container namespace                     |
+| Agent escalates via Docker socket          | Yes        | Host socket not mounted; nesting runs an isolated runtime         |
+| Agent deletes or corrupts project files    | No         | Workspace is read-write by design; use git to recover             |
+| Agent reads injected tool credentials      | No         | Passed as env vars by design; scope with per-project tokens (#7)  |
+| Agent exfiltrates data via network         | No         | Containers have internet access by design                         |
+| Agent exhausts host resources              | No         | No cgroup limits by default; configurable limits planned (#11)    |
+| Agent accesses host/LAN services           | No         | Private network access not blocked by default; planned (#11)      |
+| Malicious code in project dependencies     | Partially  | Contained blast radius, but not prevented                         |
+| Agent exploits kernel vulnerability        | No         | Containers share the host kernel                                  |
+
+`silo ra` takes a snapshot before each agent session, enabling rollback if an agent corrupts the environment. The 3 most recent pre-session snapshots are kept; older ones are cleaned up automatically. Manual snapshots via `silo snapshot create` are never affected.
 
 ## Building
 
