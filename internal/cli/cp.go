@@ -2,9 +2,9 @@ package cli
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 
+	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +29,11 @@ Examples:
 			}
 
 			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+
+			server, err := incus.Connect()
 			if err != nil {
 				return err
 			}
@@ -58,27 +63,10 @@ Examples:
 
 			name := cfg.ContainerName
 
-			var incusArgs []string
 			if srcIsContainer {
-				// Container → host: incus file pull
-				incusArgs = append(incusArgs, "file", "pull")
-				if recursive {
-					incusArgs = append(incusArgs, "-r")
-				}
-				incusArgs = append(incusArgs, name+src, dst) // src already starts with /
-			} else {
-				// Host → container: incus file push
-				incusArgs = append(incusArgs, "file", "push")
-				if recursive {
-					incusArgs = append(incusArgs, "-r")
-				}
-				incusArgs = append(incusArgs, src, name+dst) // dst already starts with /
+				return incus.PullFile(server, name, src[1:], dst, recursive)
 			}
-
-			c := exec.Command("incus", incusArgs...)
-			c.Stdout = cmd.OutOrStdout()
-			c.Stderr = cmd.ErrOrStderr()
-			return c.Run()
+			return incus.PushFile(server, name, src, dst[1:], recursive)
 		},
 	}
 }

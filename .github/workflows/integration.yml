@@ -1,0 +1,44 @@
+name: Integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install Incus
+        run: |
+          sudo mkdir -p /etc/apt/keyrings
+          curl -fsSL https://pkgs.zabbly.com/key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/zabbly.gpg
+          codename=$(. /etc/os-release && echo "${VERSION_CODENAME}")
+          printf 'Types: deb\nURIs: https://pkgs.zabbly.com/incus/stable\nSuites: %s\nComponents: main\nArchitectures: amd64\nSigned-By: /etc/apt/keyrings/zabbly.gpg\n' "$codename" | sudo tee /etc/apt/sources.list.d/zabbly-incus-stable.sources > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y incus
+
+      - name: Initialize Incus
+        run: |
+          sudo incus admin init --auto
+          sudo chmod 666 /var/lib/incus/unix.socket
+
+          # Docker's iptables rules block traffic from other bridges.
+          # Allow Incus bridge traffic through the DOCKER-USER chain.
+          # See: https://linuxcontainers.org/incus/docs/main/howto/network_bridge_firewalld/
+          sudo iptables -I DOCKER-USER -i incusbr0 -j ACCEPT
+          sudo iptables -I DOCKER-USER -o incusbr0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+
+      - name: Build silo
+        run: make build
+
+      - name: Run integration tests
+        run: ./test/integration.sh
