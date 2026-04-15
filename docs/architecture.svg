@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 520" font-family="'Segoe UI', system-ui, -apple-system, sans-serif" font-size="14">
+  <defs>
+    <linearGradient id="hostBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#f1f5f9"/>
+    </linearGradient>
+    <linearGradient id="containerBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#eff6ff"/>
+      <stop offset="100%" stop-color="#dbeafe"/>
+    </linearGradient>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="112%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-opacity="0.08"/>
+    </filter>
+    <filter id="shadowSm" x="-4%" y="-4%" width="108%" height="112%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.06"/>
+    </filter>
+  </defs>
+
+  <!-- Host box -->
+  <rect x="20" y="20" width="680" height="480" rx="16" fill="url(#hostBg)" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="48" y="52" font-weight="700" font-size="15" fill="#334155">HOST</text>
+
+  <!-- Host tools group -->
+  <g filter="url(#shadowSm)">
+    <rect x="48" y="76" width="200" height="120" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="148" y="100" text-anchor="middle" font-weight="600" font-size="13" fill="#64748b">Host tools</text>
+    <text x="78" y="126" font-size="14" fill="#334155">IDE</text>
+    <text x="78" y="150" font-size="14" fill="#334155">Git client</text>
+    <text x="78" y="174" font-size="14" fill="#334155">DB client</text>
+  </g>
+
+  <!-- ~/project box -->
+  <g filter="url(#shadowSm)">
+    <rect x="48" y="220" width="200" height="44" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="148" y="247" text-anchor="middle" font-size="14" fill="#334155" font-weight="500">~/project</text>
+  </g>
+
+  <!-- Arrow: tools -> project -->
+  <line x1="148" y1="196" x2="148" y2="220" stroke="#94a3b8" stroke-width="1.5"/>
+  <polygon points="148,220 144,212 152,212" fill="#94a3b8"/>
+  <text x="166" y="212" font-size="11" fill="#64748b">real files</text>
+
+  <!-- Bind mount arrow -->
+  <line x1="248" y1="242" x2="340" y2="242" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6,4"/>
+  <polygon points="340,242 332,238 332,246" fill="#f59e0b"/>
+  <text x="294" y="232" text-anchor="middle" font-size="11" fill="#d97706" font-weight="600">bind mount</text>
+
+  <!-- Port forward label on host side -->
+  <g filter="url(#shadowSm)">
+    <rect x="48" y="296" width="200" height="44" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+    <text x="148" y="323" text-anchor="middle" font-size="13" fill="#334155">localhost:<tspan font-weight="600">15432</tspan></text>
+  </g>
+
+  <!-- Port forward arrow: host port -> container postgresql -->
+  <path d="M 248 318 C 310 318, 320 338, 368 338" stroke="#8b5cf6" stroke-width="2" stroke-dasharray="6,4" fill="none"/>
+  <polygon points="368,338 360,334 360,342" fill="#8b5cf6"/>
+  <text x="294" y="310" text-anchor="middle" font-size="11" fill="#7c3aed" font-weight="600">port forward</text>
+
+  <!-- Incus container box -->
+  <rect x="340" y="76" width="340" height="400" rx="12" fill="url(#containerBg)" stroke="#93c5fd" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="368" y="104" font-weight="700" font-size="15" fill="#1e40af">INCUS CONTAINER</text>
+
+  <!-- Agent box -->
+  <g filter="url(#shadowSm)">
+    <rect x="368" y="124" width="284" height="60" rx="10" fill="#fff" stroke="#93c5fd" stroke-width="1"/>
+    <text x="510" y="150" text-anchor="middle" font-size="14" fill="#1e40af" font-weight="600">Claude / Codex</text>
+    <text x="510" y="170" text-anchor="middle" font-size="12" fill="#64748b">(AI agent)</text>
+  </g>
+
+  <!-- /workspace box -->
+  <g filter="url(#shadowSm)">
+    <rect x="368" y="220" width="284" height="44" rx="8" fill="#fff" stroke="#93c5fd" stroke-width="1"/>
+    <text x="510" y="247" text-anchor="middle" font-size="14" fill="#1e40af" font-weight="500">/workspace</text>
+    <text x="510" y="257" text-anchor="middle" font-size="10" fill="#64748b">(shared)</text>
+  </g>
+
+  <!-- Arrow: agent -> workspace -->
+  <line x1="510" y1="184" x2="510" y2="220" stroke="#94a3b8" stroke-width="1.5"/>
+  <polygon points="510,220 506,212 514,212" fill="#94a3b8"/>
+
+  <!-- Services -->
+  <g filter="url(#shadowSm)">
+    <rect x="368" y="296" width="284" height="80" rx="10" fill="#fff" stroke="#93c5fd" stroke-width="1"/>
+    <text x="510" y="320" text-anchor="middle" font-weight="600" font-size="13" fill="#64748b">Services</text>
+    <text x="398" y="344" font-size="14" fill="#334155">postgresql</text>
+    <text x="580" y="344" font-size="13" fill="#64748b" font-weight="500" text-anchor="end">:5432</text>
+    <text x="398" y="364" font-size="14" fill="#334155">redis</text>
+    <text x="580" y="364" font-size="13" fill="#64748b" font-weight="500" text-anchor="end">:6379</text>
+  </g>
+
+  <!-- Network status -->
+  <text x="384" y="416" font-size="14" fill="#dc2626" font-weight="600">&#x2717;</text>
+  <text x="402" y="416" font-size="13" fill="#dc2626">No route to host</text>
+  <text x="384" y="442" font-size="14" fill="#16a34a" font-weight="600">&#x2713;</text>
+  <text x="402" y="442" font-size="13" fill="#16a34a">Internet access</text>
+
+  <!-- Legend at bottom -->
+  <line x1="48" y1="474" x2="78" y2="474" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6,4"/>
+  <text x="84" y="478" font-size="11" fill="#64748b">Bind mount</text>
+  <line x1="180" y1="474" x2="210" y2="474" stroke="#8b5cf6" stroke-width="2" stroke-dasharray="6,4"/>
+  <text x="216" y="478" font-size="11" fill="#64748b">Port forward</text>
+</svg>

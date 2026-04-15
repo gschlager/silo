@@ -35,31 +35,9 @@ silo ra
 
 ## How it works
 
-```
-┌─────────────────────────────────────────────────────────┐
-│ HOST                                                    │
-│                                                         │
-│  IDE ──────────┐                                        │
-│  Git client ───┤── ~/project (real files)               │
-│  DB client ────┘         │                              │
-│                          │ bind mount                   │
-│  localhost:15432 ────────┼──────────────┐               │
-│                          │ port forward │               │
-│           ┌──────────────┼─────────────┐│               │
-│           │ INCUS CONTAINER            ││               │
-│           │              ▼             ││               │
-│           │    /workspace (shared)     ││               │
-│           │                            ││               │
-│           │  Claude / Codex (agent)    ││               │
-│           │                            ││               │
-│           │  postgresql ── :5432 ──────┘│               │
-│           │  redis ─────── :6379        │               │
-│           │                             │               │
-│           │  ✗ No route to host         │               │
-│           │  ✓ Internet access          │               │
-│           └─────────────────────────────┘               │
-└─────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/architecture.svg" alt="silo architecture" width="720">
+</p>
 
 - The project directory is shared via bind mount — edits are instantly visible on both sides.
 - Services run inside the container, isolated from host services.
