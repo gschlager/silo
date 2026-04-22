@@ -97,6 +97,12 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}()
 
+	// Silo lazily starts containers on demand; keep Incus from auto-starting
+	// every silo container on host boot.
+	if err := incus.SetConfig(ctx, server, name, "boot.autostart", "false"); err != nil {
+		return fmt.Errorf("disabling autostart: %w", err)
+	}
+
 	// Step 2: Wait for network.
 	status("Waiting for network...")
 	networkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -232,10 +238,11 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 16: Set up notifications.
+	// Step 16: Set up notifications (persistent pieces only — the listener
+	// is started per-session by silo ra / silo enter).
 	if cfg.Notifications {
 		status("Setting up notifications...")
-		if err := SetupNotifications(ctx, server, name, cfg.User); err != nil {
+		if err := SetupNotifications(ctx, server, name); err != nil {
 			color.Warn("could not set up notifications: %v", err)
 		}
 	}
@@ -260,11 +267,19 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 }
 
 // IsInitialized checks if a container has been fully provisioned.
-func IsInitialized(ctx context.Context, server incuscli.InstanceServer, container, username string) bool {
-	_, err := incus.Exec(ctx, server, container, incus.ExecOpts{}, []string{
-		"test", "-f", fmt.Sprintf("/home/%s/.silo-initialized", username),
-	})
-	return err == nil
+// Reads the marker file via the Incus file API so it works on stopped
+// containers — exec would require a running container and falsely report
+// "not initialized" for any stopped container.
+func IsInitialized(server incuscli.InstanceServer, container, username string) bool {
+	path := fmt.Sprintf("/home/%s/.silo-initialized", username)
+	content, _, err := server.GetInstanceFile(container, path)
+	if err != nil {
+		return false
+	}
+	if content != nil {
+		content.Close()
+	}
+	return true
 }
 
 var verboseOutput bool

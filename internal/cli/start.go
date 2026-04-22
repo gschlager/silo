@@ -25,7 +25,7 @@ func newStartCmd() *cobra.Command {
 				return err
 			}
 
-			if err := requireRunning(server, cfg.ContainerName); err != nil {
+			if err := ensureRunning(ctx, server, cfg.ContainerName); err != nil {
 				return err
 			}
 

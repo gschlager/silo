@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/incus"
+	"github.com/gschlager/silo/internal/provision"
 	"github.com/spf13/cobra"
 )
 
@@ -23,8 +25,18 @@ func newEnterCmd() *cobra.Command {
 				return err
 			}
 
-			if err := requireRunning(server, cfg.ContainerName); err != nil {
+			if err := ensureRunning(ctx, server, cfg.ContainerName); err != nil {
 				return err
+			}
+
+			// Start the notification bridge for this session.
+			if cfg.Notifications {
+				cleanup, err := provision.StartNotifyBridge(cfg.ContainerName)
+				if err != nil {
+					color.Warn("could not start notifications: %v", err)
+				} else {
+					defer cleanup()
+				}
 			}
 
 			opts := incus.UserOpts(cfg.UserHome(), cfg.WorkspacePath())

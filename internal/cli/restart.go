@@ -30,7 +30,7 @@ With a daemon name, restarts that specific daemon.`,
 
 			if len(args) == 0 {
 				// Restart container.
-				if err := requireRunning(server, cfg.ContainerName); err != nil {
+				if err := ensureRunning(ctx, server, cfg.ContainerName); err != nil {
 					return err
 				}
 				color.Status("Restarting %s...", cfg.ContainerName)
@@ -38,7 +38,7 @@ With a daemon name, restarts that specific daemon.`,
 			}
 
 			// Restart daemon.
-			if err := requireRunning(server, cfg.ContainerName); err != nil {
+			if err := ensureRunning(ctx, server, cfg.ContainerName); err != nil {
 				return err
 			}
 

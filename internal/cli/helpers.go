@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
 	incuscli "github.com/lxc/incus/v6/client"
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/gschlager/silo/internal/provision"
@@ -86,6 +88,21 @@ func requireRunning(server incuscli.InstanceServer, name string) error {
 	}
 	if !incus.IsRunning(server, name) {
 		return fmt.Errorf("container %s is not running (run 'silo up' first)", name)
+	}
+	return nil
+}
+
+// ensureRunning makes sure the container exists and is running, lazy-starting
+// it if stopped.
+func ensureRunning(ctx context.Context, server incuscli.InstanceServer, name string) error {
+	if !incus.Exists(server, name) {
+		return fmt.Errorf("container %s does not exist (run 'silo up' first)", name)
+	}
+	if !incus.IsRunning(server, name) {
+		color.Status("Starting %s...", name)
+		if err := incus.Start(ctx, server, name); err != nil {
+			return err
+		}
 	}
 	return nil
 }

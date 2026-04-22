@@ -5,7 +5,6 @@ import (
 
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/incus"
-	"github.com/gschlager/silo/internal/provision"
 	"github.com/spf13/cobra"
 )
 
@@ -39,13 +38,7 @@ func newDownCmd() *cobra.Command {
 			}
 
 			color.Status("Stopping %s...", name)
-			if err := incus.Stop(ctx, server, name); err != nil {
-				return err
-			}
-
-			// Clean up notification socket.
-			provision.CleanupNotifications(name)
-			return nil
+			return incus.Stop(ctx, server, name)
 		},
 	}
 }

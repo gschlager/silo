@@ -10,68 +10,85 @@ import (
 	"path/filepath"
 
 	incuscli "github.com/lxc/incus/v6/client"
+	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
 )
 
-// NotifySocketPath returns the host-side socket path for a project.
-func NotifySocketPath(containerName string) string {
-	return filepath.Join(os.TempDir(), fmt.Sprintf("silo-%s-notify.sock", containerName))
+const (
+	notifyDeviceName = "notify"
+	notifyMountPath  = "/run/silo/notify"
+)
+
+// NotifyDir returns the host-side persistent directory bind-mounted into the
+// container as /run/silo/notify. The directory always exists so the mount is
+// valid even when no silo session is running; the socket file only appears
+// inside it while a session listens.
+func NotifyDir(containerName string) string {
+	return filepath.Join(config.GlobalConfigDir(), "containers", containerName, "notify")
 }
 
-// SetupNotifications creates the notification socket bridge.
-func SetupNotifications(ctx context.Context, server incuscli.InstanceServer, container, username string) error {
-	sockPath := NotifySocketPath(container)
+// NotifySocketPath returns the host-side socket file path inside NotifyDir.
+func NotifySocketPath(containerName string) string {
+	return filepath.Join(NotifyDir(containerName), "sock")
+}
 
-	// Remove stale socket if it exists.
-	os.Remove(sockPath)
-
-	// Start the host-side listener.
-	listener, err := net.Listen("unix", sockPath)
-	if err != nil {
-		return fmt.Errorf("creating notification socket: %w", err)
+// SetupNotifications installs the persistent pieces of the notification
+// bridge: the host-side directory, the Incus disk device that mounts it into
+// the container, and the silo-notify helper script.
+func SetupNotifications(ctx context.Context, server incuscli.InstanceServer, container string) error {
+	hostDir := NotifyDir(container)
+	if err := os.MkdirAll(hostDir, 0700); err != nil {
+		return fmt.Errorf("creating notify dir: %w", err)
 	}
 
-	// Make the socket world-writable so the container can write to it.
-	os.Chmod(sockPath, 0700)
-
-	// Run listener in background goroutine.
-	go func() {
-		defer listener.Close()
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return // socket closed
-			}
-			go handleNotification(conn, container)
-		}
-	}()
-
-	// Mount the socket into the container.
-	if err := incus.AddDiskDevice(ctx, server, container, "notify-sock", sockPath, "/run/silo/notify.sock", false); err != nil {
-		listener.Close()
-		os.Remove(sockPath)
-		return fmt.Errorf("mounting notification socket: %w", err)
+	if err := incus.AddDiskDevice(ctx, server, container, notifyDeviceName, hostDir, notifyMountPath, false); err != nil {
+		return err
 	}
 
-	// Install the silo-notify helper inside the container.
-	helperScript := `#!/bin/sh
-echo "$*" | socat - UNIX-CONNECT:/run/silo/notify.sock
-`
-	rootOpts := incus.ExecOpts{}
-	if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
+	helperScript := fmt.Sprintf(`#!/bin/sh
+echo "$*" | socat - UNIX-CONNECT:%s/sock
+`, notifyMountPath)
+
+	if _, err := incus.Exec(ctx, server, container, incus.ExecOpts{}, []string{
 		"sh", "-c", fmt.Sprintf(`cat > /usr/local/bin/silo-notify << 'SCRIPT'
 %sSCRIPT
 chmod 755 /usr/local/bin/silo-notify`, helperScript),
 	}); err != nil {
 		return fmt.Errorf("installing silo-notify helper: %w", err)
 	}
-
 	return nil
 }
 
-// CleanupNotifications removes the notification socket.
-func CleanupNotifications(containerName string) {
-	os.Remove(NotifySocketPath(containerName))
+// StartNotifyBridge starts the host-side listener that turns notifications
+// sent by silo-notify inside the container into desktop notifications. The
+// returned cleanup func stops the listener and removes the socket; callers
+// MUST defer it.
+func StartNotifyBridge(container string) (func(), error) {
+	sockPath := NotifySocketPath(container)
+	// A stale socket from a crashed previous session would make Listen fail
+	// with "address already in use".
+	os.Remove(sockPath)
+
+	listener, err := net.Listen("unix", sockPath)
+	if err != nil {
+		return nil, fmt.Errorf("creating notify socket: %w", err)
+	}
+	os.Chmod(sockPath, 0700)
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go handleNotification(conn, container)
+		}
+	}()
+
+	return func() {
+		listener.Close()
+		os.Remove(sockPath)
+	}, nil
 }
 
 func handleNotification(conn net.Conn, containerName string) {

@@ -43,7 +43,7 @@ Subsequent: start the stopped container (~1 second).`,
 			}
 
 			// Check if initialized.
-			if !provision.IsInitialized(ctx, server, name, cfg.User) {
+			if !provision.IsInitialized(server, name, cfg.User) {
 				// Container exists but not initialized — reprovision.
 				color.Warn("Container %s exists but is not initialized. Removing and reprovisioning...", name)
 				if err := incus.Delete(ctx, server, name); err != nil {
