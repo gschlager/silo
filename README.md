@@ -36,32 +36,33 @@ silo ra
 ## How it works
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ HOST                                                    │
-│                                                         │
-│  IDE ──────────┐                                        │
-│  Git client ───┤── ~/project (real files)               │
-│  DB client ────┘         │                              │
-│                          │ bind mount                   │
-│  localhost:15432 ────────┼──────────────┐               │
-│                          │ port forward │               │
-│           ┌──────────────┼─────────────┐│               │
-│           │ INCUS CONTAINER            ││               │
-│           │              ▼             ││               │
-│           │    /workspace (shared)     ││               │
-│           │                            ││               │
-│           │  Claude / Codex (agent)    ││               │
-│           │                            ││               │
-│           │  postgresql ── :5432 ──────┘│               │
-│           │  redis ─────── :6379        │               │
-│           │                             │               │
-│           │  ✗ No route to host         │               │
-│           │  ✓ Internet access          │               │
-│           └─────────────────────────────┘               │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ HOST                                                         │
+│                                                              │
+│  IDE ──────────┐                                             │
+│  Git client ───┤── ~/project (real files)                    │
+│  DB client ────┘         │                                   │
+│                          │ bind mount                        │
+│  localhost:15432 ────────┼──────────────┐                    │
+│                          │ port forward │                    │
+│           ┌──────────────┼─────────────┐│                    │
+│           │ INCUS CONTAINER            ││                    │
+│           │              ▼             ││                    │
+│           │   /workspace/<project>     ││                    │
+│           │                            ││                    │
+│           │  Claude / Codex (agent)    ││                    │
+│           │                            ││                    │
+│           │  postgresql ── :5432 ──────┘│                    │
+│           │  redis ─────── :6379        │                    │
+│           │                             │                    │
+│           │  ✗ No route to host         │                    │
+│           │  ✓ Internet access          │                    │
+│           └─────────────────────────────┘                    │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 - The project directory is shared via bind mount — edits are instantly visible on both sides.
+- Each project gets its own subdirectory under `/workspace/` (e.g. `/workspace/myapp`) so agents that key settings by path don't collide across projects.
 - Services run inside the container, isolated from host services.
 - Port forwarding exposes container services to host tools.
 - The container has no route to the host's localhost ports.
@@ -108,6 +109,29 @@ ports:
 # Environment variables
 env:
   RAILS_ENV: development
+
+# Additional bind mounts (host:container[:ro])
+mounts:
+  - ~/shared-cache:/home/dev/.cache/shared
+  - ~/datasets:/data:ro
+
+# Git configuration inside the container
+git:
+  user.name: Dev
+  user.email: dev@example.com
+  # Credential helper for https:// pushes (resolved on the host)
+  credential:
+    source: 1password
+    ref: op://Private/github-token/token
+    # Or: source: token, env: GITHUB_TOKEN
+    # Or: source: token, value: ghp_xxx
+
+# External tool credentials (resolved fresh on every session, not baked in)
+tools:
+  gh:                         # sets GH_TOKEN inside the container
+    credential:
+      source: 1password
+      ref: op://Private/github-cli/token
 
 # Long-running processes (managed as systemd user services)
 daemons:
@@ -161,28 +185,25 @@ Each agent has:
 - **`cmd`** — How to launch the agent (default: agent name)
 - **`deps`** — System dependencies installed as root before the agent
 - **`install`** — Install command run as the dev user
-- **`copy`** — Rules for syncing files between silo's agent dir and the container
-- **`set`** — Values to deep-merge into config files inside the container
+- **`mode`** — Default authentication mode (e.g. `oauth`, `console`, `bedrock`)
+- **`links`** — Rules for exposing files from the agent mode directory into the container via symlinks
 
-Example with copy rules and set:
+Example:
 
 ```yaml
 agents:
   - name: claude
-    copy:
-      - file: .credentials.json
-        target: ~/.claude/.credentials.json
-      - file: claude.json
+    cmd: claude --dangerously-skip-permissions
+    install: curl -fsSL https://claude.ai/install.sh | bash
+    mode: oauth
+    links:
+      - source: .claude/          # trailing slash = directory
+        target: ~/.claude/
+      - source: .claude.json
         target: ~/.claude.json
-        keys: [oauthAccount, userID, hasCompletedOnboarding, companion]
-    set:
-      ~/.claude.json:
-        projects:
-          /workspace:
-            hasTrustDialogAccepted: true
 ```
 
-Copy rules with `keys` sync only the listed top-level JSON keys, preserving everything else. The `set` field deep-merges values into files before the agent launches.
+Each agent mode gets its own host directory (`~/.config/silo/agents/<name>/<mode>/`). Silo mounts that directory at `/run/silo/<name>/` inside the container and creates a symlink from each `target` path to the matching `source` inside the mount. The agent reads and writes its config normally — changes land directly in the host mode directory, and token refreshes are immediately visible to any container sharing the same mode.
 
 ## Commands
 
@@ -226,7 +247,7 @@ Copy rules with `keys` sync only the listed top-level JSON keys, preserving ever
 |--------------------------------|----------------------------------------------------------|
 | `silo start <name>`            | Start a daemon                                           |
 | `silo stop <name>`             | Stop a daemon                                            |
-| `silo restart <name>`          | Restart a daemon                                         |
+| `silo restart [name]`          | Restart a daemon (or the container, if no name is given) |
 | `silo logs [name]`             | Tail daemon logs                                         |
 
 ### Data management
@@ -252,17 +273,13 @@ Copy rules with `keys` sync only the listed top-level JSON keys, preserving ever
 
 ## Agent credentials
 
-Silo manages agent credentials in its own directory (`~/.config/silo/agents/<name>/`), separate from your host's agent config. This means agents inside containers can't access or modify your host's settings.
+Silo manages agent credentials in its own directory (`~/.config/silo/agents/<name>/<mode>/`), separate from your host's agent config. This means agents inside containers can't access or modify your host's settings.
 
-**First run**: The agent prompts you to log in. Credentials are saved to silo's agent dir and shared across all containers automatically.
+**First run**: The mode directory is seeded from your host's existing agent config (if any), then mounted into the container. The agent may still prompt you to log in on first launch; credentials are written directly into the mounted mode directory and are immediately visible to every container that uses the same mode.
 
 **How syncing works**:
 
-1. Before `silo ra`: credentials are copied from the global agent dir into the container
-2. Agent runs interactively
-3. After exit: updated credentials (token refreshes) are copied back to the global dir
-
-Files inside the agent home (e.g., `~/.claude/.credentials.json`) are handled via an Incus disk mount. Files outside the agent home (e.g., `~/.claude.json`) are synced into the container via exec.
+The agent mode directory is bind-mounted into the container at `/run/silo/<agent>/`, and symlinks are created from the paths the agent expects (e.g. `~/.claude/`, `~/.claude.json`) into that mount. There is no copy step — reads and writes happen directly against the host directory, so token refreshes and settings changes persist across sessions without any sync.
 
 ### Mode isolation
 
@@ -282,26 +299,22 @@ The mode can also be set as a default in `.silo.yml` or `.silo.local.yml` via `a
 ~/.config/silo/
 ├── config.yml                              # global overrides
 ├── agents/
-│   └── claude/                             # shared credentials & settings
-│       ├── .credentials.json
-│       └── settings.json
+│   └── claude/                             # shared across all containers
+│       ├── oauth/                          # data for "oauth" mode
+│       │   ├── .claude/                    # linked to ~/.claude/ in container
+│       │   │   ├── .credentials.json
+│       │   │   ├── settings.json
+│       │   │   └── projects/
+│       │   └── .claude.json                # linked to ~/.claude.json in container
+│       └── bedrock/                        # data for "bedrock" mode (isolated)
+│           ├── .claude/
+│           └── .claude.json
 └── containers/
     └── silo-myapp/
-        ├── mode.yml                        # mode overrides (from silo mode)
-        └── agents/
-            └── claude/
-                ├── claude/                 # data for "claude" mode
-                │   ├── home/              # mounted as /home/dev/.claude/
-                │   │   ├── .credentials.json
-                │   │   ├── settings.json
-                │   │   ├── projects/
-                │   │   └── auto-memory/
-                │   └── files/             # out-of-home files (exec-synced)
-                │       └── claude.json
-                └── bedrock/                # data for "bedrock" mode (isolated)
-                    ├── home/
-                    └── files/
+        └── mode.yml                        # per-project mode overrides (from silo mode)
 ```
+
+Each mode directory is mounted into the container at `/run/silo/<agent>/`, and the paths listed under `links` are created as symlinks into that mount. Switching modes with `silo mode` swaps which mode directory is mounted — history, settings, and credentials from one mode never leak into another.
 
 ## Security model
 
