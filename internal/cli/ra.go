@@ -99,7 +99,10 @@ Examples:
 			agents.EnsureModeDir(agentName, agentCfg.Mode, agentCfg.Links)
 
 			// Build environment variables (host env + tool credentials + agent-specific).
-			env := sessionEnv(cfg)
+			env, err := sessionEnv(cfg)
+			if err != nil {
+				return err
+			}
 			for k, v := range agentCfg.Env {
 				env[k] = v
 			}

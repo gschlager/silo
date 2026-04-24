@@ -40,7 +40,10 @@ func newEnterCmd() *cobra.Command {
 			}
 
 			opts := incus.UserOpts(cfg.UserHome(), cfg.WorkspacePath())
-			opts.Env = sessionEnv(cfg)
+			opts.Env, err = sessionEnv(cfg)
+			if err != nil {
+				return err
+			}
 			return incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
 				[]string{cfg.ShellPath(), "-l"})
 		},

@@ -321,7 +321,9 @@ func runCommands(ctx context.Context, server incuscli.InstanceServer, container 
 
 // ResolveToolEnv resolves tool credentials into environment variables.
 // Runs on the host — suitable for passing as env to exec sessions.
-func ResolveToolEnv(tools map[string]config.ToolConfig) map[string]string {
+// Returns an error on the first credential that fails to resolve, so callers
+// don't launch sessions (especially agents) with silently missing tokens.
+func ResolveToolEnv(tools map[string]config.ToolConfig) (map[string]string, error) {
 	env := make(map[string]string)
 	for name, tool := range tools {
 		if tool.Credential == nil {
@@ -330,8 +332,7 @@ func ResolveToolEnv(tools map[string]config.ToolConfig) map[string]string {
 
 		token, err := resolveCredential(tool.Credential)
 		if err != nil {
-			color.Warn("could not resolve credential for tool %q: %v", name, err)
-			continue
+			return nil, fmt.Errorf("resolving credential for tool %q: %w", name, err)
 		}
 
 		switch name {
@@ -341,7 +342,7 @@ func ResolveToolEnv(tools map[string]config.ToolConfig) map[string]string {
 			env[strings.ToUpper(name)+"_TOKEN"] = token
 		}
 	}
-	return env
+	return env, nil
 }
 
 func configureTimezoneAndLocale(ctx context.Context, server incuscli.InstanceServer, container string) error {
