@@ -245,10 +245,11 @@ Each agent mode gets its own host directory (`~/.config/silo/agents/<name>/<mode
 
 | Command                        | Description                                              |
 |--------------------------------|----------------------------------------------------------|
-| `silo start <name>`            | Start a daemon                                           |
-| `silo stop <name>`             | Stop a daemon                                            |
-| `silo restart [name]`          | Restart a daemon (or the container, if no name is given) |
-| `silo logs [name]`             | Tail daemon logs                                         |
+| `silo daemon list`             | List configured daemons and their state                  |
+| `silo daemon start <name>`     | Start a daemon                                           |
+| `silo daemon stop <name>`      | Stop a daemon                                            |
+| `silo daemon restart <name>`   | Restart a daemon                                         |
+| `silo daemon logs [name]`      | Tail daemon logs (all daemons if no name given)          |
 
 ### Data management
 

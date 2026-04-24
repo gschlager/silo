@@ -73,7 +73,7 @@ Examples:
 			}
 
 			color.Success("Switched %s to %s mode.", agentName, newMode)
-			color.Info("Run 'silo restart' for the change to take effect.")
+			color.Info("Run 'silo down && silo up' for the change to take effect.")
 			return nil
 		},
 	}

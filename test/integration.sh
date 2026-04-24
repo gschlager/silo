@@ -428,25 +428,25 @@ section "Daemons"
 # Note: systemd user linger may not work in CI (e.g. "Failed to connect to bus").
 # If start fails, skip the dependent stop/restart tests.
 DAEMONS_WORK=false
-if output=$("$SILO" start httpd 2>&1); then
-  pass "silo start httpd"
+if output=$("$SILO" daemon start httpd 2>&1); then
+  pass "silo daemon start httpd"
   DAEMONS_WORK=true
   sleep 2
 
-  assert_exit_0 "silo stop httpd" \
-    "$SILO" stop httpd
+  assert_exit_0 "silo daemon stop httpd" \
+    "$SILO" daemon stop httpd
 
-  assert_exit_0 "silo restart httpd" \
-    "$SILO" restart httpd
+  assert_exit_0 "silo daemon restart httpd" \
+    "$SILO" daemon restart httpd
 
-  assert_exit_0 "silo stop httpd (cleanup)" \
-    "$SILO" stop httpd
+  assert_exit_0 "silo daemon stop httpd (cleanup)" \
+    "$SILO" daemon stop httpd
 else
   echo "  SKIP: daemon start/stop/restart (systemd user session not available)"
 fi
 
-assert_exit_nonzero "silo start unknown daemon" \
-  "$SILO" start nonexistent
+assert_exit_nonzero "silo daemon start unknown daemon" \
+  "$SILO" daemon start nonexistent
 
 # ---------------------------------------------------------------------------
 # Tests: Logs (PTY via script, expect timeout since journalctl -f)
@@ -454,14 +454,14 @@ assert_exit_nonzero "silo start unknown daemon" \
 
 section "Logs"
 
-# silo logs uses ExecInteractive with journalctl -f (never exits).
+# silo daemon logs uses ExecInteractive with journalctl -f (never exits).
 # We use timeout to kill it after a few seconds — timeout exit 124 is success.
-if timeout 5 script -qec "$SILO logs httpd" /dev/null > /dev/null 2>&1; then
-  pass "silo logs httpd"
+if timeout 5 script -qec "$SILO daemon logs httpd" /dev/null > /dev/null 2>&1; then
+  pass "silo daemon logs httpd"
 elif [ $? -eq 124 ]; then
-  pass "silo logs httpd (timeout expected)"
+  pass "silo daemon logs httpd (timeout expected)"
 else
-  fail "silo logs httpd" "crashed immediately"
+  fail "silo daemon logs httpd" "crashed immediately"
 fi
 
 # ---------------------------------------------------------------------------

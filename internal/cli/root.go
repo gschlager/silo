@@ -61,10 +61,7 @@ func NewRootCmd() *cobra.Command {
 	addCmd("workflow", newUpdateCmd())
 
 	// Daemons.
-	addCmd("daemon", newStartCmd())
-	addCmd("daemon", newStopCmd())
-	addCmd("daemon", newRestartCmd())
-	addCmd("daemon", newLogsCmd())
+	addCmd("daemon", newDaemonCmd())
 
 	// Data management.
 	addCmd("data", newSnapshotCmd())

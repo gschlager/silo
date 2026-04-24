@@ -218,8 +218,6 @@ func registerCompletions(rootCmd *cobra.Command) {
 		switch cmd.Name() {
 		case "ra":
 			cmd.ValidArgsFunction = completeAgentNames
-		case "start", "stop", "restart", "logs":
-			cmd.ValidArgsFunction = completeDaemonNames
 		case "reset":
 			cmd.ValidArgsFunction = completeResetTargets
 		}
