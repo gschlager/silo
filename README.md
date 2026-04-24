@@ -79,7 +79,11 @@ Create a `.silo.yml` in your project root (or run `silo init` to generate one):
 image: fedora/43
 
 # Commands run once on first provisioning (as dev user with sudo).
-# Runs with a login shell so the shell profile is sourced between commands.
+# All lines run in one login shell session with `set -e`, so PATH/env
+# changes (export, eval, cd) carry over from one command to the next.
+# For activations that need to persist in future silo enter/ra sessions,
+# append to ~/.zshenv (always sourced) or ~/.zshrc (interactive only)
+# from within setup — see the rv example below.
 setup:
   - sudo dnf install -y postgresql16-server redis ruby nodejs
   - sudo systemctl enable --now postgresql redis

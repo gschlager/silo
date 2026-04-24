@@ -284,20 +284,34 @@ func IsInitialized(server incuscli.InstanceServer, container, username string) b
 
 var verboseOutput bool
 
-// runUserCommands runs commands as the dev user with a login shell so that
-// ~/.profile is sourced and PATH includes user-installed binaries.
+// runUserCommands runs commands as the dev user in a single login shell
+// session, so PATH/env mutations (export, eval'd shell init, cd) carry over
+// from one command to the next. Aborts on the first failure (`set -e`).
 func runUserCommands(ctx context.Context, server incuscli.InstanceServer, container string, opts incus.ExecOpts, shell string, commands []string) error {
+	if len(commands) == 0 {
+		return nil
+	}
 	loginShell := "/bin/" + shell
+
+	var script strings.Builder
+	script.WriteString("set -e\n")
 	for _, cmd := range commands {
-		if verboseOutput {
-			color.Command(cmd)
-			if err := incus.ExecStreaming(ctx, server, container, opts, []string{loginShell, "-lc", cmd}, os.Stdout, os.Stderr); err != nil {
-				return fmt.Errorf("command %q: %w", cmd, err)
-			}
-		} else {
-			if _, err := incus.Exec(ctx, server, container, opts, []string{loginShell, "-lc", cmd}); err != nil {
-				return fmt.Errorf("command %q: %w", cmd, err)
-			}
+		// Print a marker so users can see which command is running.
+		script.WriteString("printf '\\n\\033[1;36m→\\033[0m %s\\n' ")
+		script.WriteString(shellEscape(cmd))
+		script.WriteString("\n")
+		script.WriteString(cmd)
+		script.WriteString("\n")
+	}
+
+	fullCmd := []string{loginShell, "-lc", script.String()}
+	if verboseOutput {
+		if err := incus.ExecStreaming(ctx, server, container, opts, fullCmd, os.Stdout, os.Stderr); err != nil {
+			return err
+		}
+	} else {
+		if _, err := incus.Exec(ctx, server, container, opts, fullCmd); err != nil {
+			return err
 		}
 	}
 	return nil
