@@ -2,9 +2,11 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
+	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"
 )
@@ -153,7 +155,19 @@ With a daemon name, tails logs for that specific daemon.`,
 				if _, ok := cfg.Daemons[daemon]; !ok {
 					return fmt.Errorf("unknown daemon %q", daemon)
 				}
-				journalCmd = fmt.Sprintf("journalctl --user -u silo-%s -f", daemon)
+				// If the daemon isn't running, dropping -f shows the past
+				// logs and exits instead of hanging forever waiting for
+				// new entries that will never come.
+				state, _ := incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{}, []string{
+					"su", "-", cfg.User, "-c",
+					fmt.Sprintf("systemctl --user is-active silo-%s 2>/dev/null || true", daemon),
+				})
+				if strings.TrimSpace(state) == "active" {
+					journalCmd = fmt.Sprintf("journalctl --user -u silo-%s -f", daemon)
+				} else {
+					color.Info("Daemon %q is not running; showing past logs.", daemon)
+					journalCmd = fmt.Sprintf("journalctl --user -u silo-%s --no-pager", daemon)
+				}
 			}
 
 			opts := incus.UserOpts(cfg.UserHome(), "")
@@ -199,5 +213,16 @@ func runDaemonUnitAction(cmd *cobra.Command, daemon, action string) error {
 		"su", "-", cfg.User, "-c",
 		fmt.Sprintf("systemctl --user %s silo-%s", action, daemon),
 	})
+	if err != nil && (action == "start" || action == "restart") {
+		// Most likely cause is the daemon's own command exiting non-zero;
+		// dump the last few journal lines so the user sees why.
+		tail, _ := incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{}, []string{
+			"su", "-", cfg.User, "-c",
+			fmt.Sprintf("journalctl --user -u silo-%s -n 10 --no-pager 2>/dev/null || true", daemon),
+		})
+		if tail != "" {
+			fmt.Fprintln(os.Stderr, strings.TrimRight(tail, "\n"))
+		}
+	}
 	return err
 }

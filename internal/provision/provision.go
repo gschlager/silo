@@ -233,7 +233,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	// Step 15: Set up daemons.
 	if len(cfg.Daemons) > 0 {
 		status("Setting up daemons...")
-		if err := SetupDaemons(ctx, server, name, cfg.User, cfg.WorkspacePath(), cfg.Daemons); err != nil {
+		if err := SetupDaemons(ctx, server, name, cfg.User, cfg.Shell, cfg.WorkspacePath(), cfg.Daemons); err != nil {
 			return err
 		}
 	}
