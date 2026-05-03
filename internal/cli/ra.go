@@ -33,12 +33,22 @@ Examples:
   silo ra claude --resume -p "fix"`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// With DisableFlagParsing, handle --help manually.
+			// With DisableFlagParsing, cobra hands us every token verbatim —
+			// including root persistent flags like --verbose. Handle the ones
+			// that belong to silo here, and strip them so they don't leak
+			// through to the agent. Use `--` to pass them to the agent instead.
+			var filtered []string
 			for _, a := range args {
-				if a == "--help" || a == "-h" {
+				switch a {
+				case "--help", "-h":
 					return cmd.Help()
+				case "--verbose", "-v":
+					color.EnableDebug()
+				default:
+					filtered = append(filtered, a)
 				}
 			}
+			args = filtered
 
 			ctx := cmd.Context()
 
