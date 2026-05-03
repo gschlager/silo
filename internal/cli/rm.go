@@ -39,7 +39,7 @@ func newRmCmd() *cobra.Command {
 			}
 
 			if !yes {
-				fmt.Fprintf(os.Stderr, "Remove container %s and all its data? [y/N] ", name)
+				fmt.Fprintf(os.Stderr, "Remove %s? (project files and agent credentials are kept) [y/N] ", name)
 				reader := bufio.NewReader(os.Stdin)
 				answer, _ := reader.ReadString('\n')
 				if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "y") {
