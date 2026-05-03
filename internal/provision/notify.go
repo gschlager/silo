@@ -16,12 +16,14 @@ import (
 
 const (
 	notifyDeviceName = "notify"
-	notifyMountPath  = "/run/silo/notify"
+	// Persistent rootfs path. /run is a tmpfs systemd remounts during boot,
+	// which would shadow any bind mount attached underneath it.
+	notifyMountPath = "/var/lib/silo/notify"
 )
 
 // NotifyDir returns the host-side persistent directory bind-mounted into the
-// container as /run/silo/notify. The directory always exists so the mount is
-// valid even when no silo session is running; the socket file only appears
+// container as /var/lib/silo/notify. The directory always exists so the mount
+// is valid even when no silo session is running; the socket file only appears
 // inside it while a session listens.
 func NotifyDir(containerName string) string {
 	return filepath.Join(config.GlobalConfigDir(), "containers", containerName, "notify")

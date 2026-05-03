@@ -47,8 +47,8 @@ type AgentGlobalConfig struct {
 
 // LinkRule defines a file or directory in the agent mode directory and where
 // it should appear inside the container via symlink. The mode directory is
-// mounted at /run/silo/<agent>/ and symlinks point from the target path to
-// the corresponding source within the mount.
+// mounted at /var/lib/silo/<agent>/ and symlinks point from the target path
+// to the corresponding source within the mount.
 type LinkRule struct {
 	Source string `yaml:"source"` // path relative to mode dir (e.g. ".claude/", ".claude.json")
 	Target string `yaml:"target"` // symlink path in container (supports ~/)

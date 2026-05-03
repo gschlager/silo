@@ -70,8 +70,10 @@ func SetupAgentDirs(ctx context.Context, server incuscli.InstanceServer, contain
 			return fmt.Errorf("creating mode dir for %q: %w", name, err)
 		}
 
-		// Mount the entire mode dir at /run/silo/<agent>/.
-		mountPath := fmt.Sprintf("/run/silo/%s", name)
+		// Mount the entire mode dir at /var/lib/silo/<agent>/. Persistent
+		// rootfs path — /run is a tmpfs that systemd remounts during boot,
+		// which shadows any bind mounts attached underneath it.
+		mountPath := fmt.Sprintf("/var/lib/silo/%s", name)
 		deviceName := fmt.Sprintf("agent-%s", name)
 		if err := incus.AddDiskDevice(ctx, server, container, deviceName, modeDir, mountPath, false); err != nil {
 			return fmt.Errorf("mounting mode dir for %q: %w", name, err)
@@ -153,7 +155,7 @@ func writeREADME(modeDir, agent, mode string) {
 	content := fmt.Sprintf(`This directory contains %s configuration for the %q authentication mode.
 It is shared across all silo containers using this mode.
 
-Files here are mounted into containers at /run/silo/%s/ and symlinked
+Files here are mounted into containers at /var/lib/silo/%s/ and symlinked
 into the home directory. Changes made by the agent inside any container
 are immediately visible to all containers sharing this mode.
 `, agent, mode, agent)

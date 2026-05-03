@@ -207,7 +207,7 @@ agents:
         target: ~/.claude.json
 ```
 
-Each agent mode gets its own host directory (`~/.config/silo/agents/<name>/<mode>/`). Silo mounts that directory at `/run/silo/<name>/` inside the container and creates a symlink from each `target` path to the matching `source` inside the mount. The agent reads and writes its config normally — changes land directly in the host mode directory, and token refreshes are immediately visible to any container sharing the same mode.
+Each agent mode gets its own host directory (`~/.config/silo/agents/<name>/<mode>/`). Silo mounts that directory at `/var/lib/silo/<name>/` inside the container and creates a symlink from each `target` path to the matching `source` inside the mount. The agent reads and writes its config normally — changes land directly in the host mode directory, and token refreshes are immediately visible to any container sharing the same mode.
 
 ## Commands
 
@@ -284,7 +284,7 @@ Silo manages agent credentials in its own directory (`~/.config/silo/agents/<nam
 
 **How syncing works**:
 
-The agent mode directory is bind-mounted into the container at `/run/silo/<agent>/`, and symlinks are created from the paths the agent expects (e.g. `~/.claude/`, `~/.claude.json`) into that mount. There is no copy step — reads and writes happen directly against the host directory, so token refreshes and settings changes persist across sessions without any sync.
+The agent mode directory is bind-mounted into the container at `/var/lib/silo/<agent>/`, and symlinks are created from the paths the agent expects (e.g. `~/.claude/`, `~/.claude.json`) into that mount. There is no copy step — reads and writes happen directly against the host directory, so token refreshes and settings changes persist across sessions without any sync.
 
 ### Mode isolation
 
@@ -319,7 +319,7 @@ The mode can also be set as a default in `.silo.yml` or `.silo.local.yml` via `a
         └── mode.yml                        # per-project mode overrides (from silo mode)
 ```
 
-Each mode directory is mounted into the container at `/run/silo/<agent>/`, and the paths listed under `links` are created as symlinks into that mount. Switching modes with `silo mode` swaps which mode directory is mounted — history, settings, and credentials from one mode never leak into another.
+Each mode directory is mounted into the container at `/var/lib/silo/<agent>/`, and the paths listed under `links` are created as symlinks into that mount. Switching modes with `silo mode` swaps which mode directory is mounted — history, settings, and credentials from one mode never leak into another.
 
 ## Security model
 
