@@ -17,6 +17,9 @@ func NewRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if v, _ := cmd.Flags().GetBool("verbose"); v {
+				color.EnableDebug()
+			}
 			if err := config.EnsureGlobalConfig(); err != nil {
 				color.Warn("could not create global config: %v", err)
 			}
@@ -24,7 +27,7 @@ func NewRootCmd() *cobra.Command {
 		},
 	}
 
-	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Show command output during provisioning")
+	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Verbose output: provisioning command output and session stage timings")
 
 	rootCmd.AddGroup(
 		&cobra.Group{ID: "environment", Title: "\033[1;33mEnvironment:\033[0m"},

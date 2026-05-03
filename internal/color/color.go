@@ -3,6 +3,7 @@ package color
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -15,6 +16,32 @@ var (
 	success = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))  // green
 	info_   = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))             // cyan
 )
+
+var (
+	verbose   bool
+	startTime time.Time
+)
+
+// EnableDebug turns on stage-timing output for Debug calls. Call once early
+// in startup so the elapsed clock starts from the same reference.
+func EnableDebug() {
+	verbose = true
+	startTime = time.Now()
+}
+
+// Debug prints a "[t+0.12s] message" line to stderr, but only when debug
+// output is enabled via EnableDebug. Use it to mark stage boundaries in
+// commands that go interactive (silo enter, silo ra) — the last printed
+// stage tells the user where the session hung.
+func Debug(format string, args ...any) {
+	if !verbose {
+		return
+	}
+	msg := fmt.Sprintf(format, args...)
+	fmt.Fprintf(os.Stderr, "%s %s\n",
+		dimmed.Render(fmt.Sprintf("[t+%5.2fs]", time.Since(startTime).Seconds())),
+		msg)
+}
 
 // Status prints a "==> message" line to stderr (green arrow, normal text).
 func Status(format string, args ...any) {
