@@ -3,7 +3,7 @@ module github.com/gschlager/silo
 go 1.26.1
 
 require (
-	github.com/alecthomas/chroma/v2 v2.24.0
+	github.com/alecthomas/chroma/v2 v2.24.1
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/lxc/incus/v6 v6.23.0
