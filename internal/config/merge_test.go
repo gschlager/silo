@@ -86,6 +86,36 @@ func TestMerge_DaemonPorts(t *testing.T) {
 	}
 }
 
+// TestMerge_DaemonPortsDeduped ensures a port declared both at the top level and
+// on a daemon is only forwarded once, even when the spellings differ (e.g.
+// "9292:9292" vs the shorthand "9292", or a different host mapping for the same
+// container port). Forwarding it twice would try to bind the host port again.
+func TestMerge_DaemonPortsDeduped(t *testing.T) {
+	global := &GlobalConfig{Shell: "zsh", User: "dev", DefaultImage: "fedora/43"}
+	project := &ProjectConfig{
+		Ports: []string{"9292:9292", "8000:18000"},
+		Daemons: map[string]DaemonConfig{
+			"web":    {Cmd: "bin/dev web", Ports: []string{"9292"}},
+			"ai":     {Cmd: "bin/dev ai", Ports: []string{"8000"}},
+			"worker": {Cmd: "bin/dev worker", Ports: []string{"7000"}},
+		},
+	}
+
+	m := Merge(global, project, "/tmp/test")
+
+	// The two overlapping daemon ports (9292, 8000) are dropped; only the new
+	// worker port (7000) is added to the two top-level ports.
+	want := map[string]bool{"9292:9292": true, "8000:18000": true, "7000": true}
+	if len(m.Ports) != len(want) {
+		t.Fatalf("Ports = %v, want %d entries", m.Ports, len(want))
+	}
+	for _, p := range m.Ports {
+		if !want[p] {
+			t.Errorf("unexpected port %q in %v", p, m.Ports)
+		}
+	}
+}
+
 func TestMerge_Mounts(t *testing.T) {
 	global := &GlobalConfig{
 		Shell:        "zsh",

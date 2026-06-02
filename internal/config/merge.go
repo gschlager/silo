@@ -4,6 +4,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -233,15 +234,48 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		m.Tools = project.Tools
 	}
 
-	// Daemons: project-level only. Collect daemon ports into Ports.
+	// Daemons: project-level only. Collect daemon ports into Ports, skipping
+	// any whose container port is already forwarded. The same port may be
+	// declared both at the top level and on a daemon; forwarding it twice
+	// would try to bind the host port more than once and fail.
 	if project != nil {
 		m.Daemons = project.Daemons
+		seen := make(map[int]bool)
+		for _, spec := range m.Ports {
+			if cp, ok := containerPort(spec); ok {
+				seen[cp] = true
+			}
+		}
 		for _, daemon := range project.Daemons {
-			m.Ports = append(m.Ports, daemon.Ports...)
+			for _, spec := range daemon.Ports {
+				cp, ok := containerPort(spec)
+				if ok && seen[cp] {
+					continue
+				}
+				if ok {
+					seen[cp] = true
+				}
+				m.Ports = append(m.Ports, spec)
+			}
 		}
 	}
 
 	return m
+}
+
+// containerPort extracts the container port from a port spec like "3000:13000"
+// or "3000" (same port on both sides). The second return value is false when the
+// spec is malformed; such specs are left for the provisioner to report.
+func containerPort(spec string) (int, bool) {
+	field := strings.TrimSpace(spec)
+	if i := strings.IndexByte(field, ':'); i >= 0 {
+		field = field[:i]
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(field))
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 // ContainerName derives the container name from the project directory.
