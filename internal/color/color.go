@@ -1,8 +1,12 @@
 package color
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -27,6 +31,90 @@ var (
 func EnableDebug() {
 	verbose = true
 	startTime = time.Now()
+}
+
+// captureBuf, when non-nil, collects verbose detail output (command echoes and
+// streamed command output) so it can be replayed if a later step fails. It is
+// only active in non-verbose mode — in verbose mode detail already streams to
+// the console, so there is nothing to replay.
+var captureBuf *syncBuffer
+
+// syncBuffer is a bytes.Buffer guarded by a mutex, so a command's stdout and
+// stderr streams can be captured into one buffer concurrently without racing.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// StartCapture begins buffering verbose detail output so it can be replayed if
+// a later step fails. It is a no-op in verbose mode, where detail already
+// streams to the console live. Pair it with DumpCapture (on failure) and
+// StopCapture (always, to release the buffer).
+func StartCapture() {
+	if verbose {
+		return
+	}
+	captureBuf = &syncBuffer{}
+}
+
+// StopCapture discards any buffered detail output and stops capturing.
+func StopCapture() {
+	captureBuf = nil
+}
+
+// DumpCapture writes any buffered detail output to stderr under a dim header,
+// then stops capturing. Call it when a step fails so the user sees the output
+// that was hidden in non-verbose mode. No-op when nothing was captured.
+func DumpCapture() {
+	if captureBuf == nil {
+		return
+	}
+	out := captureBuf.String()
+	captureBuf = nil
+	if strings.TrimSpace(out) == "" {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "\n%s\n", dimmed.Render("─── captured output (run with --verbose to stream live) ───"))
+	fmt.Fprint(os.Stderr, out)
+	if !strings.HasSuffix(out, "\n") {
+		fmt.Fprintln(os.Stderr)
+	}
+}
+
+// DetailOut returns the writer for a command's streamed stdout. In verbose mode
+// it is os.Stdout (live); while capturing it is the capture buffer; otherwise
+// the output is discarded.
+func DetailOut() io.Writer {
+	if verbose {
+		return os.Stdout
+	}
+	if captureBuf != nil {
+		return captureBuf
+	}
+	return io.Discard
+}
+
+// DetailErr returns the writer for a command's streamed stderr. See DetailOut.
+func DetailErr() io.Writer {
+	if verbose {
+		return os.Stderr
+	}
+	if captureBuf != nil {
+		return captureBuf
+	}
+	return io.Discard
 }
 
 // Debug prints a "[t+0.12s] message" line to stderr, but only when debug
@@ -55,9 +143,10 @@ func Warn(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "%s %s\n", warn.Render("Warning:"), msg)
 }
 
-// Command prints a dimmed "  $ command" line to stderr.
+// Command prints a dimmed "  $ command" line to the detail stream — live in
+// verbose mode, captured for error replay otherwise.
 func Command(cmd string) {
-	fmt.Fprintf(os.Stderr, "  %s\n", dimmed.Render("$ "+cmd))
+	fmt.Fprintf(DetailErr(), "  %s\n", dimmed.Render("$ "+cmd))
 }
 
 // Success prints a bold green message to stderr.

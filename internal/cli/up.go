@@ -30,11 +30,9 @@ Subsequent: start the stopped container (~1 second).`,
 
 			name := cfg.ContainerName
 
-			verbose, _ := cmd.Flags().GetBool("verbose")
-
 			if !incus.Exists(server, name) {
 				// First run: full provisioning.
-				return provision.Provision(ctx, server, cfg, verbose)
+				return provision.Provision(ctx, server, cfg)
 			}
 
 			if incus.IsRunning(server, name) {
@@ -49,7 +47,7 @@ Subsequent: start the stopped container (~1 second).`,
 				if err := incus.Delete(ctx, server, name); err != nil {
 					return err
 				}
-				return provision.Provision(ctx, server, cfg, verbose)
+				return provision.Provision(ctx, server, cfg)
 			}
 
 			// Resume: just start the container.

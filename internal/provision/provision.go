@@ -17,8 +17,17 @@ import (
 
 // ProvisionMinimal creates a lightweight container with just networking, a user,
 // and a single agent installed. Used for temporary containers like silo init --auto.
-func ProvisionMinimal(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig, agentName string) error {
+func ProvisionMinimal(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig, agentName string) (err error) {
 	name := cfg.ContainerName
+
+	// Buffer command output in non-verbose mode and replay it if anything fails.
+	color.StartCapture()
+	defer func() {
+		if err != nil {
+			color.DumpCapture()
+		}
+		color.StopCapture()
+	}()
 
 	status("Creating temporary container %s...", name)
 	if err := incus.Launch(ctx, server, cfg.Image, name); err != nil {
@@ -59,7 +68,7 @@ func ProvisionMinimal(ctx context.Context, server incuscli.InstanceServer, cfg *
 	}
 	if agentCfg.Install != "" {
 		singleAgent := map[string]config.MergedAgentConfig{agentName: agentCfg}
-		if err := agents.InstallAgents(ctx, server, name, cfg.User, cfg.Shell, singleAgent, false); err != nil {
+		if err := agents.InstallAgents(ctx, server, name, cfg.User, cfg.Shell, singleAgent); err != nil {
 			return err
 		}
 	}
@@ -77,9 +86,13 @@ func ProvisionMinimal(ctx context.Context, server incuscli.InstanceServer, cfg *
 }
 
 // Provision runs the full first-run provisioning flow for a container.
-func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig, verbose bool) error {
-	verboseOutput = verbose
+func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig) error {
 	name := cfg.ContainerName
+
+	// Buffer provisioning command output in non-verbose mode so it can be
+	// replayed if a step fails — otherwise the user sees only the final error.
+	color.StartCapture()
+	defer color.StopCapture()
 
 	// Step 1: Create and start the container.
 	status("Creating container %s from %s...", name, cfg.Image)
@@ -91,6 +104,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	success := false
 	defer func() {
 		if !success {
+			color.DumpCapture()
 			color.Warn("Provisioning failed. Removing container %s...", name)
 			incus.Stop(context.Background(), server, name)
 			incus.Delete(context.Background(), server, name)
@@ -198,7 +212,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 
 	// Step 11: Install agents.
 	if len(cfg.Agents) > 0 {
-		if err := agents.InstallAgents(ctx, server, name, cfg.User, cfg.Shell, cfg.Agents, verbose); err != nil {
+		if err := agents.InstallAgents(ctx, server, name, cfg.User, cfg.Shell, cfg.Agents); err != nil {
 			return err
 		}
 	}
@@ -286,11 +300,12 @@ func IsInitialized(server incuscli.InstanceServer, container, username string) b
 	return true
 }
 
-var verboseOutput bool
-
 // runUserCommands runs commands as the dev user in a single login shell
 // session, so PATH/env mutations (export, eval'd shell init, cd) carry over
 // from one command to the next. Aborts on the first failure (`set -e`).
+//
+// Output streams to color.Detail* — live with --verbose, otherwise buffered for
+// replay if the command fails.
 func runUserCommands(ctx context.Context, server incuscli.InstanceServer, container string, opts incus.ExecOpts, shell string, commands []string) error {
 	if len(commands) == 0 {
 		return nil
@@ -309,29 +324,14 @@ func runUserCommands(ctx context.Context, server incuscli.InstanceServer, contai
 	}
 
 	fullCmd := []string{loginShell, "-lc", script.String()}
-	if verboseOutput {
-		if err := incus.ExecStreaming(ctx, server, container, opts, fullCmd, os.Stdout, os.Stderr); err != nil {
-			return err
-		}
-	} else {
-		if _, err := incus.Exec(ctx, server, container, opts, fullCmd); err != nil {
-			return err
-		}
-	}
-	return nil
+	return incus.ExecStreaming(ctx, server, container, opts, fullCmd, color.DetailOut(), color.DetailErr())
 }
 
 func runCommands(ctx context.Context, server incuscli.InstanceServer, container string, opts incus.ExecOpts, commands []string) error {
 	for _, cmd := range commands {
-		if verboseOutput {
-			color.Command(cmd)
-			if err := incus.ExecStreaming(ctx, server, container, opts, []string{"sh", "-c", cmd}, os.Stdout, os.Stderr); err != nil {
-				return fmt.Errorf("command %q: %w", cmd, err)
-			}
-		} else {
-			if _, err := incus.Exec(ctx, server, container, opts, []string{"sh", "-c", cmd}); err != nil {
-				return fmt.Errorf("command %q: %w", cmd, err)
-			}
+		color.Command(cmd)
+		if err := incus.ExecStreaming(ctx, server, container, opts, []string{"sh", "-c", cmd}, color.DetailOut(), color.DetailErr()); err != nil {
+			return fmt.Errorf("command %q: %w", cmd, err)
 		}
 	}
 	return nil
