@@ -252,7 +252,7 @@ func runInteractiveInit(cwd string) error {
 	ports = strings.TrimSpace(ports)
 	if ports != "" {
 		for _, p := range strings.Split(ports, ",") {
-			cfg.Ports = append(cfg.Ports, strings.TrimSpace(p))
+			cfg.Ports = append(cfg.Ports, config.PortForward{Spec: strings.TrimSpace(p)})
 		}
 	}
 

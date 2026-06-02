@@ -106,9 +106,15 @@ update:
   - sudo dnf update -y
 
 # Port forwards (container_port:host_port, or just port for same on both sides)
-# Ports can also be defined on daemons (see below).
+# Ports can also be defined on daemons (see below). A port declared both here
+# and on a daemon is forwarded once; the entry in this section wins, so it
+# controls the host-side mapping.
 ports:
   - 5432:15432   # PostgreSQL
+  # Forwards can be named — the name shows up in `silo status` and is used for
+  # the Incus device name (handy when a forward fails to start):
+  - name: web
+    port: 9292:9292
 
 # Environment variables
 env:

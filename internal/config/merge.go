@@ -23,7 +23,7 @@ type MergedConfig struct {
 	Update       []string
 
 	// Environment and networking.
-	Ports  []string
+	Ports  []PortForward
 	Env    map[string]string
 	Mounts []string
 
@@ -241,21 +241,21 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 	if project != nil {
 		m.Daemons = project.Daemons
 		seen := make(map[int]bool)
-		for _, spec := range m.Ports {
-			if cp, ok := containerPort(spec); ok {
+		for _, pf := range m.Ports {
+			if cp, ok := containerPort(pf.Spec); ok {
 				seen[cp] = true
 			}
 		}
 		for _, daemon := range project.Daemons {
-			for _, spec := range daemon.Ports {
-				cp, ok := containerPort(spec)
+			for _, pf := range daemon.Ports {
+				cp, ok := containerPort(pf.Spec)
 				if ok && seen[cp] {
 					continue
 				}
 				if ok {
 					seen[cp] = true
 				}
-				m.Ports = append(m.Ports, spec)
+				m.Ports = append(m.Ports, pf)
 			}
 		}
 	}

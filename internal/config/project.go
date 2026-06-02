@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -15,7 +17,7 @@ type ProjectConfig struct {
 	Sync    []string            `yaml:"sync"`
 	Reset   map[string][]string `yaml:"reset"`
 	Update  []string            `yaml:"update"`
-	Ports   []string            `yaml:"ports"`
+	Ports   []PortForward       `yaml:"ports"`
 	Env     map[string]string   `yaml:"env"`
 	Git     GitConfig           `yaml:"git"`
 	Agents  map[string]AgentProjectConfig `yaml:"agents"`
@@ -53,10 +55,85 @@ type ToolConfig struct {
 
 // DaemonConfig holds daemon configuration, supporting both string and object forms.
 type DaemonConfig struct {
-	Cmd       string   `yaml:"cmd"`
-	Autostart bool     `yaml:"autostart"`
-	After     string   `yaml:"after"`
-	Ports     []string `yaml:"ports"`
+	Cmd       string        `yaml:"cmd"`
+	Autostart bool          `yaml:"autostart"`
+	After     string        `yaml:"after"`
+	Ports     []PortForward `yaml:"ports"`
+}
+
+// PortForward is a single port forward. In YAML it accepts either the shorthand
+// string form ("5432:15432" or "3000") or a mapping form so the forward can be
+// named for clearer status output and Incus device names:
+//
+//	ports:
+//	  - 5432:15432
+//	  - name: web
+//	    port: 9292:9292
+type PortForward struct {
+	Name string // optional label; drives status display and the device name
+	Spec string // "container:host" or "container"
+}
+
+// UnmarshalYAML accepts a bare port spec string or a {name, port} mapping.
+func (p *PortForward) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		// Use the raw value so both "5432:15432" (string) and 3000 (int) work.
+		p.Spec = value.Value
+		return nil
+	case yaml.MappingNode:
+		var raw struct {
+			Name string    `yaml:"name"`
+			Port yaml.Node `yaml:"port"`
+		}
+		if err := value.Decode(&raw); err != nil {
+			return err
+		}
+		if raw.Port.Kind != yaml.ScalarNode || raw.Port.Value == "" {
+			return fmt.Errorf("port forward %q: 'port' must be a spec like 5432:15432", raw.Name)
+		}
+		p.Name = raw.Name
+		p.Spec = raw.Port.Value
+		return nil
+	default:
+		return fmt.Errorf("invalid port forward entry")
+	}
+}
+
+// MarshalYAML writes the shorthand string form when unnamed and the mapping form
+// otherwise, so generated configs stay compact.
+func (p PortForward) MarshalYAML() (any, error) {
+	if p.Name == "" {
+		return p.Spec, nil
+	}
+	return struct {
+		Name string `yaml:"name"`
+		Port string `yaml:"port"`
+	}{p.Name, p.Spec}, nil
+}
+
+// DeviceName returns the Incus proxy-device name for this forward. Named forwards
+// use their sanitized name; unnamed ones use the host port (unique per forward).
+// Both are stable across config edits, unlike a slice index.
+func (p PortForward) DeviceName(hostPort int) string {
+	if s := sanitizeDeviceSuffix(p.Name); s != "" {
+		return "port-" + s
+	}
+	return "port-" + strconv.Itoa(hostPort)
+}
+
+// sanitizeDeviceSuffix lowercases s and replaces any character that is not a
+// letter, digit, or hyphen with a hyphen. Returns "" for an empty/blank name.
+func sanitizeDeviceSuffix(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	return b.String()
 }
 
 // UnmarshalYAML implements custom unmarshaling for DaemonConfig.
@@ -70,10 +147,10 @@ func (d *DaemonConfig) UnmarshalYAML(value *yaml.Node) error {
 
 	// Object form — need a temporary type to avoid infinite recursion.
 	type rawDaemon struct {
-		Cmd       string   `yaml:"cmd"`
-		Autostart *bool    `yaml:"autostart"`
-		After     string   `yaml:"after"`
-		Ports     []string `yaml:"ports"`
+		Cmd       string        `yaml:"cmd"`
+		Autostart *bool         `yaml:"autostart"`
+		After     string        `yaml:"after"`
+		Ports     []PortForward `yaml:"ports"`
 	}
 	var raw rawDaemon
 	if err := value.Decode(&raw); err != nil {

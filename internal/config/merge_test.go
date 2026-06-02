@@ -67,10 +67,10 @@ func TestMerge_ImageOverride(t *testing.T) {
 func TestMerge_DaemonPorts(t *testing.T) {
 	global := &GlobalConfig{Shell: "zsh", User: "dev", DefaultImage: "fedora/43"}
 	project := &ProjectConfig{
-		Ports: []string{"5432:15432"},
+		Ports: []PortForward{{Spec: "5432:15432"}},
 		Daemons: map[string]DaemonConfig{
-			"rails": {Cmd: "bin/rails s", Ports: []string{"3000"}},
-			"ember": {Cmd: "bin/ember-cli", Ports: []string{"4200"}},
+			"rails": {Cmd: "bin/rails s", Ports: []PortForward{{Spec: "3000"}}},
+			"ember": {Cmd: "bin/ember-cli", Ports: []PortForward{{Spec: "4200"}}},
 		},
 	}
 
@@ -81,8 +81,8 @@ func TestMerge_DaemonPorts(t *testing.T) {
 		t.Fatalf("Ports = %v, want 3 ports", m.Ports)
 	}
 	// First should be the top-level port.
-	if m.Ports[0] != "5432:15432" {
-		t.Errorf("Ports[0] = %q, want 5432:15432", m.Ports[0])
+	if m.Ports[0].Spec != "5432:15432" {
+		t.Errorf("Ports[0] = %q, want 5432:15432", m.Ports[0].Spec)
 	}
 }
 
@@ -93,25 +93,35 @@ func TestMerge_DaemonPorts(t *testing.T) {
 func TestMerge_DaemonPortsDeduped(t *testing.T) {
 	global := &GlobalConfig{Shell: "zsh", User: "dev", DefaultImage: "fedora/43"}
 	project := &ProjectConfig{
-		Ports: []string{"9292:9292", "8000:18000"},
+		Ports: []PortForward{{Name: "web", Spec: "9292:9292"}, {Spec: "8000:18000"}},
 		Daemons: map[string]DaemonConfig{
-			"web":    {Cmd: "bin/dev web", Ports: []string{"9292"}},
-			"ai":     {Cmd: "bin/dev ai", Ports: []string{"8000"}},
-			"worker": {Cmd: "bin/dev worker", Ports: []string{"7000"}},
+			"web":    {Cmd: "bin/dev web", Ports: []PortForward{{Spec: "9292"}}},
+			"ai":     {Cmd: "bin/dev ai", Ports: []PortForward{{Spec: "8000"}}},
+			"worker": {Cmd: "bin/dev worker", Ports: []PortForward{{Spec: "7000"}}},
 		},
 	}
 
 	m := Merge(global, project, "/tmp/test")
 
 	// The two overlapping daemon ports (9292, 8000) are dropped; only the new
-	// worker port (7000) is added to the two top-level ports.
-	want := map[string]bool{"9292:9292": true, "8000:18000": true, "7000": true}
+	// worker port (7000) is added to the two top-level ports. The top-level
+	// entries win, so the "web" forward keeps its name and 9292:9292 mapping.
+	want := map[string]PortForward{
+		"9292:9292":  {Name: "web", Spec: "9292:9292"},
+		"8000:18000": {Spec: "8000:18000"},
+		"7000":       {Spec: "7000"},
+	}
 	if len(m.Ports) != len(want) {
 		t.Fatalf("Ports = %v, want %d entries", m.Ports, len(want))
 	}
 	for _, p := range m.Ports {
-		if !want[p] {
-			t.Errorf("unexpected port %q in %v", p, m.Ports)
+		w, ok := want[p.Spec]
+		if !ok {
+			t.Errorf("unexpected port %#v in %v", p, m.Ports)
+			continue
+		}
+		if p != w {
+			t.Errorf("port %q = %#v, want %#v", p.Spec, p, w)
 		}
 	}
 }

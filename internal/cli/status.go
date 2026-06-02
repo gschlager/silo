@@ -91,11 +91,15 @@ func newStatusCmd() *cobra.Command {
 			if len(cfg.Ports) > 0 {
 				fmt.Printf("\n%s\n", statusSection.Render("Ports"))
 				for _, p := range cfg.Ports {
-					parts := strings.SplitN(p, ":", 2)
+					suffix := ""
+					if p.Name != "" {
+						suffix = "  (" + p.Name + ")"
+					}
+					parts := strings.SplitN(p.Spec, ":", 2)
 					if len(parts) == 2 {
-						fmt.Printf("  container:%s → localhost:%s\n", parts[0], parts[1])
+						fmt.Printf("  container:%s → localhost:%s%s\n", parts[0], parts[1], suffix)
 					} else {
-						fmt.Printf("  %s\n", p)
+						fmt.Printf("  %s%s\n", p.Spec, suffix)
 					}
 				}
 			}
