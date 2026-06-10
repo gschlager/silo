@@ -321,7 +321,7 @@ Each agent mode gets its own host directory (`~/.config/silo/agents/<name>/<mode
 
 Silo manages agent credentials in its own directory (`~/.config/silo/agents/<name>/<mode>/`), separate from your host's agent config. This means agents inside containers can't access or modify your host's settings.
 
-**First run**: The mode directory is seeded from your host's existing agent config (if any), then mounted into the container. The agent may still prompt you to log in on first launch; credentials are written directly into the mounted mode directory and are immediately visible to every container that uses the same mode.
+**First run**: The mode directory starts empty — silo never copies your host's agent config or credentials into a container. The agent prompts you to log in on first launch; the resulting credentials are written into the mounted mode directory and are then immediately visible to every container that uses the same mode, so you only log in once per mode.
 
 **How syncing works**:
 

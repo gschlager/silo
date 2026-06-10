@@ -110,9 +110,9 @@ Examples:
 				incus.CleanupSnapshots(ctx, server, cfg.ContainerName, "pre-session-", 3)
 			}
 
-			// Ensure the agent mode directory exists and is seeded.
+			// Ensure the agent mode directory exists (empty; never seeded from host).
 			color.Debug("preparing agent dir for %s (mode=%s)", agentName, agentCfg.Mode)
-			agents.EnsureModeDir(agentName, agentCfg.Mode, agentCfg.Links)
+			agents.EnsureModeDir(agentName, agentCfg.Mode)
 
 			// Build environment variables (host env + tool credentials + agent-specific).
 			color.Debug("resolving session env (tool credentials)")

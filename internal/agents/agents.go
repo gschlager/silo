@@ -3,7 +3,6 @@ package agents
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,9 +19,12 @@ func ModeDir(agent, mode string) string {
 	return filepath.Join(config.GlobalConfigDir(), "agents", agent, mode)
 }
 
-// EnsureModeDir creates the mode directory if it doesn't exist and seeds it
-// with files from the host. Idempotent — does nothing if the dir already has content.
-func EnsureModeDir(agent, mode string, links []config.LinkRule) error {
+// EnsureModeDir creates the mode directory if it doesn't exist. It deliberately
+// does NOT copy anything from the host: silo's isolation guarantee is that host
+// agent config and credentials never enter a container. The agent logs in on
+// first launch and that login state persists in the mode dir, shared across all
+// containers using the mode. Idempotent — does nothing if the dir already has content.
+func EnsureModeDir(agent, mode string) error {
 	modeDir := ModeDir(agent, mode)
 
 	// Check if already populated (has any content beyond README).
@@ -36,22 +38,6 @@ func EnsureModeDir(agent, mode string, links []config.LinkRule) error {
 
 	// Write a README so the directory doesn't look empty (hidden files).
 	writeREADME(modeDir, agent, mode)
-
-	// Seed from host: for each link rule, copy from the host path if source doesn't exist.
-	hostHome, _ := os.UserHomeDir()
-	if hostHome != "" {
-		for _, link := range links {
-			src := link.ResolveTarget(hostHome)
-			dst := filepath.Join(modeDir, link.Source)
-
-			if err := copyPath(src, dst); err != nil {
-				if !os.IsNotExist(err) {
-					color.Warn("could not seed %q from host: %v", link.Source, err)
-				}
-			}
-		}
-	}
-
 	return nil
 }
 
@@ -156,59 +142,5 @@ into the home directory. Changes made by the agent inside any container
 are immediately visible to all containers sharing this mode.
 `, agent, mode, agent)
 	os.WriteFile(filepath.Join(modeDir, "README"), []byte(content), 0644)
-}
-
-// copyPath copies a file or directory from src to dst, creating parent dirs.
-func copyPath(src, dst string) error {
-	info, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-
-	if info.IsDir() {
-		return copyDir(src, dst)
-	}
-	return copyFile(src, dst)
-}
-
-func copyDir(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		relPath, _ := filepath.Rel(src, path)
-		dstPath := filepath.Join(dst, relPath)
-
-		if info.IsDir() {
-			return os.MkdirAll(dstPath, 0700)
-		}
-		return copyFile(path, dstPath)
-	})
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
-		return err
-	}
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-
-	srcInfo, _ := os.Stat(src)
-	return os.Chmod(dst, srcInfo.Mode())
 }
 

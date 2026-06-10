@@ -119,9 +119,9 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 		return err
 	}
 
-	// Ensure the agent mode directory exists and is seeded.
+	// Ensure the agent mode directory exists (empty; never seeded from host).
 	agentCfg := cfg.Agents[agentName]
-	agents.EnsureModeDir(agentName, agentCfg.Mode, agentCfg.Links)
+	agents.EnsureModeDir(agentName, agentCfg.Mode)
 
 	// Build env and base command.
 	baseCmd := agentCfg.AgentCmd(agentName)
