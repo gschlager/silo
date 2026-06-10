@@ -13,6 +13,7 @@ import (
 // ProjectConfig represents the .silo.yml project configuration.
 type ProjectConfig struct {
 	Image   string              `yaml:"image"`
+	Use     UseList             `yaml:"use,omitempty"`
 	Setup   []string            `yaml:"setup"`
 	Sync    []string            `yaml:"sync"`
 	Reset   map[string][]string `yaml:"reset"`
@@ -25,6 +26,51 @@ type ProjectConfig struct {
 	Tools   map[string]ToolConfig `yaml:"tools"`
 	Daemons map[string]DaemonConfig `yaml:"daemons"`
 	Nesting bool                `yaml:"nesting"`
+}
+
+// PresetUse is a single preset invocation with its raw parameters. Params is the
+// raw YAML node so each preset can decode its own typed parameters.
+type PresetUse struct {
+	Name   string
+	Params yaml.Node
+}
+
+// UseList is the ordered list of presets a project opts into via `use:`. Order
+// matters (e.g. ruby must run before a later `bundle install`), so it is parsed
+// from the YAML mapping preserving declaration order rather than into a Go map.
+type UseList []PresetUse
+
+// UnmarshalYAML parses the `use:` mapping, preserving key order. A bare key
+// (e.g. `valkey:`) yields an empty params node. An empty or null `use:` is
+// treated as no presets.
+func (u *UseList) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode && (value.Tag == "!!null" || value.Value == "") {
+		return nil
+	}
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("use: must be a mapping of preset name to parameters")
+	}
+	// MappingNode content is [key0, val0, key1, val1, ...] in document order.
+	for i := 0; i+1 < len(value.Content); i += 2 {
+		key := value.Content[i]
+		*u = append(*u, PresetUse{Name: key.Value, Params: *value.Content[i+1]})
+	}
+	return nil
+}
+
+// MarshalYAML emits the `use:` mapping form so a parsed config round-trips.
+func (u UseList) MarshalYAML() (any, error) {
+	node := &yaml.Node{Kind: yaml.MappingNode}
+	for _, pu := range u {
+		key := &yaml.Node{}
+		key.SetString(pu.Name)
+		val := pu.Params
+		if val.Kind == 0 {
+			val = yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null", Value: "null"}
+		}
+		node.Content = append(node.Content, key, &val)
+	}
+	return node, nil
 }
 
 // GitConfig holds git settings and optional credential configuration.
@@ -229,6 +275,9 @@ func mergeProjectConfigs(base, local *ProjectConfig) *ProjectConfig {
 
 	if local.Image != "" {
 		m.Image = local.Image
+	}
+	if local.Use != nil {
+		m.Use = local.Use
 	}
 	if local.Setup != nil {
 		m.Setup = local.Setup

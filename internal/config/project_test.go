@@ -30,6 +30,58 @@ ports:
 	}
 }
 
+func TestLoadProjectConfig_UsePreservesOrder(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, dir, ".silo.yml", `use:
+  ruby:
+    versions: ["3.4"]
+  node:
+  postgres: { version: 18 }
+`)
+
+	cfg, err := LoadProjectConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"ruby", "node", "postgres"}
+	if len(cfg.Use) != len(want) {
+		t.Fatalf("Use = %#v, want %v", cfg.Use, want)
+	}
+	for i, name := range want {
+		if cfg.Use[i].Name != name {
+			t.Errorf("Use[%d].Name = %q, want %q", i, cfg.Use[i].Name, name)
+		}
+	}
+}
+
+func TestUseListMarshalRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	src := `use:
+  ruby:
+    versions:
+      - "3.4"
+  node: null
+`
+	writeYAML(t, dir, ".silo.yml", src)
+	cfg, err := LoadProjectConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := MarshalYAML(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeYAML(t, dir, ".silo.yml", string(data))
+	got, err := LoadProjectConfig(dir)
+	if err != nil {
+		t.Fatalf("re-parse: %v\n%s", err, data)
+	}
+	if len(got.Use) != 2 || got.Use[0].Name != "ruby" || got.Use[1].Name != "node" {
+		t.Errorf("round-trip Use = %#v\nYAML:\n%s", got.Use, data)
+	}
+}
+
 func TestLoadProjectConfig_LocalOverride(t *testing.T) {
 	dir := t.TempDir()
 	writeYAML(t, dir, ".silo.yml", `image: ubuntu/22.04
