@@ -72,6 +72,9 @@ func (rubyPreset) SetupCommands(params yaml.Node, _ string) ([]string, error) {
 		cmds = append(cmds,
 			activationGuard(`. "$HOME/.cargo/env"`, "cargo/env"),
 			activationGuard(rvInit, "rv shell init"),
+			// Activate rv for the rest of this setup session so later commands
+			// (bundle install, etc.) see the pinned ruby without needing `rv run`.
+			rvInit,
 		)
 	}
 
