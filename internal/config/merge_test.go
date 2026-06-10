@@ -2,6 +2,40 @@ package config
 
 import "testing"
 
+func TestMerge_GlobalAgentDisable(t *testing.T) {
+	global := &GlobalConfig{Agents: []AgentGlobalConfig{
+		{Name: "claude", Enabled: true},
+		{Name: "codex", Enabled: false},
+	}}
+	m := Merge(global, nil, "/tmp/proj")
+	if !m.Agents["claude"].Enabled {
+		t.Error("claude should be enabled")
+	}
+	if m.Agents["codex"].Enabled {
+		t.Error("codex should be disabled by global config")
+	}
+}
+
+func TestMerge_ProjectInheritsGlobalDisable(t *testing.T) {
+	global := &GlobalConfig{Agents: []AgentGlobalConfig{{Name: "codex", Enabled: false}}}
+	// Project mentions codex (e.g. to set a mode) but doesn't touch enabled.
+	project := &ProjectConfig{Agents: map[string]AgentProjectConfig{"codex": {Mode: "console"}}}
+	m := Merge(global, project, "/tmp/proj")
+	if m.Agents["codex"].Enabled {
+		t.Error("project mentioning codex without enabled should inherit the global disable")
+	}
+}
+
+func TestMerge_ProjectReenablesGlobalDisable(t *testing.T) {
+	global := &GlobalConfig{Agents: []AgentGlobalConfig{{Name: "codex", Enabled: false}}}
+	enabled := true
+	project := &ProjectConfig{Agents: map[string]AgentProjectConfig{"codex": {Enabled: &enabled}}}
+	m := Merge(global, project, "/tmp/proj")
+	if !m.Agents["codex"].Enabled {
+		t.Error("a project should be able to re-enable a globally disabled agent")
+	}
+}
+
 func TestContainerName(t *testing.T) {
 	tests := []struct {
 		projectDir string

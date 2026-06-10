@@ -214,25 +214,29 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 			Install: ga.Install,
 			Mode:    ga.Mode,
 			Links:   ga.Links,
-			Enabled: true,
+			Enabled: ga.Enabled,
 		}
 	}
 	if project != nil {
 		for name, pa := range project.Agents {
 			merged := MergedAgentConfig{
-				Mode:    pa.Mode,
-				Env:     pa.Env,
-				Enabled: true,
+				Mode: pa.Mode,
+				Env:  pa.Env,
 			}
-			if pa.Enabled != nil {
-				merged.Enabled = *pa.Enabled
-			}
-			// Keep deps, install, links and set from global if this agent exists there.
+			// Inherit cmd/deps/install/links/enabled from the global agent if it
+			// exists there; otherwise this is a project-only agent (enabled).
 			if ga, ok := globalAgents[name]; ok {
 				merged.Cmd = ga.Cmd
 				merged.Deps = ga.Deps
 				merged.Install = ga.Install
 				merged.Links = ga.Links
+				merged.Enabled = ga.Enabled
+			} else {
+				merged.Enabled = true
+			}
+			// A project-level enabled override wins over the global default.
+			if pa.Enabled != nil {
+				merged.Enabled = *pa.Enabled
 			}
 			if merged.Mode == "" {
 				if ga, ok := globalAgents[name]; ok {
