@@ -58,6 +58,22 @@ func SecretsForProject(project string) (map[string]string, error) {
 // value) are left untouched so user edits and comments are preserved. Returns
 // true when a stub was added.
 func EnsureSecretsStub(project string) (bool, error) {
+	stub := fmt.Sprintf("%s:\n  # github: op://vault/item/field   # GitHub PAT (wires git + gh)\n\n", project)
+	return appendProjectBlock(project, stub)
+}
+
+// AddProjectSecret appends "project:\n  name: value" to the secrets file when the
+// project has no entry yet, returning true on success. If an entry already
+// exists it makes no change and returns false, so callers can fall back to a
+// manual hint rather than clobbering existing entries or comments.
+func AddProjectSecret(project, name, value string) (bool, error) {
+	block := fmt.Sprintf("%s:\n  %s: %s\n\n", project, name, value)
+	return appendProjectBlock(project, block)
+}
+
+// appendProjectBlock appends block to the secrets file unless project already
+// has an entry. Writes a header the first time the file is created.
+func appendProjectBlock(project, block string) (bool, error) {
 	s, err := LoadSecrets()
 	if err != nil {
 		return false, err
@@ -87,8 +103,7 @@ func EnsureSecretsStub(project string) (bool, error) {
 		}
 	}
 
-	stub := fmt.Sprintf("%s:\n  # github: op://vault/item/field   # GitHub PAT (wires git + gh)\n\n", project)
-	if _, err := f.WriteString(stub); err != nil {
+	if _, err := f.WriteString(block); err != nil {
 		return false, fmt.Errorf("writing %s: %w", path, err)
 	}
 	return true, nil

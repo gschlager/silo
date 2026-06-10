@@ -96,6 +96,35 @@ func TestEnsureSecretsStub(t *testing.T) {
 	}
 }
 
+func TestAddProjectSecret(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	added, err := AddProjectSecret("proj", "github", "op://v/i/f")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !added {
+		t.Fatal("expected the secret to be added")
+	}
+	m, _ := SecretsForProject("proj")
+	if m["github"] != "op://v/i/f" {
+		t.Errorf("github = %q, want op://v/i/f", m["github"])
+	}
+
+	// An existing entry is never overwritten.
+	added2, err := AddProjectSecret("proj", "github", "op://other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added2 {
+		t.Error("expected no overwrite for an existing project")
+	}
+	m2, _ := SecretsForProject("proj")
+	if m2["github"] != "op://v/i/f" {
+		t.Errorf("github should be unchanged, got %q", m2["github"])
+	}
+}
+
 func TestProjectName(t *testing.T) {
 	m := &MergedConfig{ContainerName: ContainerName("/home/dev/migrations_tooling")}
 	if got := m.ProjectName(); got != "migrations-tooling" {
