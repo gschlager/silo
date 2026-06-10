@@ -1,26 +1,28 @@
 # silo development environment
-image: fedora/43
+image: fedora/44
 
 # Bootstrap: install Go toolchain and build dependencies.
 setup:
   - sudo dnf copr enable -y @go-sig/golang-rawhide
   - sudo dnf install -y golang
 
-# Incremental sync: rebuild after code changes.
+# Incremental sync: rebuild after code changes. Builds to ~/.local/bin (on PATH
+# via silo's activation), so the freshly built binary is the one `silo` runs —
+# no root needed, unlike /usr/local/bin.
 sync:
   - go mod download
-  - go build -o /usr/local/bin/silo ./cmd/silo
+  - mkdir -p ~/.local/bin && go build -o ~/.local/bin/silo ./cmd/silo
 
 # Reset targets.
 reset:
   deps:
     - go mod download
   build:
-    - go build -o /usr/local/bin/silo ./cmd/silo
+    - mkdir -p ~/.local/bin && go build -o ~/.local/bin/silo ./cmd/silo
 
 # System-level updates.
 update:
-  - dnf update -y
+  - sudo dnf update -y
 
 env:
   GOFLAGS: ""
