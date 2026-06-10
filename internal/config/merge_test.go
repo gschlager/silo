@@ -2,6 +2,23 @@ package config
 
 import "testing"
 
+func TestMerge_DefaultSetupDistroMatch(t *testing.T) {
+	global := &GlobalConfig{DefaultImage: "fedora/44", DefaultSetup: []string{"dnf install -y git"}}
+
+	// Same distro, different version → default_setup still applies.
+	if m := Merge(global, &ProjectConfig{Image: "fedora/43"}, "/tmp/p"); len(m.DefaultSetup) == 0 {
+		t.Error("default_setup should run for a same-distro image (fedora/43)")
+	}
+	// Unset project image → default image → applies.
+	if m := Merge(global, &ProjectConfig{}, "/tmp/p"); len(m.DefaultSetup) == 0 {
+		t.Error("default_setup should run when the project image is unset")
+	}
+	// Different distro → skipped (dnf commands wouldn't work).
+	if m := Merge(global, &ProjectConfig{Image: "ubuntu/24.04"}, "/tmp/p"); len(m.DefaultSetup) != 0 {
+		t.Errorf("default_setup should be skipped for ubuntu, got %v", m.DefaultSetup)
+	}
+}
+
 func TestMerge_GlobalAgentDisable(t *testing.T) {
 	global := &GlobalConfig{Agents: []AgentGlobalConfig{
 		{Name: "claude", Enabled: true},
@@ -143,7 +160,7 @@ func TestMerge_DaemonPortsDeduped(t *testing.T) {
 	want := map[string]PortForward{
 		"9292:9292":  {Name: "web", Spec: "9292:9292"},
 		"8000:18000": {Spec: "8000:18000"},
-		"7000":       {Spec: "7000"},
+		"7000":       {Name: "worker", Spec: "7000"}, // labeled with its daemon
 	}
 	if len(m.Ports) != len(want) {
 		t.Fatalf("Ports = %v, want %d entries", m.Ports, len(want))

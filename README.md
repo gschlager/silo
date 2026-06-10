@@ -75,8 +75,8 @@ Create a `.silo.yml` in your project root (or run `silo init` to generate one):
 # silo project configuration
 # https://github.com/gschlager/silo#project-configuration
 
-# Base image (default: fedora/43)
-image: fedora/43
+# Base image (default: fedora/44)
+image: fedora/44
 
 # Built-in presets install common stacks so you don't copy-paste the same
 # setup steps between projects. Preset commands run before your own setup:

@@ -151,7 +151,11 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 			return fmt.Errorf("host port %d is forwarded by more than one entry (%s and %s)", hostPort, prev, port.Spec)
 		}
 		seenHost[hostPort] = port.Spec
-		status("Adding port forward %d -> %d...", containerPort, hostPort)
+		label := ""
+		if port.Name != "" {
+			label = " (" + port.Name + ")"
+		}
+		status("Adding port forward %d -> %d%s...", containerPort, hostPort, label)
 		if err := incus.AddProxyDevice(ctx, server, name, port.DeviceName(hostPort), hostPort, containerPort); err != nil {
 			return err
 		}

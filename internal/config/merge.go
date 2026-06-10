@@ -159,8 +159,11 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		m.Image = global.DefaultImage
 	}
 
-	// DefaultSetup: only runs if project uses the default image.
-	useDefaultSetup := project == nil || project.Image == "" || project.Image == global.DefaultImage
+	// DefaultSetup: runs when the project uses the same distro as the default
+	// image. Its commands are package-manager specific, so this covers minor
+	// version bumps like fedora/43 -> fedora/44 while still skipping a genuinely
+	// different distro (e.g. ubuntu/*) where the dnf commands wouldn't work.
+	useDefaultSetup := project == nil || project.Image == "" || sameDistro(project.Image, global.DefaultImage)
 	if useDefaultSetup {
 		m.DefaultSetup = global.DefaultSetup
 	}
@@ -264,7 +267,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 				seen[cp] = true
 			}
 		}
-		for _, daemon := range project.Daemons {
+		for daemonName, daemon := range project.Daemons {
 			for _, pf := range daemon.Ports {
 				cp, ok := containerPort(pf.Spec)
 				if ok && seen[cp] {
@@ -272,6 +275,15 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 				}
 				if ok {
 					seen[cp] = true
+				}
+				// Label unnamed daemon ports with the daemon name so status output
+				// and Incus device names identify them. Disambiguate by container
+				// port when a daemon exposes more than one, to keep names unique.
+				if pf.Name == "" {
+					pf.Name = daemonName
+					if len(daemon.Ports) > 1 && ok {
+						pf.Name = daemonName + "-" + strconv.Itoa(cp)
+					}
 				}
 				m.Ports = append(m.Ports, pf)
 			}
@@ -294,6 +306,24 @@ func containerPort(spec string) (int, bool) {
 		return 0, false
 	}
 	return n, true
+}
+
+// sameDistro reports whether two image references name the same distribution
+// (e.g. fedora/43 and fedora/44), ignoring the version and any remote prefix.
+func sameDistro(a, b string) bool {
+	return distroOf(a) == distroOf(b)
+}
+
+// distroOf extracts the distribution name from an image reference like
+// "fedora/44" or "images:ubuntu/24.04".
+func distroOf(image string) string {
+	if i := strings.IndexByte(image, ':'); i >= 0 {
+		image = image[i+1:]
+	}
+	if i := strings.IndexByte(image, '/'); i >= 0 {
+		image = image[:i]
+	}
+	return image
 }
 
 // ContainerName derives the container name from the project directory.

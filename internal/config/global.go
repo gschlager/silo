@@ -223,7 +223,7 @@ func EnsureGlobalConfig() error {
 
 func defaultGlobalConfig() *GlobalConfig {
 	return &GlobalConfig{
-		DefaultImage: "fedora/43",
+		DefaultImage: "fedora/44",
 		DefaultSetup: []string{
 			"dnf install -y git curl wget make gcc which jq socat ripgrep fd-find tree gh ncurses",
 		},
