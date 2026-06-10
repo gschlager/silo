@@ -225,10 +225,10 @@ func defaultGlobalConfig() *GlobalConfig {
 	return &GlobalConfig{
 		DefaultImage: "fedora/43",
 		DefaultSetup: []string{
-			"dnf install -y git curl wget make gcc which zsh jq socat ripgrep fd-find tree gh ncurses",
+			"dnf install -y git curl wget make gcc which jq socat ripgrep fd-find tree gh ncurses",
 		},
 		PassEnv: []string{"TERM", "COLORTERM", "COLORFGBG", "LANG", "LC_ALL"},
-		Shell:   "zsh",
+		Shell:   "bash",
 		User:  "dev",
 		Git:   map[string]string{},
 		Agents: []AgentGlobalConfig{

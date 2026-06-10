@@ -56,6 +56,13 @@ func loadConfig() (*config.MergedConfig, error) {
 
 	merged := config.Merge(global, project, cwd)
 
+	// Use the shell the container was actually provisioned with, which may differ
+	// from the configured one if it could not be installed and silo fell back to
+	// bash. Keeps enter/run/daemons consistent with provisioning.
+	if shell := config.LoadContainerShell(merged.ContainerName); shell != "" {
+		merged.Shell = shell
+	}
+
 	// Apply mode overrides from state file.
 	modes, err := config.LoadModeState(merged.ContainerName)
 	if err != nil {
