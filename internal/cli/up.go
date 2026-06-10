@@ -2,6 +2,7 @@ package cli
 
 import (
 	"github.com/gschlager/silo/internal/color"
+	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/gschlager/silo/internal/provision"
 	"github.com/spf13/cobra"
@@ -31,6 +32,13 @@ Subsequent: start the stopped container (~1 second).`,
 			name := cfg.ContainerName
 
 			if !incus.Exists(server, name) {
+				// First run: give the project a slot in the central secrets file
+				// so the user has an obvious place to add its PAT.
+				if added, err := config.EnsureSecretsStub(cfg.ProjectName()); err != nil {
+					color.Warn("could not update secrets file: %v", err)
+				} else if added {
+					color.Info("Added a secrets entry for %q — set its PAT in %s", cfg.ProjectName(), config.SecretsPath())
+				}
 				// First run: full provisioning.
 				return provision.Provision(ctx, server, cfg)
 			}

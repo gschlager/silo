@@ -225,10 +225,18 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 9: Set up git credential helper.
-	if cfg.GitCredential != nil {
+	// Step 9: Install the GitHub credential helper when a github token source is
+	// configured — either a project git.credential or a central secrets 'github'
+	// key. The helper reads $GITHUB_TOKEN at runtime, so nothing is baked in.
+	needHelper := cfg.GitCredential != nil
+	if !needHelper {
+		if secrets, err := config.SecretsForProject(cfg.ProjectName()); err == nil {
+			_, needHelper = secrets["github"]
+		}
+	}
+	if needHelper {
 		status("Setting up git credentials...")
-		if err := SetupCredentialHelper(ctx, server, name, cfg.User, cfg.GitCredential); err != nil {
+		if err := InstallGitHubCredentialHelper(ctx, server, name, cfg.User); err != nil {
 			return err
 		}
 	}
@@ -268,6 +276,13 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	if len(cfg.Setup) > 0 {
 		status("Running project setup...")
 		userOpts := incus.UserOpts("/home/"+cfg.User, cfg.WorkspacePath())
+		// Make credentials (GITHUB_TOKEN, etc.) available to setup so it can fetch
+		// private dependencies. Resolved on the host; never written to disk.
+		credEnv, err := ResolveSessionEnv(cfg)
+		if err != nil {
+			return fmt.Errorf("resolving setup credentials: %w", err)
+		}
+		userOpts.Env = credEnv
 		if err := runUserCommands(ctx, server, name, userOpts, cfg.Shell, cfg.Setup); err != nil {
 			return fmt.Errorf("setup failed: %w", err)
 		}

@@ -98,6 +98,12 @@ func (m *MergedConfig) UserHome() string {
 	return "/home/" + m.User
 }
 
+// ProjectName returns the short project name used to key the central secrets
+// file. It matches the container name without the "silo-" prefix.
+func (m *MergedConfig) ProjectName() string {
+	return strings.TrimPrefix(m.ContainerName, "silo-")
+}
+
 // ResolveDefaultAgent returns the default agent name. If DefaultAgent is set,
 // it returns that. Otherwise it returns the first agent in definition order.
 func (m *MergedConfig) ResolveDefaultAgent() string {
