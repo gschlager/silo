@@ -23,6 +23,9 @@ func NewRootCmd() *cobra.Command {
 			if err := config.EnsureGlobalConfig(); err != nil {
 				color.Warn("could not create global config: %v", err)
 			}
+			if err := config.EnsureGitignore(); err != nil {
+				color.Warn("could not create global gitignore: %v", err)
+			}
 			return nil
 		},
 	}

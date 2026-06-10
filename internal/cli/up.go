@@ -45,6 +45,9 @@ Subsequent: start the stopped container (~1 second).`,
 
 			if incus.IsRunning(server, name) {
 				color.Info("Container %s is already running.", name)
+				if err := provision.ApplyGitignore(ctx, server, name, cfg.User); err != nil {
+					color.Warn("could not apply global gitignore: %v", err)
+				}
 				return nil
 			}
 
@@ -58,10 +61,14 @@ Subsequent: start the stopped container (~1 second).`,
 				return provision.Provision(ctx, server, cfg)
 			}
 
-			// Resume: just start the container.
+			// Resume: start the stopped container, then refresh the global
+			// gitignore so edits to the host file apply on the next start.
 			color.Status("Starting %s...", name)
 			if err := incus.Start(ctx, server, name); err != nil {
 				return err
+			}
+			if err := provision.ApplyGitignore(ctx, server, name, cfg.User); err != nil {
+				color.Warn("could not apply global gitignore: %v", err)
 			}
 
 			color.Success("Environment ready!")

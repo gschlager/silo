@@ -223,6 +223,12 @@ converters:
 - The reserved **`github`** key exports `GITHUB_TOKEN` and `GH_TOKEN` and wires the git credential helper for `github.com`. Every other key becomes a plain environment variable of that name.
 - Secrets are resolved fresh at session and setup time and passed as environment variables — never baked into the container or written to disk. Rotating a PAT in 1Password takes effect on the next session with no reprovision.
 
+### Global gitignore
+
+`~/.config/silo/gitignore` is a single global ignore file applied in every container. silo writes it into each container as `~/.config/git/ignore` (git's default per-user excludes), so it ignores the listed patterns in **all** repositories. It is seeded with sensible defaults (`.silo.yml`, `.silo.local.yml`, `.idea/`, `.vscode/`, `.claude/`, `.codex/`, `.DS_Store`) on first run.
+
+Edit the one file and the change applies to every container on its next `silo up` or `silo enter` — no reprovision. Empty the file to disable.
+
 ### Agent configuration
 
 Each agent has:
@@ -345,6 +351,7 @@ The mode can also be set as a default in `.silo.yml` or `.silo.local.yml` via `a
 ~/.config/silo/
 ├── config.yml                              # global overrides
 ├── secrets.yml                             # per-project secrets (PATs, etc.)
+├── gitignore                               # global gitignore for every container
 ├── agents/
 │   └── claude/                             # shared across all containers
 │       ├── oauth/                          # data for "oauth" mode

@@ -32,6 +32,11 @@ func newEnterCmd() *cobra.Command {
 				return err
 			}
 
+			// Refresh the global gitignore so edits to the host file apply on enter.
+			if err := provision.ApplyGitignore(ctx, server, cfg.ContainerName, cfg.User); err != nil {
+				color.Warn("could not apply global gitignore: %v", err)
+			}
+
 			// Start the notification bridge for this session.
 			if cfg.Notifications {
 				color.Debug("starting notification bridge")

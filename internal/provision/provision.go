@@ -225,6 +225,11 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
+	// Step 8b: Apply the global gitignore (git's per-user excludes file).
+	if err := ApplyGitignore(ctx, server, name, cfg.User); err != nil {
+		color.Warn("could not apply global gitignore: %v", err)
+	}
+
 	// Step 9: Install the GitHub credential helper when a github token source is
 	// configured — either a project git.credential or a central secrets 'github'
 	// key. The helper reads $GITHUB_TOKEN at runtime, so nothing is baked in.
