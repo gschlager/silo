@@ -104,6 +104,12 @@ func (m *MergedConfig) ProjectName() string {
 	return strings.TrimPrefix(m.ContainerName, "silo-")
 }
 
+// ProjectName returns the short project name for a directory: the container name
+// without the "silo-" prefix.
+func ProjectName(projectDir string) string {
+	return strings.TrimPrefix(ContainerName(projectDir), "silo-")
+}
+
 // ResolveDefaultAgent returns the default agent name. If DefaultAgent is set,
 // it returns that. Otherwise it returns the first agent in definition order.
 func (m *MergedConfig) ResolveDefaultAgent() string {

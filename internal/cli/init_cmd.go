@@ -15,8 +15,10 @@ import (
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	"github.com/gschlager/silo/internal/presets"
 	"github.com/gschlager/silo/internal/provision"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 func newInitCmd() *cobra.Command {
@@ -230,18 +232,49 @@ func runInteractiveInit(cwd string) error {
 		cfg.Image = image
 	}
 
-	// Detect private remotes.
+	// Language runtimes via presets.
+	fmt.Print("\nRuby versions (comma-separated, e.g. 3.4 or 3.3,3.4,jruby) or empty: ")
+	var rubyLine string
+	fmt.Scanln(&rubyLine)
+	if rubyLine = strings.TrimSpace(rubyLine); rubyLine != "" {
+		var versions []string
+		for _, v := range strings.Split(rubyLine, ",") {
+			if v = strings.TrimSpace(v); v != "" {
+				versions = append(versions, v)
+			}
+		}
+		var node yaml.Node
+		if err := node.Encode(map[string]any{"versions": versions}); err != nil {
+			return err
+		}
+		cfg.Use = append(cfg.Use, config.PresetUse{Name: "ruby", Params: node})
+	}
+
+	fmt.Print("Install Node.js? [y/N]: ")
+	var nodeAns string
+	fmt.Scanln(&nodeAns)
+	if strings.HasPrefix(strings.ToLower(nodeAns), "y") {
+		cfg.Use = append(cfg.Use, config.PresetUse{Name: "node"})
+	}
+
+	// Detect private remotes — the PAT goes in the central secrets file, not .silo.yml.
 	if hasPrivateRemote(cwd) {
-		fmt.Println("\nPrivate remote detected. You'll need a git credential for push/pull.")
+		project := config.ProjectName(cwd)
+		fmt.Println("\nPrivate remote detected. The GitHub PAT goes in the central secrets file for push/pull.")
 		fmt.Println("Recommended: Create a fine-grained PAT at GitHub > Settings > Developer Settings > Fine-grained tokens")
-		fmt.Print("1Password reference (op://...) or leave empty to skip: ")
+		fmt.Print("1Password reference (op://...) or leave empty to add a stub: ")
 		var ref string
 		fmt.Scanln(&ref)
-		if ref != "" {
-			cfg.Git.Credential = &config.CredentialConfig{
-				Source: "1password",
-				Ref:    ref,
+		if ref = strings.TrimSpace(ref); ref != "" {
+			if added, err := config.AddProjectSecret(project, "github", ref); err != nil {
+				color.Warn("could not update secrets file: %v", err)
+			} else if added {
+				fmt.Printf("Added a github PAT for %q to %s\n", project, config.SecretsPath())
+			} else {
+				color.Warn("%q already has an entry in %s — add the github key manually", project, config.SecretsPath())
 			}
+		} else if _, err := config.EnsureSecretsStub(project); err == nil {
+			fmt.Printf("Added a secrets stub for %q to %s\n", project, config.SecretsPath())
 		}
 	}
 
@@ -284,8 +317,13 @@ Analyze the project in %s and generate a complete .silo.yml.`, wsPath) + `
 The file format (all fields are optional):
 
   image: fedora/43          # Base image (default: fedora/43)
+  use:                      # Built-in presets — prefer these over installing runtimes by hand
+    ruby:                   #   Ruby via rv; jruby/truffleruby are valid version entries
+      versions: ["3.4"]
+      default: "3.4"
+    node:                   #   Node.js + corepack (pnpm/yarn via the packageManager field)
   setup:                    # Commands run once on first provisioning (as dev user with sudo)
-    - sudo dnf install -y postgresql16-server redis ruby nodejs
+    - sudo dnf install -y postgresql16-server redis
     - sudo systemctl enable --now postgresql redis
     - bundle install
     - bin/rails db:create
@@ -313,7 +351,11 @@ The file format (all fields are optional):
   nesting: false            # Enable container nesting (Docker, Podman, etc.)
 
 Important rules:
-- setup commands run as the dev user. Use "sudo" for commands that need root (dnf, systemctl, etc.)
+- setup commands run as the dev user with a login shell. Use "sudo" for commands that need root (dnf, systemctl, etc.)
+- Prefer use: presets for language runtimes instead of installing them by hand. Available presets: ` + strings.Join(presets.Available(), ", ") + `
+  - For ruby, set versions from .ruby-version or the Gemfile ruby directive; jruby/truffleruby are valid entries. Omit the ruby preset if the project is not Ruby.
+  - The login shell is bash. Do NOT write shell-init/activation lines (no ~/.zshrc, ~/.zshenv, ~/.profile, ~/.zprofile, no "mise activate"/"rv shell init" appended to dotfiles). Presets wire runtime activation. If another tool genuinely needs activation, append one POSIX-sh line to ~/.silo/env.sh.
+- Do NOT put tokens, PATs, or secrets in .silo.yml. Per-project secrets live in ~/.config/silo/secrets.yml and are injected as environment variables (e.g. GITHUB_TOKEN); just assume they are present.
 - sync should be incremental (fast) — not a full rebuild
 - Look at the project files to determine: language, package manager, services needed, ports
 - Check for Dockerfile, docker-compose.yml, Gemfile, package.json, go.mod, requirements.txt, etc.
