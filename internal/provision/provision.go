@@ -55,6 +55,13 @@ func ProvisionMinimal(ctx context.Context, server incuscli.InstanceServer, cfg *
 		}
 	}
 
+	// Ensure the configured login shell exists before creating the user.
+	effectiveShell, err := EnsureShell(ctx, server, name, cfg.Shell)
+	if err != nil {
+		return err
+	}
+	cfg.Shell = effectiveShell
+
 	// Create user.
 	status("Creating user %s...", cfg.User)
 	if err := CreateUser(ctx, server, name, cfg.User, cfg.Shell); err != nil {
@@ -186,10 +193,28 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
+	// Step 6b: Ensure the configured login shell exists (install it if missing,
+	// fall back to bash). Decoupled from default_setup so it runs for every image
+	// — silo execs every command through this shell. Persist the effective shell
+	// so later commands agree even when it differs from the configured one.
+	effectiveShell, err := EnsureShell(ctx, server, name, cfg.Shell)
+	if err != nil {
+		return err
+	}
+	cfg.Shell = effectiveShell
+	if err := config.SaveContainerShell(name, effectiveShell); err != nil {
+		color.Warn("could not record effective shell: %v", err)
+	}
+
 	// Step 7: Create dev user.
 	status("Creating user %s...", cfg.User)
 	if err := CreateUser(ctx, server, name, cfg.User, cfg.Shell); err != nil {
 		return err
+	}
+
+	// Step 7b: Enable prefix history search (Up/Down) for bash line editing.
+	if err := configureInputrc(ctx, server, name); err != nil {
+		color.Warn("could not configure inputrc: %v", err)
 	}
 
 	// Step 8: Configure git.
@@ -234,7 +259,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	// Step 13: Set environment variables.
 	if len(cfg.Env) > 0 {
 		status("Setting environment variables...")
-		if err := setEnvironment(ctx, server, name, cfg.User, cfg.Shell, cfg.Env); err != nil {
+		if err := setEnvironment(ctx, server, name, cfg.User, cfg.Env); err != nil {
 			return err
 		}
 	}
@@ -399,7 +424,7 @@ func shellEscape(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-func setEnvironment(ctx context.Context, server incuscli.InstanceServer, container, username, shell string, env map[string]string) error {
+func setEnvironment(ctx context.Context, server incuscli.InstanceServer, container, username string, env map[string]string) error {
 	rootOpts := incus.ExecOpts{}
 
 	// Ensure directory exists (no user-controlled data in this command).
@@ -423,23 +448,15 @@ func setEnvironment(ctx context.Context, server incuscli.InstanceServer, contain
 		return fmt.Errorf("setting environment variables: %w", err)
 	}
 
-	// Also set in the shell's login profile.
-	// zsh does not source ~/.profile — it uses ~/.zprofile instead.
-	profileFile := ".profile"
-	if shell == "zsh" {
-		profileFile = ".zprofile"
-	}
-	profilePath := fmt.Sprintf("/home/%s/%s", username, profileFile)
+	// Also export from the shell-neutral activation file so interactive shells,
+	// `silo run`, and daemons all see the variables regardless of shell.
 	var profileLines []string
 	for k, v := range env {
 		profileLines = append(profileLines, fmt.Sprintf("export %s=%s", k, shellEscape(v)))
 	}
 	profileContent := strings.Join(profileLines, "\n") + "\n"
 
-	userOpts := incus.ExecOpts{User: 1000, Home: "/home/" + username}
-	if _, err := incus.ExecWithStdin(ctx, server, container, userOpts, []string{
-		"tee", "-a", profilePath,
-	}, []byte(profileContent)); err != nil {
+	if err := appendActivation(ctx, server, container, username, profileContent); err != nil {
 		return fmt.Errorf("setting profile environment variables: %w", err)
 	}
 

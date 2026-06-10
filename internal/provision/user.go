@@ -37,18 +37,11 @@ func CreateUser(ctx context.Context, server incuscli.InstanceServer, container, 
 		return fmt.Errorf("configuring sudo for %q: %w", username, err)
 	}
 
-	// Add ~/.local/bin to PATH in the shell's login profile.
-	// zsh does not source ~/.profile — it uses ~/.zprofile instead.
-	pathLine := `export PATH="$HOME/.local/bin:$PATH"`
-	profileFile := ".profile"
-	if shell == "zsh" {
-		profileFile = ".zprofile"
-	}
-	userOpts := incus.ExecOpts{User: 1000, Home: "/home/" + username}
-	if _, err := incus.Exec(ctx, server, container, userOpts, []string{
-		"sh", "-c", fmt.Sprintf(`echo '%s' >> ~/%s`, pathLine, profileFile),
-	}); err != nil {
-		return fmt.Errorf("setting PATH for %q: %w", username, err)
+	// Set up the shell-neutral activation seam (~/.silo/env.sh + bootstrap) and
+	// seed it with the ~/.local/bin PATH tweak. This replaces per-shell profile
+	// writes so PATH/env/tool activations work for bash and zsh alike.
+	if err := setupActivation(ctx, server, container, username, shell); err != nil {
+		return err
 	}
 
 	// Enable systemd user linger so user services start at boot.

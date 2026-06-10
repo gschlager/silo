@@ -80,9 +80,10 @@ func buildUnitFile(name, shell, workspacePath string, daemon config.DaemonConfig
 		dep := "silo-" + daemon.After + ".service"
 		unit += fmt.Sprintf("After=%s\nRequires=%s\n", dep, dep)
 	}
-	// Run via login shell so the user's profile/shellenv is sourced — this
-	// gives daemons the same PATH and tool activations (rv, node version
-	// managers, etc.) as interactive silo sessions, without per-daemon env.
+	// Run via login shell so the shell-neutral activation file (~/.silo/env.sh,
+	// sourced via /etc/profile.d/silo.sh or ~/.zshenv) is loaded — this gives
+	// daemons the same PATH and tool activations (rv, node version managers,
+	// etc.) as interactive silo sessions, without per-daemon env.
 	unit += fmt.Sprintf(`
 [Service]
 Type=simple
