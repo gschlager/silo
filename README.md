@@ -204,7 +204,7 @@ agents:
     cmd: claude --dangerously-skip-permissions
 ```
 
-Run `silo config show` to see the full resolved configuration (defaults + your overrides) with syntax highlighting. Run `silo config edit` to open the config in your editor.
+Run `silo config edit` to open the global config in your editor, or `silo config path` to print its location. Run `silo config show` (from a project directory) to see the fully resolved configuration for that project — global + project merged, presets expanded into setup, and which secrets apply (by reference; tokens are never printed).
 
 ### Secrets
 
@@ -312,7 +312,7 @@ Each agent mode gets its own host directory (`~/.config/silo/agents/<name>/<mode
 | `silo init`                    | Generate `.silo.yml` with AI (default)                   |
 | `silo init -m`                 | Generate `.silo.yml` with interactive wizard             |
 | `silo init --agent codex`      | Use a specific agent for generation                      |
-| `silo config show`             | Print resolved global config with syntax highlighting    |
+| `silo config show`             | Show the resolved config for the current project (presets expanded) |
 | `silo config edit`             | Open global config in `$EDITOR`                          |
 | `silo config path`             | Print config file path                                   |
 | `silo completion install`      | Auto-install shell completions                           |
