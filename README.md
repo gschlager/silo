@@ -344,6 +344,7 @@ The mode can also be set as a default in `.silo.yml` or `.silo.local.yml` via `a
 ```
 ~/.config/silo/
 ├── config.yml                              # global overrides
+├── secrets.yml                             # per-project secrets (PATs, etc.)
 ├── agents/
 │   └── claude/                             # shared across all containers
 │       ├── oauth/                          # data for "oauth" mode
@@ -357,7 +358,8 @@ The mode can also be set as a default in `.silo.yml` or `.silo.local.yml` via `a
 │           └── .claude.json
 └── containers/
     └── silo-myapp/
-        └── mode.yml                        # per-project mode overrides (from silo mode)
+        ├── mode.yml                        # per-project mode overrides (from silo mode)
+        └── shell                           # shell the container was provisioned with
 ```
 
 Each mode directory is mounted into the container at `/var/lib/silo/<agent>/`, and the paths listed under `links` are created as symlinks into that mount. Switching modes with `silo mode` swaps which mode directory is mounted — history, settings, and credentials from one mode never leak into another.
@@ -376,7 +378,7 @@ Silo isolates AI agents in Linux system containers (Incus/LXC) with kernel-level
 | Agent escapes via symlink/path traversal   | Yes        | Host paths don't exist in container namespace                     |
 | Agent escalates via Docker socket          | Yes        | Host socket not mounted; nesting runs an isolated runtime         |
 | Agent deletes or corrupts project files    | No         | Workspace is read-write by design; use git to recover             |
-| Agent reads injected tool credentials      | No         | Passed as env vars by design; scope with per-project tokens (#7)  |
+| Agent reads injected tool credentials      | No         | Passed as env vars by design; give each project its own token in the central secrets file |
 | Agent exfiltrates data via network         | No         | Containers have internet access by design                         |
 | Agent exhausts host resources              | No         | No cgroup limits by default; configurable limits planned (#11)    |
 | Agent accesses host/LAN services           | No         | Private network access not blocked by default; planned (#11)      |
