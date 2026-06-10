@@ -17,6 +17,7 @@ type MergedConfig struct {
 
 	// Command lists.
 	DefaultSetup []string
+	Use          UseList
 	Setup        []string
 	Sync         []string
 	Reset        map[string][]string
@@ -154,6 +155,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 
 	// Command lists: project-level only.
 	if project != nil {
+		m.Use = project.Use
 		m.Setup = project.Setup
 		m.Sync = project.Sync
 		m.Reset = project.Reset

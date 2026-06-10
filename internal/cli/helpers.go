@@ -10,6 +10,7 @@ import (
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	"github.com/gschlager/silo/internal/presets"
 	"github.com/gschlager/silo/internal/provision"
 	"github.com/spf13/cobra"
 )
@@ -62,6 +63,14 @@ func loadConfig() (*config.MergedConfig, error) {
 	if shell := config.LoadContainerShell(merged.ContainerName); shell != "" {
 		merged.Shell = shell
 	}
+
+	// Expand built-in presets (use:) into setup commands, prepended so runtimes
+	// and services are ready before the project's own setup (e.g. bundle install).
+	presetCmds, err := presets.Expand(merged.Use, merged.Shell)
+	if err != nil {
+		return nil, err
+	}
+	merged.Setup = append(presetCmds, merged.Setup...)
 
 	// Apply mode overrides from state file.
 	modes, err := config.LoadModeState(merged.ContainerName)
