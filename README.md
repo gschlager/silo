@@ -78,14 +78,26 @@ Create a `.silo.yml` in your project root (or run `silo init` to generate one):
 # Base image (default: fedora/43)
 image: fedora/43
 
+# Built-in presets install common stacks so you don't copy-paste the same
+# setup steps between projects. Preset commands run before your own setup:
+# below. jruby/truffleruby are just entries in versions — silo routes MRI
+# through rv and the rest through ruby-install. Run `silo config show` to see
+# the resolved setup.
+use:
+  ruby:
+    versions: [3.3, 3.4, "4.0", jruby]   # jruby/truffleruby are just versions
+    default: "3.4"                        # version to pin (optional)
+  node:
+
 # Commands run once on first provisioning (as dev user with sudo).
 # All lines run in one login shell session with `set -e`, so PATH/env
 # changes (export, eval, cd) carry over from one command to the next.
-# For activations that need to persist in future silo enter/ra sessions,
-# append to ~/.zshenv (always sourced) or ~/.zshrc (interactive only)
-# from within setup — see the rv example below.
+# To persist activation for future silo enter/ra/daemon sessions, append a
+# POSIX-sh line to ~/.silo/env.sh — it is sourced by every login shell (bash
+# and zsh) and by daemons, e.g. `echo 'eval "$(mise activate bash)"' >> ~/.silo/env.sh`.
+# (The ruby preset already wires rv this way.)
 setup:
-  - sudo dnf install -y postgresql16-server redis ruby nodejs
+  - sudo dnf install -y postgresql16-server redis
   - sudo systemctl enable --now postgresql redis
   - bundle install
   - bin/rails db:create
@@ -129,19 +141,21 @@ mounts:
 git:
   user.name: Dev
   user.email: dev@example.com
-  # Credential helper for https:// pushes (resolved on the host)
-  credential:
-    source: 1password
-    ref: op://Private/github-token/token
-    # Or: source: token, env: GITHUB_TOKEN
-    # Or: source: token, value: ghp_xxx
 
-# External tool credentials (resolved fresh on every session, not baked in)
-tools:
-  gh:                         # sets GH_TOKEN inside the container
-    credential:
-      source: 1password
-      ref: op://Private/github-cli/token
+# GitHub PATs and other per-project secrets are best managed centrally in
+# ~/.config/silo/secrets.yml (see "Secrets" below) rather than here. The
+# git.credential and tools.<name>.credential blocks below still work and
+# override the central file for a given project if you need them.
+#
+# git:
+#   credential:                 # credential helper for https:// pushes
+#     source: 1password
+#     ref: op://Private/github-token/token
+# tools:
+#   gh:                         # sets GH_TOKEN inside the container
+#     credential:
+#       source: 1password
+#       ref: op://Private/github-cli/token
 
 # Long-running processes (managed as systemd user services)
 daemons:
@@ -175,9 +189,13 @@ All fields are optional. Setup commands run as the `dev` user with a login shell
 
 Create a `.silo.local.yml` alongside `.silo.yml` to override settings per machine without modifying the shared config. Non-zero values in the local file replace the base values. Add `.silo.local.yml` to your project's `.gitignore`.
 
+For secrets specifically, prefer the central [Secrets](#secrets) file over `.silo.local.yml` — it keeps every project's PAT in one place.
+
 ## Global configuration
 
 Silo uses sensible defaults for everything. The config file (`~/.config/silo/config.yml`) only needs to contain your overrides — missing fields use the built-in defaults automatically. New features added in updates work immediately without changing your config.
+
+The default login shell is `bash` (always present, including on images without zsh). Set `shell: zsh` to use zsh instead — silo installs it if the image doesn't ship it. Tool activations (rv, mise, …) live in a shell-neutral `~/.silo/env.sh`, so they work for either shell and for daemons.
 
 ```yaml
 # Override the default agent command
@@ -187,6 +205,23 @@ agents:
 ```
 
 Run `silo config show` to see the full resolved configuration (defaults + your overrides) with syntax highlighting. Run `silo config edit` to open the config in your editor.
+
+### Secrets
+
+Per-project secrets live in one central file, `~/.config/silo/secrets.yml`, keyed by project name. On the first `silo up` for a project, silo appends a commented stub so there's an obvious place to fill in the PAT:
+
+```yaml
+# ~/.config/silo/secrets.yml
+migrations-tooling:
+  github: op://Employee/migrations-pat/token   # reserved key: wires git + gh
+converters:
+  github: op://Employee/converters-pat/token
+  AWS_BEARER_TOKEN_BEDROCK: op://Employee/bedrock/key   # plain env var
+```
+
+- Each value is a **1Password reference** (`op://vault/item/field`) resolved on the host via the `op` CLI, or a literal. References are just pointers, not secrets, so this file mainly holds `op://` paths.
+- The reserved **`github`** key exports `GITHUB_TOKEN` and `GH_TOKEN` and wires the git credential helper for `github.com`. Every other key becomes a plain environment variable of that name.
+- Secrets are resolved fresh at session and setup time and passed as environment variables — never baked into the container or written to disk. Rotating a PAT in 1Password takes effect on the next session with no reprovision.
 
 ### Agent configuration
 

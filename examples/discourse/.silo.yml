@@ -2,9 +2,18 @@
 # https://github.com/discourse/discourse
 #
 # Uses Fedora 43 for PostgreSQL 18 (builtin C.UTF-8 locale), ImageMagick 7,
-# and Valkey (Redis-compatible). Manages Ruby and Node.js via mise.
+# and Valkey (Redis-compatible). Ruby and Node.js come from silo's built-in
+# presets — no hand-written rv/mise activation needed.
 
 image: fedora/43
+
+# Built-in presets: Ruby via rv (Discourse requires ~> 3.4) and Node.js with
+# corepack. Their setup commands run before the setup: list below.
+use:
+  ruby:
+    versions: ["3.4"]
+    default: "3.4"
+  node:
 
 setup:
   # Build dependencies (Ruby is compiled from source by mise)
@@ -34,19 +43,9 @@ setup:
   - sudo dnf install -y valkey
   - sudo systemctl enable --now valkey
 
-  # Ruby via mise (Discourse requires ~> 3.4)
-  - sudo dnf copr enable -y jdxcode/mise
-  - sudo dnf install -y mise
-  - echo 'eval "$(mise activate bash)"' >> ~/.profile
-  - echo 'eval "$(mise activate zsh)"' >> ~/.zprofile
-  - mise use -g ruby@3.4
+  # Bundler (Ruby itself is installed and activated by the ruby preset above)
   - gem install bundler
   - bundle config set --global jobs $(nproc)
-
-  # Node.js and pnpm (version pinned by Discourse's packageManager field)
-  - sudo dnf install -y nodejs
-  - sudo npm install -g corepack
-  - corepack enable
 
   # Playwright (Chromium for system tests)
   - sudo dnf install -y chromium-headless
