@@ -44,8 +44,7 @@ setup:
   - sudo dnf install -y valkey
   - sudo systemctl enable --now valkey
 
-  # Bundler (Ruby itself is installed and activated by the ruby preset above)
-  - gem install bundler
+  # Bundler ships with the rv-installed Ruby (ruby preset above); just tune jobs.
   - bundle config set --global jobs $(nproc)
 
   # Playwright (Chromium for system tests)
