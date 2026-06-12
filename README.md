@@ -94,7 +94,9 @@ use:
 # changes (export, eval, cd) carry over from one command to the next.
 # To persist activation for future silo enter/ra/daemon sessions, append a
 # POSIX-sh line to ~/.silo/env.sh — it is sourced by every login shell (bash
-# and zsh) and by daemons, e.g. `echo 'eval "$(mise activate bash)"' >> ~/.silo/env.sh`.
+# and zsh), by daemons, and via BASH_ENV by every non-interactive bash
+# (agent tool calls, scripts, git hooks),
+# e.g. `echo 'eval "$(mise activate bash)"' >> ~/.silo/env.sh`.
 # (The ruby preset already wires rv this way.)
 setup:
   - sudo dnf install -y postgresql16-server redis
@@ -195,7 +197,7 @@ For secrets specifically, prefer the central [Secrets](#secrets) file over `.sil
 
 Silo uses sensible defaults for everything. The config file (`~/.config/silo/config.yml`) only needs to contain your overrides — missing fields use the built-in defaults automatically. New features added in updates work immediately without changing your config.
 
-The default login shell is `bash` (always present, including on images without zsh). Set `shell: zsh` to use zsh instead — silo installs it if the image doesn't ship it. Tool activations (rv, mise, …) live in a shell-neutral `~/.silo/env.sh`, so they work for either shell and for daemons.
+The default login shell is `bash` (always present, including on images without zsh). Set `shell: zsh` to use zsh instead — silo installs it if the image doesn't ship it. Tool activations (rv, mise, …) live in a shell-neutral `~/.silo/env.sh`, so they work for either shell, for daemons, and — via `BASH_ENV` — for non-interactive bash shells like agent tool calls and git hooks.
 
 ```yaml
 # Override the default agent command

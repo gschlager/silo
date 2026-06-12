@@ -58,6 +58,23 @@ use:
 	}
 }
 
+// The activation line lands in ~/.silo/env.sh, which non-interactive bash
+// re-sources via BASH_ENV — including shells running under `set -u`, where a
+// bare $ZSH_VERSION reference would abort the shell.
+func TestRubyActivationSetUSafe(t *testing.T) {
+	cmds := expand(t, `
+use:
+  ruby:
+    versions: ["3.4"]
+`)
+	if !contains(cmds, "${ZSH_VERSION-}") {
+		t.Errorf("expected set -u safe ${ZSH_VERSION-} in activation, got:\n%s", strings.Join(cmds, "\n"))
+	}
+	if contains(cmds, `"$ZSH_VERSION"`) {
+		t.Errorf("found bare $ZSH_VERSION reference, unsafe under set -u:\n%s", strings.Join(cmds, "\n"))
+	}
+}
+
 // 4.0 written without quotes parses as a YAML float; it must keep its exact
 // text rather than collapsing to "4".
 func TestRubyVersionFloatPreserved(t *testing.T) {

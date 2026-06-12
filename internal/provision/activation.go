@@ -22,9 +22,16 @@ const UserActivationFile = "$HOME/.silo/env.sh"
 
 // setupActivation creates the shell-neutral activation seam for the dev user:
 // a user-writable ~/.silo/env.sh (seeded with the ~/.local/bin PATH tweak) plus
-// the bootstrap that sources it. bash login shells source it through
+// the bootstraps that source it. bash login shells source it through
 // /etc/profile.d/silo.sh; zsh through a guarded line in ~/.zshenv (sourced in
 // every zsh mode, including non-interactive daemons).
+//
+// Non-interactive non-login bash (agent Bash tool calls, scripts, git hooks)
+// reads no startup file at all unless BASH_ENV is set, so the seed exports
+// BASH_ENV pointing back at env.sh. Every silo session starts from a login
+// shell that sources env.sh, so all descendant bash shells inherit BASH_ENV
+// and re-source it — re-running directory-sensitive activations like
+// `rv shell env` for their own working directory.
 func setupActivation(ctx context.Context, server incuscli.InstanceServer, container, username, shell string) error {
 	rootOpts := incus.ExecOpts{}
 	userOpts := incus.ExecOpts{User: 1000, Home: "/home/" + username}
@@ -36,7 +43,11 @@ func setupActivation(ctx context.Context, server incuscli.InstanceServer, contai
 	}); err != nil {
 		return fmt.Errorf("creating ~/.silo: %w", err)
 	}
-	seed := `export PATH="$HOME/.local/bin:$PATH"` + "\n"
+	// The PATH prepend is guarded because env.sh is re-sourced by every
+	// non-interactive bash via BASH_ENV, which would otherwise stack duplicates.
+	seed := `export BASH_ENV="$HOME/.silo/env.sh"
+case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac
+`
 	if _, err := incus.ExecWithStdin(ctx, server, container, userOpts, []string{
 		"tee", homeDir + "/.silo/env.sh",
 	}, []byte(seed)); err != nil {

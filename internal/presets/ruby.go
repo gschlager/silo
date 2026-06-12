@@ -67,8 +67,10 @@ func (rubyPreset) SetupCommands(params yaml.Node, _ string) ([]string, error) {
 		}
 		// Shell-neutral activation, idempotent across re-provisioning. The rv
 		// init line detects the running shell so the same file works for bash
-		// and zsh (and for daemons running a login shell).
-		rvInit := `if [ -n "$ZSH_VERSION" ]; then eval "$(rv shell init zsh)"; else eval "$(rv shell init bash)"; fi`
+		// and zsh (and for daemons running a login shell). Non-interactive bash
+		// sources env.sh through BASH_ENV, so ${ZSH_VERSION-} must stay safe
+		// under `set -u` shells too.
+		rvInit := `if [ -n "${ZSH_VERSION-}" ]; then eval "$(rv shell init zsh)"; else eval "$(rv shell init bash)"; fi`
 		cmds = append(cmds,
 			activationGuard(`. "$HOME/.cargo/env"`, "cargo/env"),
 			activationGuard(rvInit, "rv shell init"),

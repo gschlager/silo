@@ -473,10 +473,14 @@ func setEnvironment(ctx context.Context, server incuscli.InstanceServer, contain
 	}
 
 	// Also export from the shell-neutral activation file so interactive shells,
-	// `silo run`, and daemons all see the variables regardless of shell.
+	// `silo run`, and daemons all see the variables regardless of shell. Each
+	// export is skipped when the variable is already set: env.sh is re-sourced
+	// by every non-interactive bash via BASH_ENV, and a forced export would
+	// clobber overrides like `RAILS_ENV=test ...` in child shells (and the
+	// per-agent env passed at exec time).
 	var profileLines []string
 	for k, v := range env {
-		profileLines = append(profileLines, fmt.Sprintf("export %s=%s", k, shellEscape(v)))
+		profileLines = append(profileLines, fmt.Sprintf(`[ -n "${%s+x}" ] || export %s=%s`, k, k, shellEscape(v)))
 	}
 	profileContent := strings.Join(profileLines, "\n") + "\n"
 
