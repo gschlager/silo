@@ -224,6 +224,7 @@ converters:
 - Each value is a **1Password reference** (`op://vault/item/field`) resolved on the host via the `op` CLI, or a literal. References are just pointers, not secrets, so this file mainly holds `op://` paths.
 - The reserved **`github`** key exports `GITHUB_TOKEN` and `GH_TOKEN` and wires the git credential helper for `github.com`. Every other key becomes a plain environment variable of that name.
 - Secrets are resolved fresh at session and setup time and passed as environment variables — never baked into the container or written to disk. Rotating a PAT in 1Password takes effect on the next session with no reprovision.
+- Because they're session-scoped, secrets reach `silo enter`/`silo run` and project setup, but **not** systemd daemons: a daemon starts from systemd at container boot, with no silo session in the loop, and `op` only runs on the host. A daemon that needs a secret has to fetch it itself (read its own store, or run it from inside a silo session instead of as an autostart unit) — silo won't inject `secrets.yml` values into daemons.
 
 ### Global gitignore
 
