@@ -9,7 +9,8 @@ import (
 )
 
 func newUpCmd() *cobra.Command {
-	return &cobra.Command{
+	var keep bool
+	cmd := &cobra.Command{
 		Use:   "up",
 		Short: "Start the environment for the current project",
 		Long: `Start the environment for the current project.
@@ -40,7 +41,7 @@ Subsequent: start the stopped container (~1 second).`,
 					color.Info("Added a secrets entry for %q — set its PAT in %s", cfg.ProjectName(), config.SecretsPath())
 				}
 				// First run: full provisioning.
-				return provision.Provision(ctx, server, cfg)
+				return provision.Provision(ctx, server, cfg, keep)
 			}
 
 			if incus.IsRunning(server, name) {
@@ -58,7 +59,7 @@ Subsequent: start the stopped container (~1 second).`,
 				if err := incus.Delete(ctx, server, name); err != nil {
 					return err
 				}
-				return provision.Provision(ctx, server, cfg)
+				return provision.Provision(ctx, server, cfg, keep)
 			}
 
 			// Resume: start the stopped container, then refresh the global
@@ -80,4 +81,6 @@ Subsequent: start the stopped container (~1 second).`,
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&keep, "keep", false, "Keep the container if provisioning fails, for inspection")
+	return cmd
 }

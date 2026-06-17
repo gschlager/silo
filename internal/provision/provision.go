@@ -92,8 +92,10 @@ func ProvisionMinimal(ctx context.Context, server incuscli.InstanceServer, cfg *
 	return nil
 }
 
-// Provision runs the full first-run provisioning flow for a container.
-func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig) error {
+// Provision runs the full first-run provisioning flow for a container. When
+// keepOnFailure is set, a failed provision leaves the container in place (still
+// running) so it can be inspected instead of being torn down.
+func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig, keepOnFailure bool) error {
 	name := cfg.ContainerName
 
 	// Buffer provisioning command output in non-verbose mode so it can be
@@ -112,6 +114,10 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	defer func() {
 		if !success {
 			color.DumpCapture()
+			if keepOnFailure {
+				color.Warn("Provisioning failed. Keeping container %s for inspection (--keep); enter it with `silo enter` or remove it with `silo rm`.", name)
+				return
+			}
 			color.Warn("Provisioning failed. Removing container %s...", name)
 			incus.Stop(context.Background(), server, name)
 			incus.Delete(context.Background(), server, name)
