@@ -462,25 +462,33 @@ func shellEscape(s string) string {
 func setEnvironment(ctx context.Context, server incuscli.InstanceServer, container, username string, env map[string]string) error {
 	rootOpts := incus.ExecOpts{}
 
-	// Ensure directory exists (no user-controlled data in this command).
-	if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
-		"mkdir", "-p", "/etc/environment.d",
-	}); err != nil {
-		return fmt.Errorf("creating environment.d: %w", err)
-	}
-
-	// Write environment variables to /etc/environment.d/ for system-wide
-	// availability. Pipe the content via stdin to avoid any shell interpretation.
+	// Write environment variables to /etc/environment.d/ for systemd user units.
+	// This file is static — systemd does no shell expansion — so a value that
+	// references another variable (e.g. PATH="dir:$PATH") would land verbatim and,
+	// for PATH, drop the system dirs from anything that picks it up (sudo, rpm
+	// scriptlets). Such values are handled only in env.sh below, where the shell
+	// expands them; here we write just the plain ones.
 	var lines []string
 	for k, v := range env {
+		if strings.ContainsRune(v, '$') {
+			continue
+		}
 		lines = append(lines, fmt.Sprintf("%s=%s", k, v))
 	}
-	content := strings.Join(lines, "\n") + "\n"
-
-	if _, err := incus.ExecWithStdin(ctx, server, container, rootOpts, []string{
-		"tee", "-a", "/etc/environment.d/silo.conf",
-	}, []byte(content)); err != nil {
-		return fmt.Errorf("setting environment variables: %w", err)
+	if len(lines) > 0 {
+		// Ensure directory exists (no user-controlled data in this command).
+		if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
+			"mkdir", "-p", "/etc/environment.d",
+		}); err != nil {
+			return fmt.Errorf("creating environment.d: %w", err)
+		}
+		// Pipe the content via stdin to avoid any shell interpretation.
+		content := strings.Join(lines, "\n") + "\n"
+		if _, err := incus.ExecWithStdin(ctx, server, container, rootOpts, []string{
+			"tee", "-a", "/etc/environment.d/silo.conf",
+		}, []byte(content)); err != nil {
+			return fmt.Errorf("setting environment variables: %w", err)
+		}
 	}
 
 	// Also export from the shell-neutral activation file so interactive shells,
@@ -491,6 +499,14 @@ func setEnvironment(ctx context.Context, server incuscli.InstanceServer, contain
 	// per-agent env passed at exec time).
 	var profileLines []string
 	for k, v := range env {
+		// PATH is a prepend, not an assignment: expand $PATH (env.sh is sourced
+		// after the system PATH is set) and dedup-guard so the BASH_ENV re-source
+		// doesn't stack duplicates. The existence guard used for plain vars would
+		// skip it outright, since PATH is always already set.
+		if k == "PATH" {
+			profileLines = append(profileLines, pathPrependLine(v))
+			continue
+		}
 		profileLines = append(profileLines, fmt.Sprintf(`[ -n "${%s+x}" ] || export %s=%s`, k, k, shellEscape(v)))
 	}
 	profileContent := strings.Join(profileLines, "\n") + "\n"
@@ -500,6 +516,23 @@ func setEnvironment(ctx context.Context, server incuscli.InstanceServer, contain
 	}
 
 	return nil
+}
+
+// pathPrependLine builds the env.sh line that applies a user-provided PATH
+// value (typically "dir:dir:$PATH"). The value is emitted double-quoted so
+// $PATH expands, guarded on its first segment so re-sourcing env.sh via
+// BASH_ENV doesn't stack duplicates — mirroring the ~/.local/bin seed.
+func pathPrependLine(value string) string {
+	first := value
+	if i := strings.IndexByte(value, ':'); i >= 0 {
+		first = value[:i]
+	}
+	// A leading variable reference (or empty first segment) can't be matched
+	// against $PATH, so skip the dedup guard and just export.
+	if first == "" || strings.HasPrefix(first, "$") {
+		return fmt.Sprintf(`export PATH="%s"`, value)
+	}
+	return fmt.Sprintf(`case ":$PATH:" in *":%s:"*) ;; *) export PATH="%s" ;; esac`, first, value)
 }
 
 func parsePortSpec(spec string) (containerPort, hostPort int, err error) {

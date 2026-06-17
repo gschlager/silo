@@ -94,3 +94,40 @@ func TestShellEscape(t *testing.T) {
 		})
 	}
 }
+
+func TestPathPrependLine(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "prepend with $PATH expands and dedup-guards on first segment",
+			input: "/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:$PATH",
+			want:  `case ":$PATH:" in *":/opt/android-sdk/cmdline-tools/latest/bin:"*) ;; *) export PATH="/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:$PATH" ;; esac`,
+		},
+		{
+			name:  "single dir prepend",
+			input: "/opt/bin:$PATH",
+			want:  `case ":$PATH:" in *":/opt/bin:"*) ;; *) export PATH="/opt/bin:$PATH" ;; esac`,
+		},
+		{
+			name:  "absolute path without reference still guards",
+			input: "/usr/bin:/bin",
+			want:  `case ":$PATH:" in *":/usr/bin:"*) ;; *) export PATH="/usr/bin:/bin" ;; esac`,
+		},
+		{
+			name:  "leading variable reference skips the guard",
+			input: "$HOME/bin:$PATH",
+			want:  `export PATH="$HOME/bin:$PATH"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := pathPrependLine(tt.input); got != tt.want {
+				t.Errorf("pathPrependLine(%q) = %q; want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
