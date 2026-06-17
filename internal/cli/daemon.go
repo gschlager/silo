@@ -8,6 +8,7 @@ import (
 
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/incus"
+	"github.com/gschlager/silo/internal/provision"
 	"github.com/spf13/cobra"
 )
 
@@ -209,10 +210,7 @@ func runDaemonUnitAction(cmd *cobra.Command, daemon, action string) error {
 		return fmt.Errorf("unknown daemon %q", daemon)
 	}
 
-	_, err = incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{}, []string{
-		"su", "-", cfg.User, "-c",
-		fmt.Sprintf("systemctl --user %s silo-%s", action, daemon),
-	})
+	err = provision.ControlDaemon(ctx, server, cfg, action, daemon)
 	if err != nil && (action == "start" || action == "restart") {
 		// Most likely cause is the daemon's own command exiting non-zero;
 		// dump the last few journal lines so the user sees why.

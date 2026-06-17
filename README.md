@@ -224,7 +224,7 @@ converters:
 - Each value is a **1Password reference** (`op://vault/item/field`) resolved on the host via the `op` CLI, or a literal. References are just pointers, not secrets, so this file mainly holds `op://` paths.
 - The reserved **`github`** key exports `GITHUB_TOKEN` and `GH_TOKEN` and wires the git credential helper for `github.com`. Every other key becomes a plain environment variable of that name.
 - Secrets are resolved fresh at session and setup time and passed as environment variables — never baked into the container or written to disk. Rotating a PAT in 1Password takes effect on the next session with no reprovision.
-- Because they're session-scoped, secrets reach `silo enter`/`silo run` and project setup, but **not** systemd daemons: a daemon starts from systemd at container boot, with no silo session in the loop, and `op` only runs on the host. A daemon that needs a secret has to fetch it itself (read its own store, or run it from inside a silo session instead of as an autostart unit) — silo won't inject `secrets.yml` values into daemons.
+- Secrets reach `silo enter`/`silo run`, project setup, and [daemons](#daemons). Daemons get them because silo injects them into the systemd user manager when it starts the daemon (see Daemons) — still only in memory, never on disk.
 
 ### Global gitignore
 
@@ -305,7 +305,7 @@ Each agent mode gets its own host directory (`~/.config/silo/agents/<name>/<mode
 | `silo daemon restart <name>`   | Restart a daemon                                         |
 | `silo daemon logs [name]`      | Tail daemon logs (all daemons if no name given)          |
 
-### Data management
+silo starts daemons itself — the units are installed but not enabled for boot, so an `autostart` daemon comes up when silo starts the container (`silo up`), not when the container is started some other way. Each start re-resolves the project's `env:` values and secrets and injects them into the systemd user manager, so editing `env:` or a `secrets.yml` entry takes effect on the next `silo up` (or `silo daemon restart`) without recreating the container. Secrets stay in the manager's memory and are never written to disk.
 
 | Command                        | Description                                              |
 |--------------------------------|----------------------------------------------------------|

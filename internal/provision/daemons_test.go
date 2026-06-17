@@ -29,6 +29,26 @@ func TestBuildUnitFile(t *testing.T) {
 	})
 }
 
+func TestEnvInjectionScript(t *testing.T) {
+	t.Run("exports values and imports by name", func(t *testing.T) {
+		script := envInjectionScript(map[string]string{
+			"RAILS_ENV":    "development",
+			"GITHUB_TOKEN": "ghp_secret",
+		})
+
+		assertContains(t, script, "export RAILS_ENV='development'")
+		assertContains(t, script, "export GITHUB_TOKEN='ghp_secret'")
+		// Names are imported (sorted); values never appear as arguments.
+		assertContains(t, script, "systemctl --user import-environment GITHUB_TOKEN RAILS_ENV")
+		assertNotContains(t, script, "import-environment ghp_secret")
+	})
+
+	t.Run("single-quote escapes values", func(t *testing.T) {
+		script := envInjectionScript(map[string]string{"MSG": "it's set"})
+		assertContains(t, script, `export MSG='it'\''s set'`)
+	})
+}
+
 func assertContains(t *testing.T, s, substr string) {
 	t.Helper()
 	if !strings.Contains(s, substr) {

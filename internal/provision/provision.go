@@ -297,10 +297,15 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 15: Set up daemons.
+	// Step 15: Set up daemons. Install the unit files, then start the autostart
+	// ones ourselves (with env: and secrets injected) rather than enabling them
+	// for boot.
 	if len(cfg.Daemons) > 0 {
 		status("Setting up daemons...")
 		if err := SetupDaemons(ctx, server, name, cfg.User, cfg.Shell, cfg.WorkspacePath(), cfg.Daemons); err != nil {
+			return err
+		}
+		if err := StartConfiguredDaemons(ctx, server, cfg); err != nil {
 			return err
 		}
 	}

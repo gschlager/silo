@@ -70,6 +70,11 @@ Subsequent: start the stopped container (~1 second).`,
 			if err := provision.ApplyGitignore(ctx, server, name, cfg.User); err != nil {
 				color.Warn("could not apply global gitignore: %v", err)
 			}
+			// Start autostart daemons ourselves, re-resolving env: and secrets so
+			// edits to either take effect here without recreating the container.
+			if err := provision.StartConfiguredDaemons(ctx, server, cfg); err != nil {
+				color.Warn("could not start daemons: %v", err)
+			}
 
 			color.Success("Environment ready!")
 			return nil

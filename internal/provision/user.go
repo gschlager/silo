@@ -44,7 +44,10 @@ func CreateUser(ctx context.Context, server incuscli.InstanceServer, container, 
 		return err
 	}
 
-	// Enable systemd user linger so user services start at boot.
+	// Enable systemd user linger so the user manager keeps running across
+	// sessions. silo starts daemons itself on `silo up` (units are installed but
+	// not enabled for boot), so this is what lets those daemons outlive the
+	// transient startup exec instead of being torn down when its session ends.
 	if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
 		"loginctl", "enable-linger", username,
 	}); err != nil {
