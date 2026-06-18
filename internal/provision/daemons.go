@@ -105,12 +105,18 @@ func injectDaemonEnv(ctx context.Context, server incuscli.InstanceServer, cfg *c
 // envInjectionScript builds the POSIX-sh snippet fed to the user manager: each
 // variable is set with the `export` builtin (so its value never appears in any
 // process's argv) and then handed to `systemctl --user import-environment` by
-// name only. Values are single-quote escaped.
+// name only. Values are single-quote escaped, except PATH, which is a prepend
+// that must expand $PATH — single-quoting it would set PATH to a literal that
+// drops the system dirs, breaking the `systemctl` call on the next line.
 func envInjectionScript(env map[string]string) string {
 	var script strings.Builder
 	names := make([]string, 0, len(env))
 	for k, v := range env {
-		fmt.Fprintf(&script, "export %s=%s\n", k, shellEscape(v))
+		if k == "PATH" {
+			fmt.Fprintf(&script, "%s\n", pathPrependLine(v))
+		} else {
+			fmt.Fprintf(&script, "export %s=%s\n", k, shellEscape(v))
+		}
 		names = append(names, k)
 	}
 	sort.Strings(names)

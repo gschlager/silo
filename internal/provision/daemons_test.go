@@ -47,6 +47,14 @@ func TestEnvInjectionScript(t *testing.T) {
 		script := envInjectionScript(map[string]string{"MSG": "it's set"})
 		assertContains(t, script, `export MSG='it'\''s set'`)
 	})
+
+	t.Run("PATH expands instead of being single-quoted", func(t *testing.T) {
+		script := envInjectionScript(map[string]string{"PATH": "/opt/bin:$PATH"})
+		// A single-quoted PATH would freeze $PATH literally and drop the system
+		// dirs, breaking the systemctl call that follows.
+		assertNotContains(t, script, `export PATH='/opt/bin:$PATH'`)
+		assertContains(t, script, `export PATH="/opt/bin:$PATH"`)
+	})
 }
 
 func assertContains(t *testing.T, s, substr string) {
