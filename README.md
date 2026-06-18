@@ -200,11 +200,44 @@ Silo uses sensible defaults for everything. The config file (`~/.config/silo/con
 The default login shell is `bash` (always present, including on images without zsh). Set `shell: zsh` to use zsh instead — silo installs it if the image doesn't ship it. Tool activations (rv, mise, …) live in a shell-neutral `~/.silo/env.sh`, so they work for either shell, for daemons, and — via `BASH_ENV` — for non-interactive bash shells like agent tool calls and git hooks.
 
 ```yaml
-# Override the default agent command
+# Base image used when a project doesn't set image: (default: fedora/44)
+default_image: fedora/44
+
+# Packages installed in every container before project setup runs
+default_setup:
+  - dnf install -y git curl wget make gcc jq ripgrep gh
+
+# Agent silo ra launches when you don't name one (default: first defined, claude)
+default_agent: claude
+
+# Login shell for every container: bash (default) or zsh
+shell: bash
+
+# Container user agents run as (default: dev)
+user: dev
+
+# Host env vars passed into enter/run/ra sessions
+pass_env: [TERM, COLORTERM, LANG, LC_ALL]
+
+# Desktop notifications when an agent finishes or needs input (default: off)
+notifications: true
+
+# Bind mounts added to every container (host:container[:ro])
+mounts:
+  - ~/shared-cache:/home/dev/.cache/shared
+
+# Git settings applied in every container
+git:
+  user.name: Dev
+  user.email: dev@example.com
+
+# Override an agent's launch command, install step, mode, or links
 agents:
   - name: claude
     cmd: claude --dangerously-skip-permissions
 ```
+
+All fields are optional — list only what you want to override. Per-project `.silo.yml` values take precedence over the global ones (and `mounts`/`git` are merged, not replaced).
 
 Run `silo config edit` to open the global config in your editor, or `silo config path` to print its location. Run `silo config show` (from a project directory) to see the fully resolved configuration for that project — global + project merged, presets expanded into setup, and which secrets apply (by reference; tokens are never printed).
 
@@ -266,6 +299,7 @@ Each agent mode gets its own host directory (`~/.config/silo/agents/<name>/<mode
 | Command                        | Description                                              |
 |--------------------------------|----------------------------------------------------------|
 | `silo up`                      | Start the environment (first run: provision; subsequent: resume) |
+| `silo up --keep`               | Keep the container if provisioning fails, for inspection |
 | `silo down`                    | Stop the container (preserves state)                     |
 | `silo rm`                      | Remove the container and its data                        |
 | `silo enter`                   | Open a shell inside the container                        |
@@ -306,6 +340,8 @@ Each agent mode gets its own host directory (`~/.config/silo/agents/<name>/<mode
 | `silo daemon logs [name]`      | Tail daemon logs (all daemons if no name given)          |
 
 silo starts daemons itself — the units are installed but not enabled for boot, so an `autostart` daemon comes up when silo starts the container (`silo up`), not when the container is started some other way. Each start re-resolves the project's `env:` values and secrets and injects them into the systemd user manager, so editing `env:` or a `secrets.yml` entry takes effect on the next `silo up` (or `silo daemon restart`) without recreating the container. Secrets stay in the manager's memory and are never written to disk.
+
+### Snapshots
 
 | Command                        | Description                                              |
 |--------------------------------|----------------------------------------------------------|
