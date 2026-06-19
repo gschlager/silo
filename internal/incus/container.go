@@ -3,36 +3,29 @@ package incus
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	incuscli "github.com/lxc/incus/v6/client"
 	"github.com/lxc/incus/v6/shared/api"
+
+	"github.com/gschlager/silo/internal/color"
 )
+
+const imageServerURL = "https://images.linuxcontainers.org"
 
 // Launch creates and starts a new container from the given image.
 func Launch(ctx context.Context, server incuscli.InstanceServer, image, name string) error {
-	// Connect to the default image server.
-	imageServer, err := incuscli.ConnectSimpleStreams("https://images.linuxcontainers.org", nil)
+	source, err := imageSource(server, image)
 	if err != nil {
-		return fmt.Errorf("connecting to image server: %w", err)
-	}
-
-	// Find the image alias.
-	alias, _, err := imageServer.GetImageAlias(image)
-	if err != nil {
-		return fmt.Errorf("finding image %q: %w", image, err)
+		return err
 	}
 
 	// Create the instance.
 	req := api.InstancesPost{
-		Name: name,
-		Type: api.InstanceTypeContainer,
-		Source: api.InstanceSource{
-			Type:     "image",
-			Server:   "https://images.linuxcontainers.org",
-			Protocol: "simplestreams",
-			Alias:    alias.Name,
-		},
+		Name:   name,
+		Type:   api.InstanceTypeContainer,
+		Source: source,
 	}
 
 	op, err := server.CreateInstance(req)
@@ -55,6 +48,81 @@ func Launch(ctx context.Context, server incuscli.InstanceServer, image, name str
 
 	// Start the container.
 	return Start(ctx, server, name)
+}
+
+// imageSource resolves image to an instance source. It prefers the public
+// image server so a fresh container tracks the latest build, but falls back to
+// a copy already cached locally when the server is unreachable or no longer
+// publishes that alias — which is what happens when an upstream image build
+// breaks (e.g. the Fedora images vanishing from images.linuxcontainers.org).
+func imageSource(server incuscli.InstanceServer, image string) (api.InstanceSource, error) {
+	var remoteErr error
+	imageServer, err := incuscli.ConnectSimpleStreams(imageServerURL, nil)
+	if err != nil {
+		remoteErr = fmt.Errorf("connecting to image server: %w", err)
+	} else if alias, _, aerr := imageServer.GetImageAlias(image); aerr != nil {
+		remoteErr = aerr
+	} else {
+		return api.InstanceSource{
+			Type:     "image",
+			Server:   imageServerURL,
+			Protocol: "simplestreams",
+			Alias:    alias.Name,
+		}, nil
+	}
+
+	// The image server is unreachable or dropped this alias. Reuse a copy
+	// cached from an earlier launch rather than failing outright.
+	if fingerprint, ok := localImage(server, image); ok {
+		color.Warn("Image %q unavailable from %s (%v); using locally cached copy %s",
+			image, imageServerURL, remoteErr, fingerprint[:12])
+		return api.InstanceSource{
+			Type:        "image",
+			Fingerprint: fingerprint,
+		}, nil
+	}
+
+	return api.InstanceSource{}, fmt.Errorf("finding image %q: %w", image, remoteErr)
+}
+
+// localImage returns the fingerprint of the most recently cached image
+// matching image (e.g. "fedora/44" or "images:ubuntu/24.04"), ignoring any
+// remote prefix. ok is false when nothing matches.
+func localImage(server incuscli.InstanceServer, image string) (fingerprint string, ok bool) {
+	distro, release, ok := splitImage(image)
+	if !ok {
+		return "", false
+	}
+
+	images, err := server.GetImages()
+	if err != nil {
+		return "", false
+	}
+
+	var best api.Image
+	for _, img := range images {
+		if !strings.EqualFold(img.Properties["os"], distro) || img.Properties["release"] != release {
+			continue
+		}
+		if fingerprint == "" || img.UploadedAt.After(best.UploadedAt) {
+			best = img
+			fingerprint = img.Fingerprint
+		}
+	}
+	return fingerprint, fingerprint != ""
+}
+
+// splitImage splits a reference like "fedora/44" or "images:ubuntu/24.04" into
+// its distro and release, dropping any "remote:" prefix.
+func splitImage(image string) (distro, release string, ok bool) {
+	if _, after, found := strings.Cut(image, ":"); found {
+		image = after
+	}
+	distro, release, ok = strings.Cut(image, "/")
+	if !ok {
+		return "", "", false
+	}
+	return distro, release, true
 }
 
 // Start starts a stopped container.
