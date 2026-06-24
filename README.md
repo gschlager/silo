@@ -354,6 +354,8 @@ silo starts daemons itself — the units are installed but not enabled for boot,
 
 | Command                        | Description                                              |
 |--------------------------------|----------------------------------------------------------|
+| `silo setup`                   | Cap the combined memory of all containers on the host (default 80%) |
+| `silo setup --memory-max 24GiB`| Set a specific combined memory cap                       |
 | `silo init`                    | Generate `.silo.yml` with AI (default)                   |
 | `silo init -m`                 | Generate `.silo.yml` with interactive wizard             |
 | `silo init --agent codex`      | Use a specific agent for generation                      |
@@ -426,12 +428,16 @@ Silo isolates AI agents in Linux system containers (Incus/LXC) with kernel-level
 | Agent deletes or corrupts project files    | No         | Workspace is read-write by design; use git to recover             |
 | Agent reads injected tool credentials      | No         | Passed as env vars by design; give each project its own token in the central secrets file |
 | Agent exfiltrates data via network         | No         | Containers have internet access by design                         |
-| Agent exhausts host resources              | No         | No cgroup limits by default; configurable limits planned (#11)    |
+| Agent exhausts host resources              | Partially  | Run `silo setup` to cap the combined memory of all containers (default 80% of host RAM); off until then |
 | Agent accesses host/LAN services           | No         | Private network access not blocked by default; planned (#11)      |
 | Malicious code in project dependencies     | Partially  | Contained blast radius, but not prevented                         |
 | Agent exploits kernel vulnerability        | No         | Containers share the host kernel                                  |
 
 `silo ra` takes a snapshot before each agent session, enabling rollback if an agent corrupts the environment. The 3 most recent pre-session snapshots are kept; older ones are cleaned up automatically. Manual snapshots via `silo snapshot create` are never affected.
+
+### Capping container memory
+
+By default Incus puts no memory limit on a container, so a runaway process or a `/tmp`/`/dev/shm` fill (tmpfs lives in RAM) could drive the host out of memory. Run `silo setup` once to fix this. It sets `lxc.cgroup.relative = 1` on the default profile so containers land inside the `incus.service` cgroup, then sets `MemoryMax` on that unit — which caps the *combined* memory of all silo containers (default 80% of host RAM, override with `--memory-max`). Containers overcommit within the shared pool, but the host stays protected: hitting the cap OOM-kills a process inside a container, not on the host. Already-running containers move under the cap on their next `silo down && silo up`.
 
 ## Building
 

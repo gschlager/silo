@@ -73,6 +73,7 @@ func NewRootCmd() *cobra.Command {
 	addCmd("data", newSnapshotCmd())
 
 	// Configuration.
+	addCmd("config", newSetupCmd())
 	addCmd("config", newInitCmd())
 	addCmd("config", newConfigCmd())
 	addCmd("config", newCompletionCmd())
