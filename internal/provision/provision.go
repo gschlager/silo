@@ -147,22 +147,9 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	}
 
 	// Step 3: Set up port forwards.
-	seenHost := make(map[int]string)
-	for _, port := range cfg.Ports {
-		containerPort, hostPort, err := parsePortSpec(port.Spec)
-		if err != nil {
-			return fmt.Errorf("invalid port spec %q: %w", port.Spec, err)
-		}
-		if prev, ok := seenHost[hostPort]; ok {
-			return fmt.Errorf("host port %d is forwarded by more than one entry (%s and %s)", hostPort, prev, port.Spec)
-		}
-		seenHost[hostPort] = port.Spec
-		label := ""
-		if port.Name != "" {
-			label = " (" + port.Name + ")"
-		}
-		status("Adding port forward %d -> %d%s...", containerPort, hostPort, label)
-		if err := incus.AddProxyDevice(ctx, server, name, port.DeviceName(hostPort), hostPort, containerPort); err != nil {
+	if len(cfg.Ports) > 0 {
+		status("Setting up port forwards...")
+		if err := ReconcilePorts(ctx, server, name, cfg.Ports); err != nil {
 			return err
 		}
 	}

@@ -52,9 +52,14 @@ Subsequent: start the stopped container (~1 second).`,
 				if err := provision.ApplyGitignore(ctx, server, name, cfg.User); err != nil {
 					color.Warn("could not apply global gitignore: %v", err)
 				}
-				// Reconcile daemon units against the current config so daemons
-				// added or dropped on another branch are in sync, then (re)start
-				// the autostart ones.
+				// Reconcile port forwards (hot-plugged here) and daemon units
+				// against the current config, then (re)start the autostart
+				// daemons. A proxy device added on a branch switch only binds
+				// reliably while the container is stopped, so if a new port stays
+				// unreachable, `silo down && silo up` applies it cleanly.
+				if err := provision.ReconcilePorts(ctx, server, name, cfg.Ports); err != nil {
+					color.Warn("could not sync port forwards: %v", err)
+				}
 				if err := syncDaemons(ctx, server, cfg); err != nil {
 					color.Warn("could not sync daemons: %v", err)
 				}
@@ -71,8 +76,13 @@ Subsequent: start the stopped container (~1 second).`,
 				return provision.Provision(ctx, server, cfg, keep)
 			}
 
-			// Resume: start the stopped container, then refresh the global
-			// gitignore so edits to the host file apply on the next start.
+			// Resume: reconcile port forwards while the container is still
+			// stopped, so a proxy device added on another branch binds cleanly on
+			// start (the same way first-time provisioning adds them). This is what
+			// makes `silo down && silo up` pick up a new daemon's port.
+			if err := provision.ReconcilePorts(ctx, server, name, cfg.Ports); err != nil {
+				color.Warn("could not sync port forwards: %v", err)
+			}
 			color.Status("Starting %s...", name)
 			if err := incus.Start(ctx, server, name); err != nil {
 				return err
@@ -80,10 +90,9 @@ Subsequent: start the stopped container (~1 second).`,
 			if err := provision.ApplyGitignore(ctx, server, name, cfg.User); err != nil {
 				color.Warn("could not apply global gitignore: %v", err)
 			}
-			// Reconcile daemon units against the current config, then start the
-			// autostart ones, re-resolving env: and secrets so edits to either
-			// (and daemons added or dropped on another branch) take effect here
-			// without recreating the container.
+			// Reconcile daemon units (needs the container running — it execs
+			// systemctl inside it) and start the autostart ones, re-resolving
+			// env: and secrets so edits to either take effect without a recreate.
 			if err := syncDaemons(ctx, server, cfg); err != nil {
 				color.Warn("could not sync daemons: %v", err)
 			}
@@ -97,8 +106,9 @@ Subsequent: start the stopped container (~1 second).`,
 }
 
 // syncDaemons reconciles the installed daemon units with the current config and
-// then starts the autostart daemons. Used on `silo up` for an existing container
-// so branch switches that add or remove daemons take effect without a recreate.
+// starts the autostart daemons. The container must be running — it execs
+// systemctl --user inside it. Port forwards are reconciled separately by the
+// caller, before the container starts, so the proxy devices bind cleanly.
 func syncDaemons(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig) error {
 	if err := provision.ReconcileDaemons(ctx, server, cfg.ContainerName, cfg.User, cfg.Shell, cfg.WorkspacePath(), cfg.Daemons); err != nil {
 		return err
