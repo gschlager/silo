@@ -308,7 +308,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	// for boot.
 	if len(cfg.Daemons) > 0 {
 		status("Setting up daemons...")
-		if err := SetupDaemons(ctx, server, name, cfg.User, cfg.Shell, cfg.WorkspacePath(), cfg.Daemons); err != nil {
+		if err := ReconcileDaemons(ctx, server, name, cfg.User, cfg.Shell, cfg.WorkspacePath(), cfg.Daemons); err != nil {
 			return err
 		}
 		if err := StartConfiguredDaemons(ctx, server, cfg); err != nil {

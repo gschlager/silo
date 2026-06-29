@@ -13,12 +13,13 @@ import (
 	"github.com/gschlager/silo/internal/incus"
 )
 
-// SetupDaemons generates systemd user service units inside the container.
-func SetupDaemons(ctx context.Context, server incuscli.InstanceServer, container, username, shell, workspacePath string, daemons map[string]config.DaemonConfig) error {
-	if len(daemons) == 0 {
-		return nil
-	}
-
+// ReconcileDaemons makes the container's installed systemd user units match the
+// configured set of daemons: it (re)writes a unit for every configured daemon
+// and removes any leftover silo-*.service units that are no longer configured.
+// This runs on first provision and on every `silo up`, so switching branches —
+// which can add or drop daemons — keeps the units in sync without recreating the
+// container. It is idempotent.
+func ReconcileDaemons(ctx context.Context, server incuscli.InstanceServer, container, username, shell, workspacePath string, daemons map[string]config.DaemonConfig) error {
 	rootOpts := incus.ExecOpts{}
 
 	// Ensure the systemd user directory exists.
@@ -30,33 +31,79 @@ func SetupDaemons(ctx context.Context, server incuscli.InstanceServer, container
 	}
 
 	for name, daemon := range daemons {
-		serviceName := "silo-" + name
-		unitContent := buildUnitFile(name, shell, workspacePath, daemon)
-
-		// Write the unit file.
-		unitPath := fmt.Sprintf("%s/%s.service", unitDir, serviceName)
-		if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
-			"sh", "-c", fmt.Sprintf(
-				`cat > %s << 'EOF'
-%sEOF
-chown %s:%s %s`, unitPath, unitContent, username, username, unitPath),
-		}); err != nil {
-			return fmt.Errorf("writing unit file for daemon %q: %w", name, err)
-		}
-
-		// Reload systemd user daemon. Units are installed but deliberately not
-		// `enable`d: silo starts autostart daemons itself via StartConfiguredDaemons
-		// (on first provision and every `silo up`) rather than letting systemd
-		// autostart them at boot. That keeps silo in the loop at start time so it
-		// can inject the resolved env (config env: plus secrets) into the user
-		// manager first, and avoids a boot-then-restart cycle.
-		if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
-			"su", "-", username, "-c", "systemctl --user daemon-reload",
-		}); err != nil {
-			return fmt.Errorf("reloading systemd for daemon %q: %w", name, err)
+		if err := writeDaemonUnit(ctx, server, container, username, unitDir, name, shell, workspacePath, daemon); err != nil {
+			return err
 		}
 	}
 
+	if err := pruneOrphanDaemons(ctx, server, container, username, unitDir, daemons); err != nil {
+		return err
+	}
+
+	// Reload once so the user manager picks up every added and removed unit.
+	// Units are installed but deliberately not `enable`d: silo starts autostart
+	// daemons itself via StartConfiguredDaemons (on first provision and every
+	// `silo up`) rather than letting systemd autostart them at boot. That keeps
+	// silo in the loop at start time so it can inject the resolved env (config
+	// env: plus secrets) into the user manager first, and avoids a
+	// boot-then-restart cycle.
+	if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
+		"su", "-", username, "-c", "systemctl --user daemon-reload",
+	}); err != nil {
+		return fmt.Errorf("reloading systemd user manager: %w", err)
+	}
+
+	return nil
+}
+
+// pruneOrphanDaemons stops and removes any silo-*.service units in unitDir that
+// are no longer in the configured daemon set, so a daemon dropped on a branch
+// switch doesn't linger as a stale unit (and keep showing up in `daemon list`).
+func pruneOrphanDaemons(ctx context.Context, server incuscli.InstanceServer, container, username, unitDir string, daemons map[string]config.DaemonConfig) error {
+	rootOpts := incus.ExecOpts{}
+	out, err := incus.Exec(ctx, server, container, rootOpts, []string{
+		"su", "-", username, "-c",
+		fmt.Sprintf("ls -1 %s/silo-*.service 2>/dev/null || true", unitDir),
+	})
+	if err != nil {
+		return fmt.Errorf("listing daemon units: %w", err)
+	}
+
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		base := line[strings.LastIndex(line, "/")+1:]
+		name := strings.TrimSuffix(strings.TrimPrefix(base, "silo-"), ".service")
+		if _, ok := daemons[name]; ok {
+			continue
+		}
+		// Stop a possibly-running orphan, then remove its unit file. The single
+		// daemon-reload back in ReconcileDaemons makes the manager forget it.
+		if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
+			"su", "-", username, "-c",
+			fmt.Sprintf("systemctl --user stop silo-%s.service 2>/dev/null; rm -f %s", name, line),
+		}); err != nil {
+			return fmt.Errorf("removing orphaned daemon %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// writeDaemonUnit renders and installs the unit file for one daemon. It does not
+// reload the user manager; callers batch a single daemon-reload after writing.
+func writeDaemonUnit(ctx context.Context, server incuscli.InstanceServer, container, username, unitDir, name, shell, workspacePath string, daemon config.DaemonConfig) error {
+	unitContent := buildUnitFile(name, shell, workspacePath, daemon)
+	unitPath := fmt.Sprintf("%s/silo-%s.service", unitDir, name)
+	if _, err := incus.Exec(ctx, server, container, incus.ExecOpts{}, []string{
+		"sh", "-c", fmt.Sprintf(
+			`cat > %s << 'EOF'
+%sEOF
+chown %s:%s %s`, unitPath, unitContent, username, username, unitPath),
+	}); err != nil {
+		return fmt.Errorf("writing unit file for daemon %q: %w", name, err)
+	}
 	return nil
 }
 
