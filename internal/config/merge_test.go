@@ -193,3 +193,35 @@ func TestMerge_Mounts(t *testing.T) {
 		t.Fatalf("Mounts = %v, want 2", m.Mounts)
 	}
 }
+
+func TestMerge_CarriesModeEnv(t *testing.T) {
+	global := &GlobalConfig{Agents: []AgentGlobalConfig{{
+		Name:    "claude",
+		Enabled: true,
+		Mode:    "oauth",
+		Modes: map[string]ModeConfig{
+			"bedrock": {Env: map[string]string{
+				"CLAUDE_CODE_USE_BEDROCK": "1",
+				"AWS_REGION":              "us-west-2",
+			}},
+		},
+	}}}
+
+	// No project override: modes carry through from global.
+	m := Merge(global, nil, "/tmp/proj")
+	if got := m.Agents["claude"].Modes["bedrock"].Env["AWS_REGION"]; got != "us-west-2" {
+		t.Fatalf("mode env not carried: got %q", got)
+	}
+
+	// A project that only switches the mode still inherits the global modes block.
+	project := &ProjectConfig{Agents: map[string]AgentProjectConfig{"claude": {Mode: "bedrock"}}}
+	m = Merge(global, project, "/tmp/proj")
+	agent := m.Agents["claude"]
+	if agent.Mode != "bedrock" {
+		t.Fatalf("mode = %q, want bedrock", agent.Mode)
+	}
+	keys := agent.ModeEnvKeys()
+	if len(keys) != 2 || keys[0] != "AWS_REGION" || keys[1] != "CLAUDE_CODE_USE_BEDROCK" {
+		t.Fatalf("ModeEnvKeys = %v, want sorted [AWS_REGION CLAUDE_CODE_USE_BEDROCK]", keys)
+	}
+}

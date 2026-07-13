@@ -118,6 +118,9 @@ func newStatusCmd() *cobra.Command {
 						state = statusRed.Render("disabled")
 					}
 					fmt.Printf("  %-16s %s  %s\n", agentName, state, mode)
+					if keys := agent.ModeEnvKeys(); len(keys) > 0 {
+						fmt.Printf("  %-16s %s\n", "", statusDim.Render("env: "+strings.Join(keys, ", ")))
+					}
 				}
 			}
 

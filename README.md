@@ -169,12 +169,14 @@ daemons:
     after: rails              # systemd dependency (After + Requires)
     autostart: false
 
-# Per-project agent overrides
+# Per-project agent overrides. For a mode's env (Bedrock/Vertex credentials,
+# model ARNs), prefer defining it once globally under agents[].modes so every
+# project inherits it — see "Modes and env". A project env: still layers on top.
 agents:
   claude:
     mode: bedrock
     env:
-      CLAUDE_CODE_USE_BEDROCK: "1"
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "arn:aws:bedrock:us-west-2:..."
 
 # Disable an agent for this project
 # agents:
@@ -231,10 +233,15 @@ git:
   user.name: Dev
   user.email: dev@example.com
 
-# Override an agent's launch command, install step, mode, or links
+# Override an agent's launch command, install step, mode, links, or per-mode env
 agents:
   - name: claude
     cmd: claude --dangerously-skip-permissions
+    modes:                        # env injected when the mode is active
+      bedrock:
+        env:
+          CLAUDE_CODE_USE_BEDROCK: "1"
+          AWS_ACCESS_KEY_ID: op://Employee/aws-bedrock/access-key-id
 ```
 
 All fields are optional — list only what you want to override. Per-project `.silo.yml` values take precedence over the global ones (and `mounts`/`git` are merged, not replaced).
@@ -273,6 +280,7 @@ Each agent has:
 - **`deps`** — System dependencies installed as root before the agent
 - **`install`** — Install command run as the dev user
 - **`mode`** — Default authentication mode (e.g. `oauth`, `console`, `bedrock`)
+- **`modes`** — Per-mode env injected when that mode is active (see [Modes and env](#modes-and-env))
 - **`links`** — Rules for exposing files from the agent mode directory into the container via symlinks
 
 Example:
@@ -291,6 +299,30 @@ agents:
 ```
 
 Each agent mode gets its own host directory (`~/.config/silo/agents/<name>/<mode>/`). Silo mounts that directory at `/var/lib/silo/<name>/` inside the container and creates a symlink from each `target` path to the matching `source` inside the mount. The agent reads and writes its config normally — changes land directly in the host mode directory, and token refreshes are immediately visible to any container sharing the same mode.
+
+#### Modes and env
+
+Switching a mode with `silo mode claude bedrock` picks the mode's data directory, but a hosted provider like Bedrock also needs env vars (`CLAUDE_CODE_USE_BEDROCK`, credentials, the model ARNs). Define those once per mode under `modes:` in the **global** config and every project inherits them — switching to the mode carries its env automatically:
+
+```yaml
+# ~/.config/silo/config.yml
+agents:
+  - name: claude
+    modes:
+      bedrock:
+        env:
+          CLAUDE_CODE_USE_BEDROCK: "1"
+          AWS_REGION: us-west-2
+          ANTHROPIC_DEFAULT_SONNET_MODEL: "arn:aws:bedrock:us-west-2:..."
+          ANTHROPIC_DEFAULT_OPUS_MODEL:   "arn:aws:bedrock:us-west-2:..."
+          ANTHROPIC_DEFAULT_HAIKU_MODEL:  "arn:aws:bedrock:us-west-2:..."
+          AWS_ACCESS_KEY_ID:     op://Employee/aws-bedrock/access-key-id
+          AWS_SECRET_ACCESS_KEY: op://Employee/aws-bedrock/secret-access-key
+```
+
+Values are literals or `op://` [1Password references](#secrets) — the `op://` ones are read on the host at launch time and passed to the agent as env, never written to disk. Only the active mode's block is injected, so `bedrock` and `vertex` can each carry their own credentials without colliding. A per-project agent `env:` (in `.silo.yml`) still layers on top and wins on key collisions — handy for overriding a single model ARN in one project. `silo status` lists the env var names the active mode will inject (names only, never values).
+
+The env reaches the agent through `silo ra`. Run `silo down && silo up` after switching a mode so the new data directory is mounted.
 
 ## Commands
 

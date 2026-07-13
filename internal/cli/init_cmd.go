@@ -126,7 +126,11 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 	// Build env and base command.
 	baseCmd := agentCfg.AgentCmd(agentName)
 	env := cfg.HostEnv()
-	for k, v := range agentCfg.Env {
+	agentEnv, err := provision.ResolveAgentEnv(agentCfg)
+	if err != nil {
+		return err
+	}
+	for k, v := range agentEnv {
 		env[k] = v
 	}
 	opts := incus.UserOpts(cfg.UserHome(), cfg.WorkspacePath())

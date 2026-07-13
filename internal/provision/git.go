@@ -116,6 +116,33 @@ func ResolveSessionEnv(cfg *config.MergedConfig) (map[string]string, error) {
 	return env, nil
 }
 
+// ResolveAgentEnv builds the environment an agent is launched with: the active
+// mode's env block (from the global config) as the base, with the project-level
+// agent env layered on top. Values are literals or op:// references, resolved
+// from 1Password on the host at launch time and passed as exec env — never
+// written to disk, matching how secrets are handled elsewhere.
+func ResolveAgentEnv(agent config.MergedAgentConfig) (map[string]string, error) {
+	raw := map[string]string{}
+	if mc, ok := agent.Modes[agent.Mode]; ok {
+		for k, v := range mc.Env {
+			raw[k] = v
+		}
+	}
+	for k, v := range agent.Env {
+		raw[k] = v
+	}
+
+	resolved := make(map[string]string, len(raw))
+	for k, ref := range raw {
+		val, err := resolveSecret(ref)
+		if err != nil {
+			return nil, fmt.Errorf("resolving agent env %q: %w", k, err)
+		}
+		resolved[k] = val
+	}
+	return resolved, nil
+}
+
 // resolveSecret resolves a secrets-file value: a 1Password reference (op://…) is
 // read via the op CLI on the host; anything else is treated as a literal.
 func resolveSecret(ref string) (string, error) {

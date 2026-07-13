@@ -4,6 +4,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -60,7 +61,8 @@ type MergedAgentConfig struct {
 	Install string
 	Mode    string
 	Links   []LinkRule
-	Env     map[string]string
+	Env     map[string]string     // project-level env overrides
+	Modes   map[string]ModeConfig // per-mode env, from global config
 	Enabled bool
 }
 
@@ -79,6 +81,22 @@ func (a *MergedAgentConfig) AgentCmd(name string) string {
 		return a.Cmd
 	}
 	return name
+}
+
+// ModeEnvKeys returns the sorted names of the environment variables the agent's
+// active mode injects. Names only — values may be secrets or op:// references,
+// so they're never returned for display.
+func (a *MergedAgentConfig) ModeEnvKeys() []string {
+	mc, ok := a.Modes[a.Mode]
+	if !ok || len(mc.Env) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(mc.Env))
+	for k := range mc.Env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // HostEnv returns a map of host environment variables that should be
@@ -217,6 +235,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 			Install: ga.Install,
 			Mode:    ga.Mode,
 			Links:   ga.Links,
+			Modes:   ga.Modes,
 			Enabled: ga.Enabled,
 		}
 	}
@@ -233,6 +252,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 				merged.Deps = ga.Deps
 				merged.Install = ga.Install
 				merged.Links = ga.Links
+				merged.Modes = ga.Modes
 				merged.Enabled = ga.Enabled
 			} else {
 				merged.Enabled = true

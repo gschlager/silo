@@ -43,6 +43,18 @@ type AgentGlobalConfig struct {
 	Install string     `yaml:"install"`
 	Mode    string     `yaml:"mode"`
 	Links   []LinkRule                   `yaml:"links"`
+	Modes   map[string]ModeConfig        `yaml:"modes,omitempty"`
+}
+
+// ModeConfig holds settings that apply when an agent runs in a given mode.
+// Defined once in the global config, so switching an agent to the mode (via
+// `silo mode`) carries this env automatically — no per-project repetition.
+type ModeConfig struct {
+	// Env is injected into the agent when this mode is active. Values are
+	// literals or op:// references resolved from 1Password on the host at
+	// launch time (never written to disk), so secrets like cloud credentials
+	// can live here alongside plain settings.
+	Env map[string]string `yaml:"env"`
 }
 
 // LinkRule defines a file or directory in the agent mode directory and where
@@ -159,6 +171,9 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 				}
 				if len(ua.Links) > 0 {
 					da.Links = ua.Links
+				}
+				if len(ua.Modes) > 0 {
+					da.Modes = ua.Modes
 				}
 				if ep, ok := enabledOverrides[ua.Name]; ok {
 					da.Enabled = *ep

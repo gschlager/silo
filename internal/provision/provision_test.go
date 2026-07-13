@@ -1,6 +1,10 @@
 package provision
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/gschlager/silo/internal/config"
+)
 
 func TestParsePortSpec(t *testing.T) {
 	tests := []struct {
@@ -129,5 +133,46 @@ func TestPathPrependLine(t *testing.T) {
 				t.Errorf("pathPrependLine(%q) = %q; want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestResolveAgentEnv_ModeBaseWithOverride(t *testing.T) {
+	agent := config.MergedAgentConfig{
+		Mode: "bedrock",
+		Modes: map[string]config.ModeConfig{
+			"bedrock": {Env: map[string]string{
+				"CLAUDE_CODE_USE_BEDROCK": "1",
+				"AWS_REGION":              "us-west-2",
+			}},
+			"vertex": {Env: map[string]string{"CLAUDE_CODE_USE_VERTEX": "1"}},
+		},
+		// Project-level env overrides the mode's value for the same key.
+		Env: map[string]string{"AWS_REGION": "eu-central-1"},
+	}
+
+	env, err := ResolveAgentEnv(agent)
+	if err != nil {
+		t.Fatalf("ResolveAgentEnv: %v", err)
+	}
+	if env["CLAUDE_CODE_USE_BEDROCK"] != "1" {
+		t.Errorf("CLAUDE_CODE_USE_BEDROCK = %q, want 1", env["CLAUDE_CODE_USE_BEDROCK"])
+	}
+	if env["AWS_REGION"] != "eu-central-1" {
+		t.Errorf("AWS_REGION = %q, want project override eu-central-1", env["AWS_REGION"])
+	}
+	// The inactive mode's env must not leak in.
+	if _, ok := env["CLAUDE_CODE_USE_VERTEX"]; ok {
+		t.Error("vertex env leaked into bedrock session")
+	}
+}
+
+func TestResolveAgentEnv_NoModes(t *testing.T) {
+	// An agent with no modes block and no env resolves to an empty map.
+	env, err := ResolveAgentEnv(config.MergedAgentConfig{Mode: "oauth"})
+	if err != nil {
+		t.Fatalf("ResolveAgentEnv: %v", err)
+	}
+	if len(env) != 0 {
+		t.Errorf("env = %v, want empty", env)
 	}
 }

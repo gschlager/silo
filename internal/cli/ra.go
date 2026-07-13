@@ -120,7 +120,13 @@ Examples:
 			if err != nil {
 				return err
 			}
-			for k, v := range agentCfg.Env {
+			// Agent env: active mode's env block plus explicit overrides, with any
+			// op:// references resolved from 1Password on the host.
+			agentEnv, err := provision.ResolveAgentEnv(agentCfg)
+			if err != nil {
+				return err
+			}
+			for k, v := range agentEnv {
 				env[k] = v
 			}
 
