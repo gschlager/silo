@@ -113,10 +113,32 @@ func InstallAgents(ctx context.Context, server incuscli.InstanceServer, containe
 	return nil
 }
 
-// CleanupContainerDirs removes the host-side per-container data directory.
+// CleanupContainerDirs removes the host-side per-container data directory, but
+// preserves the mode selection (mode.yml). The mode is a deliberate auth choice
+// (e.g. bedrock vs the default) that must survive a recreate — otherwise
+// `silo rm` followed by `silo up` would silently drop the agent back to the
+// config default, changing where it authenticates and bills. Everything else
+// under the dir (e.g. the effective-shell marker) describes the now-deleted
+// container and is safe to discard.
 func CleanupContainerDirs(containerName string) error {
 	containerBase := filepath.Join(config.GlobalConfigDir(), "containers", containerName)
-	return os.RemoveAll(containerBase)
+	entries, err := os.ReadDir(containerBase)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	keep := filepath.Base(config.ModeStatePath(containerName))
+	for _, e := range entries {
+		if e.Name() == keep {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(containerBase, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func execCmd(ctx context.Context, server incuscli.InstanceServer, container string, opts incus.ExecOpts, command []string) error {
