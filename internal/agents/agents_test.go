@@ -27,7 +27,7 @@ func TestCleanupContainerDirsPreservesModeState(t *testing.T) {
 		t.Fatalf("writing scratch file: %v", err)
 	}
 
-	if err := CleanupContainerDirs(container); err != nil {
+	if err := CleanupContainerDirs(container, false); err != nil {
 		t.Fatalf("CleanupContainerDirs: %v", err)
 	}
 
@@ -47,10 +47,36 @@ func TestCleanupContainerDirsPreservesModeState(t *testing.T) {
 	}
 }
 
+// With purge set, CleanupContainerDirs wipes everything, mode.yml included.
+func TestCleanupContainerDirsPurge(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	const container = "silo-test-project"
+	if err := config.SaveModeState(container, map[string]string{"claude": "bedrock"}); err != nil {
+		t.Fatalf("SaveModeState: %v", err)
+	}
+
+	if err := CleanupContainerDirs(container, true); err != nil {
+		t.Fatalf("CleanupContainerDirs: %v", err)
+	}
+
+	modes, err := config.LoadModeState(container)
+	if err != nil {
+		t.Fatalf("LoadModeState: %v", err)
+	}
+	if len(modes) != 0 {
+		t.Errorf("purge should have removed the mode selection, got %v", modes)
+	}
+	base := filepath.Join(config.GlobalConfigDir(), "containers", container)
+	if _, err := os.Stat(base); !os.IsNotExist(err) {
+		t.Errorf("purge should have removed the container dir, stat err = %v", err)
+	}
+}
+
 // A missing container dir is not an error (nothing to clean up).
 func TestCleanupContainerDirsMissing(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	if err := CleanupContainerDirs("never-created"); err != nil {
+	if err := CleanupContainerDirs("never-created", false); err != nil {
 		t.Errorf("expected nil for missing dir, got %v", err)
 	}
 }

@@ -13,7 +13,7 @@ import (
 )
 
 func newRmCmd() *cobra.Command {
-	var yes bool
+	var yes, purge bool
 
 	cmd := &cobra.Command{
 		Use:   "rm",
@@ -39,7 +39,11 @@ func newRmCmd() *cobra.Command {
 			}
 
 			if !yes {
-				fmt.Fprintf(os.Stderr, "Remove %s? (project files, agent credentials, and the selected mode are kept) [y/N] ", name)
+				kept := "project files, agent credentials, and the selected mode are kept"
+				if purge {
+					kept = "project files and agent credentials are kept; the selected mode is reset"
+				}
+				fmt.Fprintf(os.Stderr, "Remove %s? (%s) [y/N] ", name, kept)
 				reader := bufio.NewReader(os.Stdin)
 				answer, _ := reader.ReadString('\n')
 				if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "y") {
@@ -62,8 +66,9 @@ func newRmCmd() *cobra.Command {
 				return err
 			}
 
-			// Clean up per-container state (mode overrides, etc.).
-			agents.CleanupContainerDirs(cfg.ContainerName)
+			// Clean up per-container state. The mode selection is kept so a later
+			// `silo up` restores it, unless --purge asks for a full reset.
+			agents.CleanupContainerDirs(cfg.ContainerName, purge)
 
 			fmt.Fprintln(os.Stderr, "Done.")
 			return nil
@@ -71,5 +76,6 @@ func newRmCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompts")
+	cmd.Flags().BoolVar(&purge, "purge", false, "Also reset the selected agent mode to the config default")
 	return cmd
 }

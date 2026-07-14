@@ -101,7 +101,7 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 			incus.Stop(cleanupCtx, server, cfg.ContainerName)
 		}
 		incus.Delete(cleanupCtx, server, cfg.ContainerName)
-		agents.CleanupContainerDirs(cfg.ContainerName)
+		agents.CleanupContainerDirs(cfg.ContainerName, true)
 	}
 	defer cleanup()
 
