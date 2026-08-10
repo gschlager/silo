@@ -45,6 +45,21 @@ func resolveEnv(opts ExecOpts) map[string]string {
 	return env
 }
 
+// XDGRuntimeDirExport is a shell prefix that sets XDG_RUNTIME_DIR to the running
+// user's runtime dir. Prepend it before a `systemctl --user`/`journalctl --user`
+// command so it can reach the (lingering) user manager's D-Bus socket at
+// /run/user/<uid>/bus. Inside the container neither `su -` nor a User-scoped exec
+// sets XDG_RUNTIME_DIR up, and without it those commands fail with
+// "$DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined".
+const XDGRuntimeDirExport = "export XDG_RUNTIME_DIR=/run/user/$(id -u); "
+
+// SuUserManager builds a `su - <user> -c` command that runs cmd with
+// XDG_RUNTIME_DIR set (see XDGRuntimeDirExport), so a wrapped `systemctl --user`
+// or `journalctl --user` command can talk to the user manager.
+func SuUserManager(user, cmd string) []string {
+	return []string{"su", "-", user, "-c", XDGRuntimeDirExport + cmd}
+}
+
 // Exec runs a command inside the container and returns its combined output.
 func Exec(ctx context.Context, server incuscli.InstanceServer, container string, opts ExecOpts, command []string) (string, error) {
 	return ExecWithStdin(ctx, server, container, opts, command, nil)

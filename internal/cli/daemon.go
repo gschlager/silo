@@ -63,10 +63,9 @@ func newDaemonListCmd() *cobra.Command {
 				dcfg := cfg.Daemons[name]
 				state := "stopped"
 				if running {
-					out, err := incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{}, []string{
-						"su", "-", cfg.User, "-c",
-						fmt.Sprintf("systemctl --user is-active silo-%s 2>/dev/null || true", name),
-					})
+					out, err := incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{},
+						incus.SuUserManager(cfg.User,
+							fmt.Sprintf("systemctl --user is-active silo-%s 2>/dev/null || true", name)))
 					if err == nil {
 						switch strings.TrimSpace(out) {
 						case "active":
@@ -159,10 +158,9 @@ With a daemon name, tails logs for that specific daemon.`,
 				// If the daemon isn't running, dropping -f shows the past
 				// logs and exits instead of hanging forever waiting for
 				// new entries that will never come.
-				state, _ := incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{}, []string{
-					"su", "-", cfg.User, "-c",
-					fmt.Sprintf("systemctl --user is-active silo-%s 2>/dev/null || true", daemon),
-				})
+				state, _ := incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{},
+					incus.SuUserManager(cfg.User,
+						fmt.Sprintf("systemctl --user is-active silo-%s 2>/dev/null || true", daemon)))
 				if strings.TrimSpace(state) == "active" {
 					journalCmd = fmt.Sprintf("journalctl --user -u silo-%s -f", daemon)
 				} else {
@@ -173,8 +171,10 @@ With a daemon name, tails logs for that specific daemon.`,
 
 			opts := incus.UserOpts(cfg.UserHome(), "")
 			opts.Env = cfg.HostEnv()
+			// journalctl --user needs XDG_RUNTIME_DIR to reach the user manager;
+			// the login shell doesn't set it inside the container.
 			return incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
-				cfg.LoginCmd(journalCmd))
+				cfg.LoginCmd(incus.XDGRuntimeDirExport+journalCmd))
 		},
 	}
 }
@@ -214,10 +214,9 @@ func runDaemonUnitAction(cmd *cobra.Command, daemon, action string) error {
 	if err != nil && (action == "start" || action == "restart") {
 		// Most likely cause is the daemon's own command exiting non-zero;
 		// dump the last few journal lines so the user sees why.
-		tail, _ := incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{}, []string{
-			"su", "-", cfg.User, "-c",
-			fmt.Sprintf("journalctl --user -u silo-%s -n 10 --no-pager 2>/dev/null || true", daemon),
-		})
+		tail, _ := incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{},
+			incus.SuUserManager(cfg.User,
+				fmt.Sprintf("journalctl --user -u silo-%s -n 10 --no-pager 2>/dev/null || true", daemon)))
 		if tail != "" {
 			fmt.Fprintln(os.Stderr, strings.TrimRight(tail, "\n"))
 		}

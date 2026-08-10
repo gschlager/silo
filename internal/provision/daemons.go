@@ -47,9 +47,8 @@ func ReconcileDaemons(ctx context.Context, server incuscli.InstanceServer, conta
 	// silo in the loop at start time so it can inject the resolved env (config
 	// env: plus secrets) into the user manager first, and avoids a
 	// boot-then-restart cycle.
-	if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
-		"su", "-", username, "-c", "systemctl --user daemon-reload",
-	}); err != nil {
+	if _, err := incus.Exec(ctx, server, container, rootOpts,
+		incus.SuUserManager(username, "systemctl --user daemon-reload")); err != nil {
 		return fmt.Errorf("reloading systemd user manager: %w", err)
 	}
 
@@ -81,10 +80,10 @@ func pruneOrphanDaemons(ctx context.Context, server incuscli.InstanceServer, con
 		}
 		// Stop a possibly-running orphan, then remove its unit file. The single
 		// daemon-reload back in ReconcileDaemons makes the manager forget it.
-		if _, err := incus.Exec(ctx, server, container, rootOpts, []string{
-			"su", "-", username, "-c",
-			fmt.Sprintf("systemctl --user stop silo-%s.service 2>/dev/null; rm -f %s", name, line),
-		}); err != nil {
+		if _, err := incus.Exec(ctx, server, container, rootOpts,
+			incus.SuUserManager(username,
+				fmt.Sprintf("systemctl --user stop silo-%s.service 2>/dev/null; rm -f %s", name, line)),
+		); err != nil {
 			return fmt.Errorf("removing orphaned daemon %q: %w", name, err)
 		}
 	}
@@ -143,7 +142,7 @@ func injectDaemonEnv(ctx context.Context, server incuscli.InstanceServer, cfg *c
 	}
 
 	if _, err := incus.ExecWithStdin(ctx, server, cfg.ContainerName, incus.ExecOpts{},
-		[]string{"su", "-", cfg.User, "-c", "sh -s"}, []byte(envInjectionScript(env))); err != nil {
+		incus.SuUserManager(cfg.User, "sh -s"), []byte(envInjectionScript(env))); err != nil {
 		return fmt.Errorf("injecting daemon environment: %w", err)
 	}
 	return nil
@@ -204,10 +203,9 @@ func ControlDaemon(ctx context.Context, server incuscli.InstanceServer, cfg *con
 			return err
 		}
 	}
-	_, err := incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{}, []string{
-		"su", "-", cfg.User, "-c",
-		fmt.Sprintf("systemctl --user %s silo-%s.service", action, name),
-	})
+	_, err := incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{},
+		incus.SuUserManager(cfg.User,
+			fmt.Sprintf("systemctl --user %s silo-%s.service", action, name)))
 	return err
 }
 
@@ -215,15 +213,13 @@ func ControlDaemon(ctx context.Context, server incuscli.InstanceServer, cfg *con
 // if it fails to start (most often the daemon's own command exiting non-zero).
 func startDaemonUnit(ctx context.Context, server incuscli.InstanceServer, container, username, name string) {
 	serviceName := "silo-" + name
-	if _, err := incus.Exec(ctx, server, container, incus.ExecOpts{}, []string{
-		"su", "-", username, "-c",
-		fmt.Sprintf("systemctl --user start %s.service", serviceName),
-	}); err != nil {
+	if _, err := incus.Exec(ctx, server, container, incus.ExecOpts{},
+		incus.SuUserManager(username,
+			fmt.Sprintf("systemctl --user start %s.service", serviceName))); err != nil {
 		color.Warn("daemon %q failed to start:", name)
-		tail, _ := incus.Exec(ctx, server, container, incus.ExecOpts{}, []string{
-			"su", "-", username, "-c",
-			fmt.Sprintf("journalctl --user -u %s.service -n 10 --no-pager 2>/dev/null || true", serviceName),
-		})
+		tail, _ := incus.Exec(ctx, server, container, incus.ExecOpts{},
+			incus.SuUserManager(username,
+				fmt.Sprintf("journalctl --user -u %s.service -n 10 --no-pager 2>/dev/null || true", serviceName)))
 		if tail != "" {
 			fmt.Fprintln(os.Stderr, strings.TrimRight(tail, "\n"))
 		}

@@ -130,10 +130,9 @@ func newStatusCmd() *cobra.Command {
 				for daemon, dcfg := range cfg.Daemons {
 					state := statusDim.Render("stopped")
 					if running {
-						out, err := incus.Exec(ctx, server, name, incus.ExecOpts{}, []string{
-							"su", "-", cfg.User, "-c",
-							fmt.Sprintf("systemctl --user is-active silo-%s 2>/dev/null || true", daemon),
-						})
+						out, err := incus.Exec(ctx, server, name, incus.ExecOpts{},
+							incus.SuUserManager(cfg.User,
+								fmt.Sprintf("systemctl --user is-active silo-%s 2>/dev/null || true", daemon)))
 						if err == nil {
 							switch strings.TrimSpace(out) {
 							case "active":
