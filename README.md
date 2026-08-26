@@ -169,6 +169,10 @@ daemons:
     cmd: bundle exec sidekiq
     after: rails              # systemd dependency (After + Requires)
     autostart: false
+  worker:
+    cmd: my-runner
+    env:                      # scoped to this daemon only
+      API_TOKEN: op://Employee/worker/credential
 
 # Per-project agent overrides. For a mode's env (Bedrock/Vertex credentials,
 # model ARNs), prefer defining it once globally under agents[].modes so every
@@ -401,6 +405,38 @@ The env reaches the agent through `silo ra`. Run `silo down && silo up` after sw
 | `silo daemon logs [name]`      | Tail daemon logs (all daemons if no name given)          |
 
 silo starts daemons itself — the units are installed but not enabled for boot, so an `autostart` daemon comes up when silo starts the container (`silo up`), not when the container is started some other way. Each start re-resolves the project's `env:` values and secrets and injects them into the systemd user manager, so editing `env:` or a `secrets.yml` entry takes effect on the next `silo up` (or `silo daemon restart`) without recreating the container. Secrets stay in the manager's memory and are never written to disk.
+
+**Working directory.** Every daemon runs in the project root — `/workspace/<project>`, the same directory `silo enter` drops you in. This is a guarantee, not a default: a daemon that shells out to `git` or resolves paths relative to the repo root can rely on it.
+
+**Environment.** Daemons see the project's `env:` block and every resolved secret, because silo injects those into the systemd user manager before starting them. They do **not** see `pass_env` — that list is host terminal state (`TERM`, `LANG`, …) and only reaches `silo enter`, `silo run` and `silo ra` sessions. A daemon that needs a value from the host environment should get it from `env:` or `secrets.yml` instead.
+
+### Per-daemon environment
+
+The user manager's environment is shared by every unit, so a project-wide `env:` value reaches all daemons under the same name. When two daemons read the same variable name but need different values, give each one its own `env:` block:
+
+```yaml
+daemons:
+  segno-claude:
+    cmd: segno-runner claude
+    env:
+      SEGNO_TOKEN: op://Employee/segno-claude/credential
+  segno-codex:
+    cmd: segno-runner codex
+    env:
+      SEGNO_TOKEN: op://Employee/segno-codex/credential
+```
+
+Values are literals or `op://` references, resolved on the host at start time — the same rules as `env:` and `agents[].modes`. A per-daemon key overrides the project-wide `env:` for that daemon only.
+
+Do not write the shell equivalent by hand:
+
+```yaml
+cmd: env SEGNO_TOKEN="$SEGNO_TOKEN_CODEX" segno-runner codex   # don't
+```
+
+`/proc/<pid>/cmdline` is world-readable, so a token passed as a command argument is visible to every process in the container. With `env:`, silo injects the value into the user manager under an internal name and the unit renames it at start time, so the value only ever reaches the daemon through its environment — never through `argv`, and never through the unit file on disk. `silo config show` lists the variable names each daemon injects (names only, never values).
+
+Note that this scopes *naming*, not *access*: the manager environment is shared, so a daemon can still read another daemon's project-wide secrets. Per-daemon `env:` solves the collision, not isolation.
 
 ### Snapshots
 

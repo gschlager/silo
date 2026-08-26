@@ -105,6 +105,13 @@ type DaemonConfig struct {
 	Autostart bool          `yaml:"autostart"`
 	After     string        `yaml:"after"`
 	Ports     []PortForward `yaml:"ports"`
+
+	// Env is injected into this daemon only. Values are literals or op://
+	// references resolved on the host at start time, matching agents[].modes.env.
+	// Unlike the project-wide env:, which every daemon sees through the systemd
+	// user manager, these are scoped to one unit — so two daemons can hold
+	// different values for the same variable name.
+	Env map[string]string `yaml:"env"`
 }
 
 // PortForward is a single port forward. In YAML it accepts either the shorthand
@@ -193,10 +200,11 @@ func (d *DaemonConfig) UnmarshalYAML(value *yaml.Node) error {
 
 	// Object form — need a temporary type to avoid infinite recursion.
 	type rawDaemon struct {
-		Cmd       string        `yaml:"cmd"`
-		Autostart *bool         `yaml:"autostart"`
-		After     string        `yaml:"after"`
-		Ports     []PortForward `yaml:"ports"`
+		Cmd       string            `yaml:"cmd"`
+		Autostart *bool             `yaml:"autostart"`
+		After     string            `yaml:"after"`
+		Ports     []PortForward     `yaml:"ports"`
+		Env       map[string]string `yaml:"env"`
 	}
 	var raw rawDaemon
 	if err := value.Decode(&raw); err != nil {
@@ -210,6 +218,7 @@ func (d *DaemonConfig) UnmarshalYAML(value *yaml.Node) error {
 	}
 	d.After = raw.After
 	d.Ports = raw.Ports
+	d.Env = raw.Env
 	return nil
 }
 

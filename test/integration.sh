@@ -129,6 +129,16 @@ daemons:
   httpd:
     cmd: python3 -m http.server 9090 --directory /tmp
     autostart: false
+  scoped-a:
+    cmd: printenv SCOPED_TOKEN > /tmp/scoped-a.out; sleep 300
+    autostart: false
+    env:
+      SCOPED_TOKEN: scoped_value_alpha
+  scoped-b:
+    cmd: printenv SCOPED_TOKEN > /tmp/scoped-b.out; sleep 300
+    autostart: false
+    env:
+      SCOPED_TOKEN: scoped_value_bravo
 
 agents:
   echo:
@@ -447,6 +457,47 @@ fi
 
 assert_exit_nonzero "silo daemon start unknown daemon" \
   "$SILO" daemon start nonexistent
+
+# Per-daemon env: two daemons reading the same variable name must each get their
+# own value, and the value must never reach argv or the on-disk unit file.
+if [ "$DAEMONS_WORK" = true ]; then
+  "$SILO" daemon start scoped-a >/dev/null 2>&1 || true
+  "$SILO" daemon start scoped-b >/dev/null 2>&1 || true
+  sleep 2
+
+  assert_output_contains "per-daemon env reaches scoped-a" "scoped_value_alpha" \
+    "$SILO" run cat /tmp/scoped-a.out
+
+  assert_output_contains "per-daemon env reaches scoped-b" "scoped_value_bravo" \
+    "$SILO" run cat /tmp/scoped-b.out
+
+  # Each daemon sees only its own value for the shared name.
+  assert_output_not_contains "scoped-a does not see scoped-b's value" "scoped_value_bravo" \
+    "$SILO" run cat /tmp/scoped-a.out
+
+  # /proc/*/cmdline is world-readable; a secret passed as an argument leaks to
+  # every process in the container.
+  assert_output_not_contains "per-daemon env is not in any process argv" "scoped_value_alpha" \
+    "$SILO" run sh -c "cat /proc/[0-9]*/cmdline 2>/dev/null | tr '\0' '\n'"
+
+  # The unit file lands on disk, so it must carry variable names only.
+  assert_output_not_contains "per-daemon env is not in the unit file" "scoped_value_alpha" \
+    "$SILO" run cat "/home/dev/.config/systemd/user/silo-scoped-a.service"
+
+  assert_output_contains "unit file references the prefixed name" "SILO_DAEMON_SCOPED_A_SCOPED_TOKEN" \
+    "$SILO" run cat "/home/dev/.config/systemd/user/silo-scoped-a.service"
+
+  "$SILO" daemon stop scoped-a >/dev/null 2>&1 || true
+  "$SILO" daemon stop scoped-b >/dev/null 2>&1 || true
+else
+  echo "  SKIP: per-daemon env (systemd user session not available)"
+fi
+
+assert_output_contains "silo config show lists per-daemon env names" "SCOPED_TOKEN" \
+  "$SILO" config show
+
+assert_output_not_contains "silo config show hides per-daemon env values" "scoped_value_alpha" \
+  "$SILO" config show
 
 # ---------------------------------------------------------------------------
 # Tests: Logs (PTY via script, expect timeout since journalctl -f)

@@ -27,6 +27,74 @@ func TestBuildUnitFile(t *testing.T) {
 		assertContains(t, unit, "Requires=silo-rails.service")
 		assertContains(t, unit, "ExecStart=/bin/bash -lc 'bin/ember-cli'")
 	})
+
+	t.Run("runs in the project root", func(t *testing.T) {
+		d := config.DaemonConfig{Cmd: "bin/rails server"}
+		unit := buildUnitFile("rails", "bash", "/workspace/myapp", d)
+
+		// segno-runner and anything else doing `git worktree add` relies on this.
+		assertContains(t, unit, "WorkingDirectory=/workspace/myapp")
+	})
+
+	t.Run("per-daemon env is renamed from the prefixed manager variable", func(t *testing.T) {
+		d := config.DaemonConfig{
+			Cmd: "segno-runner codex",
+			Env: map[string]string{"SEGNO_TOKEN": "op://Employee/segno-codex/credential"},
+		}
+		unit := buildUnitFile("segno-codex", "bash", "/workspace/myapp", d)
+
+		assertContains(t, unit, `SEGNO_TOKEN="$$SILO_DAEMON_SEGNO_CODEX_SEGNO_TOKEN"`)
+		assertContains(t, unit, "unset SILO_DAEMON_SEGNO_CODEX_SEGNO_TOKEN;")
+		assertContains(t, unit, "segno-runner codex'")
+
+		// The unit file lands on disk, so it must carry names only — never the
+		// op:// reference and never a resolved value.
+		assertNotContains(t, unit, "op://")
+		assertNotContains(t, unit, "Environment=")
+		assertNotContains(t, unit, "EnvironmentFile=")
+	})
+
+	t.Run("two daemons share a variable name without colliding", func(t *testing.T) {
+		claude := buildUnitFile("segno-claude", "bash", "/workspace/app", config.DaemonConfig{
+			Cmd: "segno-runner claude",
+			Env: map[string]string{"SEGNO_TOKEN": "op://Employee/segno-claude/credential"},
+		})
+		codex := buildUnitFile("segno-codex", "bash", "/workspace/app", config.DaemonConfig{
+			Cmd: "segno-runner codex",
+			Env: map[string]string{"SEGNO_TOKEN": "op://Employee/segno-codex/credential"},
+		})
+
+		assertContains(t, claude, "$$SILO_DAEMON_SEGNO_CLAUDE_SEGNO_TOKEN")
+		assertContains(t, codex, "$$SILO_DAEMON_SEGNO_CODEX_SEGNO_TOKEN")
+	})
+
+	t.Run("dollar signs in the command are left for the shell", func(t *testing.T) {
+		d := config.DaemonConfig{Cmd: "bin/rails server -p $PORT"}
+		unit := buildUnitFile("rails", "bash", "/workspace/myapp", d)
+
+		// systemd expands $PORT into the unit's argv; $$ defers it to the shell.
+		assertContains(t, unit, "bin/rails server -p $$PORT")
+	})
+
+	t.Run("no env means no preamble", func(t *testing.T) {
+		d := config.DaemonConfig{Cmd: "bin/rails server"}
+		unit := buildUnitFile("rails", "bash", "/workspace/myapp", d)
+
+		assertNotContains(t, unit, "SILO_DAEMON_")
+	})
+}
+
+func TestDaemonEnvVarName(t *testing.T) {
+	cases := []struct{ daemon, key, want string }{
+		{"rails", "PORT", "SILO_DAEMON_RAILS_PORT"},
+		{"segno-codex", "SEGNO_TOKEN", "SILO_DAEMON_SEGNO_CODEX_SEGNO_TOKEN"},
+		{"web.api", "URL", "SILO_DAEMON_WEB_API_URL"},
+	}
+	for _, c := range cases {
+		if got := daemonEnvVarName(c.daemon, c.key); got != c.want {
+			t.Errorf("daemonEnvVarName(%q, %q) = %q, want %q", c.daemon, c.key, got, c.want)
+		}
+	}
 }
 
 func TestEnvInjectionScript(t *testing.T) {

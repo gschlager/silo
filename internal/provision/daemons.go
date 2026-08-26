@@ -110,6 +110,12 @@ chown %s:%s %s`, unitPath, unitContent, username, username, unitPath),
 // configured env: vars plus resolved secrets (central secrets file, tool
 // credentials, git credential). Secrets are resolved on the host; they are
 // injected into the systemd user manager and never written to disk.
+//
+// Per-daemon env: blocks are resolved too, but under prefixed names
+// (SILO_DAEMON_<daemon>_<var>). The user manager's environment is shared by
+// every unit, so a daemon's own value can't be injected under its real name
+// without colliding with another daemon's. Each unit renames its prefixed
+// variables back at start time — see daemonEnvPreamble.
 func daemonEnv(cfg *config.MergedConfig) (map[string]string, error) {
 	env := make(map[string]string, len(cfg.Env))
 	for k, v := range cfg.Env {
@@ -122,7 +128,55 @@ func daemonEnv(cfg *config.MergedConfig) (map[string]string, error) {
 	for k, v := range creds {
 		env[k] = v
 	}
+
+	for _, name := range sortedDaemonNames(cfg.Daemons) {
+		for _, key := range sortedKeys(cfg.Daemons[name].Env) {
+			val, err := resolveSecret(cfg.Daemons[name].Env[key])
+			if err != nil {
+				return nil, fmt.Errorf("resolving env %q for daemon %q: %w", key, name, err)
+			}
+			env[daemonEnvVarName(name, key)] = val
+		}
+	}
+
 	return env, nil
+}
+
+// daemonEnvVarName builds the manager-side name a daemon's env: entry is
+// injected under. Daemon names may contain characters that aren't valid in an
+// environment variable name (hyphens, dots), so they're normalised to
+// underscores and upper-cased.
+func daemonEnvVarName(daemon, key string) string {
+	var b strings.Builder
+	b.WriteString("SILO_DAEMON_")
+	for _, r := range strings.ToUpper(daemon) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('_')
+		}
+	}
+	b.WriteByte('_')
+	b.WriteString(key)
+	return b.String()
+}
+
+func sortedDaemonNames(daemons map[string]config.DaemonConfig) []string {
+	names := make([]string, 0, len(daemons))
+	for name := range daemons {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // injectDaemonEnv pushes the resolved daemon environment into the systemd user
@@ -247,6 +301,39 @@ StandardError=journal
 
 [Install]
 WantedBy=default.target
-`, workspacePath, shell, daemon.Cmd)
+`, workspacePath, shell, daemonEnvPreamble(name, daemon.Env)+systemdEscape(daemon.Cmd))
 	return unit
+}
+
+// daemonEnvPreamble builds the shell prefix that restores a daemon's own env:
+// entries from the prefixed names injected into the user manager (see
+// daemonEnv). Only variable *names* appear here, so the unit file on disk never
+// contains a secret — the values live solely in the manager's memory.
+//
+// The prefixed reference is written as "$$NAME" because systemd expands $NAME
+// in ExecStart itself, and its expansion is substituted into the command line
+// before exec — which would put the value in the process's argv, readable by
+// anything that can stat /proc. Escaping it as $$ leaves a literal $ for the
+// login shell to expand instead, so the value only ever reaches the child
+// through the environment. The prefixed name is unset afterwards so the daemon
+// doesn't see the same secret twice under two names.
+func daemonEnvPreamble(name string, env map[string]string) string {
+	if len(env) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, key := range sortedKeys(env) {
+		src := daemonEnvVarName(name, key)
+		fmt.Fprintf(&b, `%s="$$%s"; export %s; unset %s; `, key, src, key, src)
+	}
+	return b.String()
+}
+
+// systemdEscape doubles dollar signs so systemd passes them through to the
+// shell instead of expanding them itself. Without this a daemon command like
+// `bin/rails server -p $PORT` has $PORT substituted into the unit's argv by
+// systemd; with it, the login shell expands it from its own environment, which
+// is the same set of variables plus whatever ~/.silo/env.sh adds.
+func systemdEscape(cmd string) string {
+	return strings.ReplaceAll(cmd, "$", "$$")
 }

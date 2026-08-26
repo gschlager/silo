@@ -67,7 +67,11 @@ type resolvedView struct {
 	Git     map[string]string   `yaml:"git,omitempty"`
 	Secrets map[string]string   `yaml:"secrets,omitempty"`
 	Daemons []string            `yaml:"daemons,omitempty"`
-	Agents  []string            `yaml:"agents,omitempty"`
+	// DaemonEnv lists, per daemon, the names of the variables its own env:
+	// block injects. Names only — the values are literals or op:// references
+	// that may be secrets, so `config show` never resolves or prints them.
+	DaemonEnv map[string][]string `yaml:"daemon_env,omitempty"`
+	Agents    []string            `yaml:"agents,omitempty"`
 }
 
 func newConfigShowCmd() *cobra.Command {
@@ -98,8 +102,20 @@ apply (by reference only — tokens are never resolved or printed).`,
 			for _, p := range cfg.Ports {
 				view.Ports = append(view.Ports, p.Spec)
 			}
-			for name := range cfg.Daemons {
+			for name, d := range cfg.Daemons {
 				view.Daemons = append(view.Daemons, name)
+				if len(d.Env) == 0 {
+					continue
+				}
+				keys := make([]string, 0, len(d.Env))
+				for k := range d.Env {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				if view.DaemonEnv == nil {
+					view.DaemonEnv = make(map[string][]string)
+				}
+				view.DaemonEnv[name] = keys
 			}
 			sort.Strings(view.Daemons)
 			for _, name := range cfg.AgentOrder {
