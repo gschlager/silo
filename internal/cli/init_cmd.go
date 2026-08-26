@@ -121,7 +121,9 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 
 	// Ensure the agent mode directory exists (empty; never seeded from host).
 	agentCfg := cfg.Agents[agentName]
-	agents.EnsureModeDir(agentName, agentCfg.Mode)
+	if err := agents.EnsureModeDir(agentName, agentCfg.Mode); err != nil {
+		return err
+	}
 
 	// Build env and base command.
 	baseCmd := agentCfg.AgentCmd(agentName)
@@ -401,4 +403,3 @@ func randomSuffix() string {
 	rand.Read(b)
 	return fmt.Sprintf("%x", b)
 }
-

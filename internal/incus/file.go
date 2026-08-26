@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	incuscli "github.com/lxc/incus/v6/client"
+	incuscli "github.com/lxc/incus/v7/client"
 )
 
 // PushFile copies a file or directory from the host to the container.

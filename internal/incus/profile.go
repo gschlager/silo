@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	incuscli "github.com/lxc/incus/v6/client"
+	incuscli "github.com/lxc/incus/v7/client"
 )
 
 // EnsureProfileRawLXC appends a single raw.lxc line to a profile's existing

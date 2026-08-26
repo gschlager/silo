@@ -112,7 +112,9 @@ Examples:
 
 			// Ensure the agent mode directory exists (empty; never seeded from host).
 			color.Debug("preparing agent dir for %s (mode=%s)", agentName, agentCfg.Mode)
-			agents.EnsureModeDir(agentName, agentCfg.Mode)
+			if err := agents.EnsureModeDir(agentName, agentCfg.Mode); err != nil {
+				return err
+			}
 
 			// Build environment variables (host env + tool credentials + agent-specific).
 			color.Debug("resolving session env (tool credentials)")

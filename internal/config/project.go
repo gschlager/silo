@@ -12,20 +12,20 @@ import (
 
 // ProjectConfig represents the .silo.yml project configuration.
 type ProjectConfig struct {
-	Image   string              `yaml:"image"`
-	Use     UseList             `yaml:"use,omitempty"`
-	Setup   []string            `yaml:"setup"`
-	Sync    []string            `yaml:"sync"`
-	Reset   map[string][]string `yaml:"reset"`
-	Update  []string            `yaml:"update"`
-	Ports   []PortForward       `yaml:"ports"`
-	Env     map[string]string   `yaml:"env"`
-	Git     GitConfig           `yaml:"git"`
+	Image   string                        `yaml:"image"`
+	Use     UseList                       `yaml:"use,omitempty"`
+	Setup   []string                      `yaml:"setup"`
+	Sync    []string                      `yaml:"sync"`
+	Reset   map[string][]string           `yaml:"reset"`
+	Update  []string                      `yaml:"update"`
+	Ports   []PortForward                 `yaml:"ports"`
+	Env     map[string]string             `yaml:"env"`
+	Git     GitConfig                     `yaml:"git"`
 	Agents  map[string]AgentProjectConfig `yaml:"agents"`
-	Mounts  []string            `yaml:"mounts"`
-	Tools   map[string]ToolConfig `yaml:"tools"`
-	Daemons map[string]DaemonConfig `yaml:"daemons"`
-	Nesting bool                `yaml:"nesting"`
+	Mounts  []string                      `yaml:"mounts"`
+	Tools   map[string]ToolConfig         `yaml:"tools"`
+	Daemons map[string]DaemonConfig       `yaml:"daemons"`
+	Nesting bool                          `yaml:"nesting"`
 }
 
 // PresetUse is a single preset invocation with its raw parameters. Params is the
@@ -271,6 +271,18 @@ func loadProjectFile(dir string, names ...string) *projectFileResult {
 		var cfg ProjectConfig
 		if err := yaml.Unmarshal(data, &cfg); err != nil {
 			return &projectFileResult{err: fmt.Errorf("parsing %s: %w", path, err)}
+		}
+		if len(cfg.Mounts) > 0 {
+			return &projectFileResult{err: fmt.Errorf("parsing %s: project files cannot declare host mounts; move mounts to %s", path, GlobalConfigPath())}
+		}
+		for agent, agentCfg := range cfg.Agents {
+			if agentCfg.Mode != "" {
+				if err := ValidateAgentModePath(agent, agentCfg.Mode); err != nil {
+					return &projectFileResult{err: fmt.Errorf("parsing %s: %w", path, err)}
+				}
+			} else if !validPathIdentifier(agent) {
+				return &projectFileResult{err: fmt.Errorf("parsing %s: invalid agent name %q", path, agent)}
+			}
 		}
 		return &projectFileResult{config: cfg}
 	}

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	incuscli "github.com/lxc/incus/v6/client"
-	"github.com/lxc/incus/v6/shared/api"
+	incuscli "github.com/lxc/incus/v7/client"
+	"github.com/lxc/incus/v7/shared/api"
 
 	"github.com/gschlager/silo/internal/color"
 )
@@ -282,4 +282,3 @@ func SnapshotCount(server incuscli.InstanceServer, name string) int {
 	}
 	return len(snaps)
 }
-

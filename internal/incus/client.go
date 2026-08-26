@@ -3,7 +3,7 @@ package incus
 import (
 	"fmt"
 
-	incus "github.com/lxc/incus/v6/client"
+	incus "github.com/lxc/incus/v7/client"
 )
 
 // Connect returns a connection to the local Incus daemon.

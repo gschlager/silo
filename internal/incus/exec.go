@@ -12,8 +12,8 @@ import (
 	"syscall"
 
 	"github.com/gorilla/websocket"
-	incuscli "github.com/lxc/incus/v6/client"
-	"github.com/lxc/incus/v6/shared/api"
+	incuscli "github.com/lxc/incus/v7/client"
+	"github.com/lxc/incus/v7/shared/api"
 	"golang.org/x/term"
 )
 

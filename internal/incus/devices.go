@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	incuscli "github.com/lxc/incus/v6/client"
+	incuscli "github.com/lxc/incus/v7/client"
 )
 
 // AddDiskDevice adds a bind mount device to the container.
@@ -60,7 +60,7 @@ func AddProxyDevice(ctx context.Context, server incuscli.InstanceServer, contain
 
 	inst.Devices[name] = map[string]string{
 		"type":    "proxy",
-		"listen":  "tcp:0.0.0.0:" + strconv.Itoa(hostPort),
+		"listen":  proxyListenAddress(hostPort),
 		"connect": "tcp:127.0.0.1:" + strconv.Itoa(containerPort),
 		"bind":    "host",
 	}
@@ -79,6 +79,10 @@ func AddProxyDevice(ctx context.Context, server incuscli.InstanceServer, contain
 	case err := <-errCh:
 		return err
 	}
+}
+
+func proxyListenAddress(port int) string {
+	return "tcp:127.0.0.1:" + strconv.Itoa(port)
 }
 
 // RemoveDevice removes a device from the container.

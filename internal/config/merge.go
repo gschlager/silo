@@ -30,7 +30,7 @@ type MergedConfig struct {
 	Mounts []string
 
 	// Git configuration.
-	Git        map[string]string
+	Git           map[string]string
 	GitCredential *CredentialConfig
 
 	// Agent configuration (merged: project replaces global per agent).
@@ -131,6 +131,12 @@ func ProjectName(projectDir string) string {
 	return strings.TrimPrefix(ContainerName(projectDir), "silo-")
 }
 
+// LegacyProjectName returns the basename-only key used before project identity
+// hashes were introduced. It exists solely for the explicit secrets migration.
+func LegacyProjectName(projectDir string) string {
+	return sanitizeName(filepath.Base(projectDir))
+}
+
 // ResolveDefaultAgent returns the default agent name. If DefaultAgent is set,
 // it returns that. Otherwise it returns the first agent in definition order.
 func (m *MergedConfig) ResolveDefaultAgent() string {
@@ -163,6 +169,7 @@ func (m *MergedConfig) WorkspacePath() string {
 // Merge combines global and project configs into a single resolved config.
 // projectDir is the absolute path to the project directory.
 func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *MergedConfig {
+	projectDir = canonicalProjectPath(projectDir)
 	m := &MergedConfig{
 		ContainerName: ContainerName(projectDir),
 		ProjectDir:    projectDir,
@@ -221,11 +228,11 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		}
 	}
 
-	// Mounts: union of global and project.
+	// Host mounts are host-owned policy. Project files are writable from inside
+	// the container, so accepting mounts from .silo.yml would let a compromised
+	// repository expose arbitrary host paths on the next provision.
 	m.Mounts = append(m.Mounts, global.Mounts...)
-	if project != nil {
-		m.Mounts = append(m.Mounts, project.Mounts...)
-	}
+	m.Mounts = append(m.Mounts, global.ProjectMounts[m.ProjectName()]...)
 
 	// Git: global base, project overrides individual keys.
 	m.Git = maps.Clone(global.Git)
@@ -404,9 +411,16 @@ func distroOf(image string) string {
 	return image
 }
 
-// ContainerName derives the container name from the project directory.
+// ContainerName derives a readable but collision-resistant container name from
+// the canonical project directory. The hash separates projects with the same
+// basename and also scopes their state and central secrets independently.
 func ContainerName(projectDir string) string {
-	return "silo-" + sanitizeName(filepath.Base(projectDir))
+	base := sanitizeName(filepath.Base(canonicalProjectPath(projectDir)))
+	const maxBaseLen = 41 // keep the full name within Incus' 63-character limit
+	if len(base) > maxBaseLen {
+		base = base[:maxBaseLen]
+	}
+	return "silo-" + base + "-" + projectIdentitySuffix(projectDir)
 }
 
 // sanitizeName replaces characters that are invalid in Incus container names.

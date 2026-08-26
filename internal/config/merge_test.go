@@ -1,6 +1,11 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestMerge_DefaultSetupDistroMatch(t *testing.T) {
 	global := &GlobalConfig{DefaultImage: "fedora/44", DefaultSetup: []string{"dnf install -y git"}}
@@ -58,20 +63,49 @@ func TestContainerName(t *testing.T) {
 		projectDir string
 		want       string
 	}{
-		{"/home/dev/projects/myapp", "silo-myapp"},
-		{"/home/dev/my_project", "silo-my-project"},
-		{"/home/dev/my.app", "silo-my-app"},
-		{"/home/dev/123app", "silo-s123app"},
-		{"/home/dev/My App", "silo-My-App"},
+		{"/home/dev/projects/myapp", "silo-myapp-"},
+		{"/home/dev/my_project", "silo-my-project-"},
+		{"/home/dev/my.app", "silo-my-app-"},
+		{"/home/dev/123app", "silo-s123app-"},
+		{"/home/dev/My App", "silo-My-App-"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.projectDir, func(t *testing.T) {
 			got := ContainerName(tt.projectDir)
-			if got != tt.want {
-				t.Errorf("ContainerName(%q) = %q, want %q", tt.projectDir, got, tt.want)
+			if !strings.HasPrefix(got, tt.want) || len(got) != len(tt.want)+16 {
+				t.Errorf("ContainerName(%q) = %q, want prefix %q plus 16 hex characters", tt.projectDir, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestContainerNameSeparatesSameBasename(t *testing.T) {
+	a := ContainerName("/work/customer/app")
+	b := ContainerName("/tmp/untrusted/app")
+	if a == b {
+		t.Fatalf("same-basename projects collided: %q", a)
+	}
+}
+
+func TestContainerNameCanonicalizesSymlinks(t *testing.T) {
+	realDir := filepath.Join(t.TempDir(), "project")
+	if err := os.Mkdir(realDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(realDir, link); err != nil {
+		t.Fatal(err)
+	}
+	if realName, linkName := ContainerName(realDir), ContainerName(link); realName != linkName {
+		t.Fatalf("canonical project aliases got different names: %q and %q", realName, linkName)
+	}
+}
+
+func TestContainerNameFitsIncusLimit(t *testing.T) {
+	name := ContainerName("/tmp/" + strings.Repeat("a", 100))
+	if len(name) > 63 {
+		t.Fatalf("container name has %d characters, want at most 63: %q", len(name), name)
 	}
 }
 
@@ -178,19 +212,24 @@ func TestMerge_DaemonPortsDeduped(t *testing.T) {
 }
 
 func TestMerge_Mounts(t *testing.T) {
+	projectDir := "/tmp/test"
+	projectKey := ProjectName(projectDir)
 	global := &GlobalConfig{
 		Shell:        "zsh",
 		User:         "dev",
 		DefaultImage: "fedora/43",
 		Mounts:       []string{"/host/global:/container/global"},
+		ProjectMounts: map[string][]string{
+			projectKey: {"/host/scoped:/container/scoped"},
+		},
 	}
 	project := &ProjectConfig{
 		Mounts: []string{"/host/project:/container/project"},
 	}
 
-	m := Merge(global, project, "/tmp/test")
-	if len(m.Mounts) != 2 {
-		t.Fatalf("Mounts = %v, want 2", m.Mounts)
+	m := Merge(global, project, projectDir)
+	if len(m.Mounts) != 2 || m.Mounts[0] != global.Mounts[0] || m.Mounts[1] != global.ProjectMounts[projectKey][0] {
+		t.Fatalf("Mounts = %v, want host-owned global and project-scoped mounts", m.Mounts)
 	}
 }
 

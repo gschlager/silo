@@ -7,15 +7,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	incuscli "github.com/lxc/incus/v6/client"
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	incuscli "github.com/lxc/incus/v7/client"
 )
 
-// ModeDir returns the host-side shared directory for an agent mode.
+// modeDir returns the host-side shared directory for an already-validated agent mode.
 // e.g. ~/.config/silo/agents/claude/oauth/
-func ModeDir(agent, mode string) string {
+func modeDir(agent, mode string) string {
 	return filepath.Join(config.GlobalConfigDir(), "agents", agent, mode)
 }
 
@@ -25,7 +25,10 @@ func ModeDir(agent, mode string) string {
 // first launch and that login state persists in the mode dir, shared across all
 // containers using the mode. Idempotent — does nothing if the dir already has content.
 func EnsureModeDir(agent, mode string) error {
-	modeDir := ModeDir(agent, mode)
+	if err := config.ValidateAgentModePath(agent, mode); err != nil {
+		return err
+	}
+	modeDir := modeDir(agent, mode)
 
 	// Check if already populated (has any content beyond README).
 	if entries, err := os.ReadDir(modeDir); err == nil && hasNonREADME(entries) {
@@ -50,8 +53,11 @@ func SetupAgentDirs(ctx context.Context, server incuscli.InstanceServer, contain
 		if !agent.Enabled || len(agent.Links) == 0 {
 			continue
 		}
+		if err := config.ValidateAgentModePath(name, agent.Mode); err != nil {
+			return err
+		}
 
-		modeDir := ModeDir(name, agent.Mode)
+		modeDir := modeDir(name, agent.Mode)
 		if err := os.MkdirAll(modeDir, 0700); err != nil {
 			return fmt.Errorf("creating mode dir for %q: %w", name, err)
 		}
@@ -170,4 +176,3 @@ are immediately visible to all containers sharing this mode.
 `, agent, mode, agent)
 	os.WriteFile(filepath.Join(modeDir, "README"), []byte(content), 0644)
 }
-

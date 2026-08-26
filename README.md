@@ -134,11 +134,6 @@ ports:
 env:
   RAILS_ENV: development
 
-# Additional bind mounts (host:container[:ro])
-mounts:
-  - ~/shared-cache:/home/dev/.cache/shared
-  - ~/datasets:/data:ro
-
 # Git configuration inside the container
 git:
   user.name: Dev
@@ -198,7 +193,7 @@ All fields are optional. Setup commands run as the `dev` user with a login shell
 
 Create a `.silo.local.yml` alongside `.silo.yml` to override settings per machine without modifying the shared config. Non-zero values in the local file replace the base values. Add `.silo.local.yml` to your project's `.gitignore`.
 
-For secrets specifically, prefer the central [Secrets](#secrets) file over `.silo.local.yml` — it keeps every project's PAT in one place.
+The project directory is writable from its container, so `.silo.local.yml` is not a trusted host-policy file: it cannot declare `mounts` either. Put host mounts in the global config. For secrets, prefer the central [Secrets](#secrets) file — it keeps every project's PAT outside the project.
 
 ## Global configuration
 
@@ -233,9 +228,19 @@ pass_env: [TERM, COLORTERM, LANG, LC_ALL]
 # Desktop notifications when an agent finishes or needs input (default: off)
 notifications: true
 
-# Bind mounts added to every container (host:container[:ro])
+# Host bind mounts (host:container[:ro]). Mounts are host-owned security policy,
+# so they are accepted only here, never from a repository's .silo*.yml files.
 mounts:
   - ~/shared-cache:/home/dev/.cache/shared
+
+# Prefer read-only mounts for data that the container does not need to modify.
+#  - ~/datasets:/data:ro
+
+# Host-owned mounts for one project only. Get the exact readable project key
+# from `silo config show`; the suffix distinguishes same-named directories.
+project_mounts:
+  myapp-a1b2c3d4e5f6a7b8:
+    - ~/datasets:/data:ro
 
 # Git settings applied in every container. Merged key by key, so a project that
 # needs a different address overrides just user.email and keeps the name.
@@ -254,7 +259,7 @@ agents:
           AWS_ACCESS_KEY_ID: op://Employee/aws-bedrock/access-key-id
 ```
 
-All fields are optional — list only what you want to override. Per-project `.silo.yml` values take precedence over the global ones (and `mounts`/`git` are merged, not replaced).
+All fields are optional — list only what you want to override. Per-project `.silo.yml` values take precedence over global values, except host mounts, which are deliberately accepted only from this host-owned file. Use `mounts` for every container and `project_mounts` for a single readable project key. Repository files are writable from inside their container and therefore cannot grant themselves access to additional host paths.
 
 Run `silo config edit` to open the global config in your editor, or `silo config path` to print its location. Run `silo config show` (from a project directory) to see the fully resolved configuration for that project — global + project merged, presets expanded into setup, and which secrets apply (by reference; tokens are never printed).
 
@@ -309,13 +314,13 @@ presets are plain config and take none.
 
 ### Secrets
 
-Per-project secrets live in one central file, `~/.config/silo/secrets.yml`, keyed by project name. On the first `silo up` for a project, silo appends a commented stub so there's an obvious place to fill in the PAT:
+Per-project secrets live in one central file, `~/.config/silo/secrets.yml`, keyed by the project name plus a short hash of its canonical host path. The hash prevents two unrelated directories with the same basename from sharing a container or secrets. On the first `silo up`, silo appends the exact key to use as a commented stub:
 
 ```yaml
 # ~/.config/silo/secrets.yml
-migrations-tooling:
+migrations-tooling-a1b2c3d4e5f6a7b8:
   github: op://Employee/migrations-pat/token   # reserved key: wires git + gh
-converters:
+converters-f6e7d8c9b0a1b2c3:
   github: op://Employee/converters-pat/token
   AWS_BEARER_TOKEN_BEDROCK: op://Employee/bedrock/key   # plain env var
 ```
@@ -324,6 +329,15 @@ converters:
 - The reserved **`github`** key exports `GITHUB_TOKEN` and `GH_TOKEN` and wires the git credential helper for `github.com`. Every other key becomes a plain environment variable of that name.
 - Secrets are resolved fresh at session and setup time and passed as environment variables — never baked into the container or written to disk. Rotating a PAT in 1Password takes effect on the next session with no reprovision.
 - Secrets reach `silo enter`/`silo run`, project setup, and [daemons](#daemons). Daemons get them because silo injects them into the systemd user manager when it starts the daemon (see Daemons) — still only in memory, never on disk.
+
+When upgrading from a silo version that used basename-only identities, run
+`silo config migrate-secrets` once from each project that has a legacy secrets
+entry. It atomically renames the basename-only key to the new path-scoped key,
+preserving comments and refusing to overwrite a key that already exists. The
+first `silo up` then creates a new path-scoped container rather than reusing the
+old one. Remove the old container after verifying the new environment. Silo
+intentionally does not fall back to basename-only secrets because doing so would
+restore the collision the path hash prevents.
 
 #### Sharing secrets between projects
 
@@ -335,16 +349,16 @@ projects point at the same 1Password items:
 .shared: &shared
   AWS_BEARER_TOKEN_BEDROCK: op://Employee/bedrock/key
 
-discourse:
+discourse-a1b2c3d4e5f6a7b8:
   <<: *shared
   github: op://Employee/discourse-pat/token
 
-converters:
+converters-f6e7d8c9b0a1b2c3:
   <<: *shared
 ```
 
 A key starting with `.` is never treated as a project: silo only ever looks up
-the name derived from the project directory, and those can't begin with a dot.
+the name and hash derived from the project directory, and those can't begin with a dot.
 So the anchor block is inert — it exists to be merged into the real entries.
 
 This is deliberately opt-in per project rather than a `common:` block that
@@ -511,6 +525,7 @@ Note that this scopes *naming*, not *access*: the manager environment is shared,
 | `silo config show`             | Show the resolved config for the current project (presets expanded) |
 | `silo config edit`             | Open global config in `$EDITOR`                          |
 | `silo config path`             | Print config file path                                   |
+| `silo config migrate-secrets`  | Rename this project's legacy secrets key once            |
 | `silo completion install`      | Auto-install shell completions                           |
 
 ## Agent credentials
@@ -554,7 +569,7 @@ The mode can also be set as a default in `.silo.yml` or `.silo.local.yml` via `a
 │           ├── .claude/
 │           └── .claude.json
 └── containers/
-    └── silo-myapp/
+    └── silo-myapp-a1b2c3d4e5f6a7b8/
         ├── mode.yml                        # per-project mode overrides (from silo mode)
         └── shell                           # shell the container was provisioned with
 ```
@@ -600,7 +615,7 @@ Releases are built with [GoReleaser](https://goreleaser.com/) and published as G
 
 ## Requirements
 
-- [Incus](https://linuxcontainers.org/incus/) with a configured default profile (bridge network + storage pool)
+- [Incus](https://linuxcontainers.org/incus/) 6.x or 7.x with a configured default profile (bridge network + storage pool). Silo uses the current client library against Incus's backward-compatible REST API.
 - Linux (Incus system containers require a Linux host)
 
 ## License

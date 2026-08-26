@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	incuscli "github.com/lxc/incus/v6/client"
+	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"

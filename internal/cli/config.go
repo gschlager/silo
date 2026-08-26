@@ -23,8 +23,41 @@ func newConfigCmd() *cobra.Command {
 		newConfigEditCmd(),
 		newConfigShowCmd(),
 		newConfigPathCmd(),
+		newConfigMigrateSecretsCmd(),
 	)
 	return cmd
+}
+
+func newConfigMigrateSecretsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "migrate-secrets",
+		Short: "Migrate this project's legacy secrets key",
+		Long: `Rename the current project's old basename-only key in secrets.yml to
+the path-scoped key used by current silo versions. The migration is atomic and
+idempotent. If both keys exist, no changes are made so they can be merged manually.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("getting working directory: %w", err)
+			}
+			legacyKey := config.LegacyProjectName(cwd)
+			currentKey := config.ProjectName(cwd)
+			result, err := config.MigrateSecretsProjectKey(legacyKey, currentKey)
+			if err != nil {
+				return err
+			}
+			switch result {
+			case config.SecretsMigrated:
+				fmt.Printf("Migrated secrets key %q to %q in %s\n", legacyKey, currentKey, config.SecretsPath())
+			case config.SecretsAlreadyCurrent:
+				fmt.Printf("Secrets already use %q; nothing to migrate.\n", currentKey)
+			case config.SecretsLegacyMissing:
+				fmt.Printf("No legacy secrets key %q found in %s; nothing to migrate.\n", legacyKey, config.SecretsPath())
+			}
+			return nil
+		},
+	}
 }
 
 func newConfigEditCmd() *cobra.Command {

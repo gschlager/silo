@@ -32,11 +32,21 @@ func LoadModeState(containerName string) (map[string]string, error) {
 	if modes == nil {
 		modes = map[string]string{}
 	}
+	for agent, mode := range modes {
+		if err := ValidateAgentModePath(agent, mode); err != nil {
+			return nil, fmt.Errorf("parsing %s: %w", path, err)
+		}
+	}
 	return modes, nil
 }
 
 // SaveModeState writes the per-container mode overrides.
 func SaveModeState(containerName string, modes map[string]string) error {
+	for agent, mode := range modes {
+		if err := ValidateAgentModePath(agent, mode); err != nil {
+			return err
+		}
+	}
 	path := ModeStatePath(containerName)
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return fmt.Errorf("creating directory for %s: %w", path, err)

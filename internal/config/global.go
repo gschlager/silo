@@ -30,6 +30,7 @@ type GlobalConfig struct {
 	User          string              `yaml:"user"`
 	Notifications bool                `yaml:"notifications,omitempty"`
 	Mounts        []string            `yaml:"mounts,omitempty"`
+	ProjectMounts map[string][]string `yaml:"project_mounts,omitempty"`
 	Git           map[string]string   `yaml:"git,omitempty"`
 	Agents        []AgentGlobalConfig `yaml:"agents"`
 
@@ -54,14 +55,14 @@ type UserPreset struct {
 
 // AgentGlobalConfig holds global agent settings.
 type AgentGlobalConfig struct {
-	Name    string     `yaml:"name"`
-	Enabled bool       `yaml:"enabled"`
-	Cmd     string     `yaml:"cmd"`
-	Deps    []string   `yaml:"deps"`
-	Install string     `yaml:"install"`
-	Mode    string     `yaml:"mode"`
-	Links   []LinkRule                   `yaml:"links"`
-	Modes   map[string]ModeConfig        `yaml:"modes,omitempty"`
+	Name    string                `yaml:"name"`
+	Enabled bool                  `yaml:"enabled"`
+	Cmd     string                `yaml:"cmd"`
+	Deps    []string              `yaml:"deps"`
+	Install string                `yaml:"install"`
+	Mode    string                `yaml:"mode"`
+	Links   []LinkRule            `yaml:"links"`
+	Modes   map[string]ModeConfig `yaml:"modes,omitempty"`
 }
 
 // ModeConfig holds settings that apply when an agent runs in a given mode.
@@ -153,6 +154,9 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 	if len(userCfg.Mounts) > 0 {
 		cfg.Mounts = userCfg.Mounts
 	}
+	if len(userCfg.ProjectMounts) > 0 {
+		cfg.ProjectMounts = userCfg.ProjectMounts
+	}
 	if len(userCfg.Git) > 0 {
 		cfg.Git = userCfg.Git
 	}
@@ -229,6 +233,16 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 		}
 		cfg.Agents = merged
 	}
+	for _, agent := range cfg.Agents {
+		if err := ValidateAgentModePath(agent.Name, agent.Mode); err != nil {
+			return nil, fmt.Errorf("parsing %s: %w", path, err)
+		}
+		for mode := range agent.Modes {
+			if err := ValidateAgentModePath(agent.Name, mode); err != nil {
+				return nil, fmt.Errorf("parsing %s: %w", path, err)
+			}
+		}
+	}
 
 	return cfg, nil
 }
@@ -265,8 +279,8 @@ func defaultGlobalConfig() *GlobalConfig {
 		},
 		PassEnv: []string{"TERM", "COLORTERM", "COLORFGBG", "LANG", "LC_ALL"},
 		Shell:   "bash",
-		User:  "dev",
-		Git:   map[string]string{},
+		User:    "dev",
+		Git:     map[string]string{},
 		Agents: []AgentGlobalConfig{
 			{
 				Name:    "claude",

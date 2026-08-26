@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	incuscli "github.com/lxc/incus/v6/client"
+	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/gschlager/silo/internal/agents"
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"

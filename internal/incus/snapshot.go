@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	incuscli "github.com/lxc/incus/v6/client"
-	"github.com/lxc/incus/v6/shared/api"
+	incuscli "github.com/lxc/incus/v7/client"
+	"github.com/lxc/incus/v7/shared/api"
 )
 
 // SnapshotInfo holds snapshot details.

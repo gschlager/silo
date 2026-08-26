@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,16 @@ func SecretsPath() string {
 // "github" wires the git credential helper and exports GH_TOKEN in addition to
 // GITHUB_TOKEN; any other name becomes a plain environment variable.
 type Secrets map[string]map[string]string
+
+// SecretsMigrationResult describes the outcome of a one-time project key
+// migration without treating an already-migrated or absent key as an error.
+type SecretsMigrationResult int
+
+const (
+	SecretsLegacyMissing SecretsMigrationResult = iota
+	SecretsAlreadyCurrent
+	SecretsMigrated
+)
 
 // LoadSecrets reads the central secrets file, returning an empty set if it does
 // not exist.
@@ -50,6 +61,105 @@ func SecretsForProject(project string) (map[string]string, error) {
 		return m, nil
 	}
 	return map[string]string{}, nil
+}
+
+// MigrateSecretsProjectKey atomically renames one top-level project key while
+// preserving YAML comments and ordering. It never merges or overwrites entries:
+// if both keys exist, the user must resolve the conflict explicitly.
+func MigrateSecretsProjectKey(legacyKey, currentKey string) (SecretsMigrationResult, error) {
+	if legacyKey == currentKey {
+		return SecretsAlreadyCurrent, nil
+	}
+
+	path := SecretsPath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return SecretsLegacyMissing, nil
+		}
+		return SecretsLegacyMissing, fmt.Errorf("reading %s: %w", path, err)
+	}
+
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return SecretsLegacyMissing, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return SecretsLegacyMissing, fmt.Errorf("parsing %s: expected a top-level mapping", path)
+	}
+
+	root := doc.Content[0]
+	var legacyNode *yaml.Node
+	currentExists := false
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		key := root.Content[i]
+		switch key.Value {
+		case legacyKey:
+			legacyNode = key
+		case currentKey:
+			currentExists = true
+		}
+	}
+
+	if currentExists {
+		if legacyNode != nil {
+			return SecretsAlreadyCurrent, fmt.Errorf("both legacy key %q and current key %q exist in %s; merge them manually", legacyKey, currentKey, path)
+		}
+		return SecretsAlreadyCurrent, nil
+	}
+	if legacyNode == nil {
+		return SecretsLegacyMissing, nil
+	}
+
+	legacyNode.Value = currentKey
+	legacyNode.Tag = "!!str"
+	var output bytes.Buffer
+	enc := yaml.NewEncoder(&output)
+	enc.SetIndent(2)
+	if err := enc.Encode(&doc); err != nil {
+		return SecretsLegacyMissing, fmt.Errorf("encoding %s: %w", path, err)
+	}
+	if err := enc.Close(); err != nil {
+		return SecretsLegacyMissing, fmt.Errorf("encoding %s: %w", path, err)
+	}
+	if err := writeFileAtomic(path, output.Bytes(), 0600); err != nil {
+		return SecretsLegacyMissing, err
+	}
+	return SecretsMigrated, nil
+}
+
+func writeFileAtomic(path string, data []byte, mode os.FileMode) (err error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("creating %s: %w", dir, err)
+	}
+	tmp, err := os.CreateTemp(dir, ".secrets-*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temporary secrets file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		if err != nil {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err = tmp.Chmod(mode); err != nil {
+		return fmt.Errorf("setting permissions on temporary secrets file: %w", err)
+	}
+	if _, err = tmp.Write(data); err != nil {
+		return fmt.Errorf("writing temporary secrets file: %w", err)
+	}
+	if err = tmp.Sync(); err != nil {
+		return fmt.Errorf("syncing temporary secrets file: %w", err)
+	}
+	if err = tmp.Close(); err != nil {
+		return fmt.Errorf("closing temporary secrets file: %w", err)
+	}
+	if err = os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("replacing %s: %w", path, err)
+	}
+	return nil
 }
 
 // EnsureSecretsStub appends a commented stub block for project if the file has

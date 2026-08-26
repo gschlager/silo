@@ -239,6 +239,30 @@ func TestLoadProjectConfig_NoFiles(t *testing.T) {
 	}
 }
 
+func TestLoadProjectConfigRejectsHostMounts(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, dir, ".silo.yml", "mounts:\n  - ~/.ssh:/host-ssh\n")
+	if _, err := LoadProjectConfig(dir); err == nil {
+		t.Fatal("expected project-declared host mount to be rejected")
+	}
+}
+
+func TestLoadProjectConfigRejectsTraversingAgentMode(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, dir, ".silo.yml", "agents:\n  codex:\n    mode: ../../../../.ssh\n")
+	if _, err := LoadProjectConfig(dir); err == nil {
+		t.Fatal("expected traversing agent mode to be rejected")
+	}
+}
+
+func TestLoadLocalProjectConfigRejectsHostMounts(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, dir, ".silo.local.yml", "mounts:\n  - ~/secrets:/host-secrets\n")
+	if _, err := LoadProjectConfig(dir); err == nil {
+		t.Fatal("expected local project-declared host mount to be rejected")
+	}
+}
+
 func writeYAML(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {

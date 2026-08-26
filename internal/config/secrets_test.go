@@ -127,7 +127,92 @@ func TestAddProjectSecret(t *testing.T) {
 
 func TestProjectName(t *testing.T) {
 	m := &MergedConfig{ContainerName: ContainerName("/home/dev/migrations_tooling")}
-	if got := m.ProjectName(); got != "migrations-tooling" {
-		t.Errorf("ProjectName = %q, want migrations-tooling", got)
+	if got := m.ProjectName(); !strings.HasPrefix(got, "migrations-tooling-") || len(got) != len("migrations-tooling-")+16 {
+		t.Errorf("ProjectName = %q, want migrations-tooling- plus 16 hex characters", got)
+	}
+}
+
+func TestMigrateSecretsProjectKey(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	writeSecrets(t, `# keep this comment
+.shared: &shared
+  AWS_REGION: eu-central-1
+
+migrations-tooling:
+  <<: *shared
+  github: op://Employee/github/token # keep inline comment
+`)
+
+	current := "migrations-tooling-15d3424052ab84c7"
+	result, err := MigrateSecretsProjectKey("migrations-tooling", current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != SecretsMigrated {
+		t.Fatalf("result = %v, want SecretsMigrated", result)
+	}
+
+	secrets, err := LoadSecrets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := secrets["migrations-tooling"]; exists {
+		t.Fatal("legacy key still exists")
+	}
+	if got := secrets[current]["github"]; got != "op://Employee/github/token" {
+		t.Fatalf("migrated github secret = %q", got)
+	}
+	if got := secrets[current]["AWS_REGION"]; got != "eu-central-1" {
+		t.Fatalf("merged anchor value = %q", got)
+	}
+	data, err := os.ReadFile(SecretsPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "# keep this comment") || !strings.Contains(string(data), "# keep inline comment") {
+		t.Fatalf("comments were not preserved:\n%s", data)
+	}
+	info, err := os.Stat(SecretsPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0600 {
+		t.Fatalf("secrets permissions = %o, want 600", got)
+	}
+
+	result, err = MigrateSecretsProjectKey("migrations-tooling", current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != SecretsAlreadyCurrent {
+		t.Fatalf("second result = %v, want SecretsAlreadyCurrent", result)
+	}
+}
+
+func TestMigrateSecretsProjectKeyConflictDoesNotWrite(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	original := "legacy:\n  github: old\ncurrent-hash:\n  github: new\n"
+	writeSecrets(t, original)
+
+	if _, err := MigrateSecretsProjectKey("legacy", "current-hash"); err == nil {
+		t.Fatal("expected conflict error")
+	}
+	data, err := os.ReadFile(SecretsPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != original {
+		t.Fatalf("conflicting migration changed file:\n%s", data)
+	}
+}
+
+func TestMigrateSecretsProjectKeyMissing(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	result, err := MigrateSecretsProjectKey("legacy", "current-hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != SecretsLegacyMissing {
+		t.Fatalf("result = %v, want SecretsLegacyMissing", result)
 	}
 }
