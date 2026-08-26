@@ -159,7 +159,8 @@ git:
 #       source: 1password
 #       ref: op://Private/github-cli/token
 
-# Long-running processes (managed as systemd user services)
+# Long-running processes (managed as systemd user services).
+# Daemons always run in the project root (/workspace/<project>).
 daemons:
   rails:
     cmd: bin/rails server -b 0.0.0.0
@@ -218,7 +219,8 @@ shell: bash
 # Container user agents run as (default: dev)
 user: dev
 
-# Host env vars passed into enter/run/ra sessions
+# Host env vars passed into enter/run/ra sessions. This is for terminal state,
+# not for getting values to a daemon — daemons never see pass_env (see Daemons).
 pass_env: [TERM, COLORTERM, LANG, LC_ALL]
 
 # Desktop notifications when an agent finishes or needs input (default: off)
@@ -228,7 +230,8 @@ notifications: true
 mounts:
   - ~/shared-cache:/home/dev/.cache/shared
 
-# Git settings applied in every container
+# Git settings applied in every container. Merged key by key, so a project that
+# needs a different address overrides just user.email and keeps the name.
 git:
   user.name: Dev
   user.email: dev@example.com
@@ -265,6 +268,32 @@ converters:
 - The reserved **`github`** key exports `GITHUB_TOKEN` and `GH_TOKEN` and wires the git credential helper for `github.com`. Every other key becomes a plain environment variable of that name.
 - Secrets are resolved fresh at session and setup time and passed as environment variables — never baked into the container or written to disk. Rotating a PAT in 1Password takes effect on the next session with no reprovision.
 - Secrets reach `silo enter`/`silo run`, project setup, and [daemons](#daemons). Daemons get them because silo injects them into the systemd user manager when it starts the daemon (see Daemons) — still only in memory, never on disk.
+
+#### Sharing secrets between projects
+
+The file is plain YAML, so anchors and merge keys work — useful when several
+projects point at the same 1Password items:
+
+```yaml
+# ~/.config/silo/secrets.yml
+.shared: &shared
+  AWS_BEARER_TOKEN_BEDROCK: op://Employee/bedrock/key
+
+discourse:
+  <<: *shared
+  github: op://Employee/discourse-pat/token
+
+converters:
+  <<: *shared
+```
+
+A key starting with `.` is never treated as a project: silo only ever looks up
+the name derived from the project directory, and those can't begin with a dot.
+So the anchor block is inert — it exists to be merged into the real entries.
+
+This is deliberately opt-in per project rather than a `common:` block that
+applies everywhere. A key that every container gets is a key every container can
+read, which is rarely what you want for a PAT.
 
 ### Global gitignore
 
