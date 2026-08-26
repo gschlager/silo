@@ -101,8 +101,8 @@ func TestContainerNameFitsIncusLimit(t *testing.T) {
 	}
 }
 
-func TestProjectNamePreservesHashedKeyLength(t *testing.T) {
-	name := ProjectName("/tmp/" + strings.Repeat("a", 100))
+func TestPathScopedProjectNamePreservesHashedKeyLength(t *testing.T) {
+	name := PathScopedProjectName("/tmp/" + strings.Repeat("a", 100))
 	if len(name) != 41+1+16 {
 		t.Fatalf("project key has %d characters, want 58: %q", len(name), name)
 	}
@@ -212,7 +212,7 @@ func TestMerge_DaemonPortsDeduped(t *testing.T) {
 
 func TestMerge_Mounts(t *testing.T) {
 	projectDir := "/tmp/test"
-	projectKey := ProjectName(projectDir)
+	projectKey := PathScopedProjectName(projectDir)
 	global := &GlobalConfig{
 		Shell:        "zsh",
 		User:         "dev",

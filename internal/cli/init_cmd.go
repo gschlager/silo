@@ -269,7 +269,7 @@ func runInteractiveInit(cwd string) error {
 
 	// Detect private remotes — the PAT goes in the central secrets file, not .silo.yml.
 	if hasPrivateRemote(cwd) {
-		project := config.ProjectName(cwd)
+		project := strings.TrimPrefix(containerName, "silo-")
 		fmt.Println("\nPrivate remote detected. The GitHub PAT goes in the central secrets file for push/pull.")
 		fmt.Println("Recommended: Create a fine-grained PAT at GitHub > Settings > Developer Settings > Fine-grained tokens")
 		fmt.Print("1Password reference (op://...) or leave empty to add a stub: ")

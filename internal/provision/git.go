@@ -7,9 +7,9 @@ import (
 	"os/exec"
 	"strings"
 
-	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	incuscli "github.com/lxc/incus/v7/client"
 )
 
 // ConfigureGit sets up .gitconfig inside the container for the dev user.
@@ -80,7 +80,7 @@ chown -R %s:%s /home/%s/.silo`,
 func ResolveSessionEnv(cfg *config.MergedConfig) (map[string]string, error) {
 	env := map[string]string{}
 
-	secrets, err := config.SecretsForProject(cfg.ProjectName())
+	secrets, err := config.SecretsForProjects(cfg.ProjectName(), cfg.PathScopedProjectName())
 	if err != nil {
 		return nil, err
 	}

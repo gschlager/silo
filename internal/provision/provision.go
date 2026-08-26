@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/gschlager/silo/internal/agents"
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	incuscli "github.com/lxc/incus/v7/client"
 )
 
 // ProvisionMinimal creates a lightweight container with just networking, a user,
@@ -232,7 +232,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	// key. The helper reads $GITHUB_TOKEN at runtime, so nothing is baked in.
 	needHelper := cfg.GitCredential != nil
 	if !needHelper {
-		if secrets, err := config.SecretsForProject(cfg.ProjectName()); err == nil {
+		if secrets, err := config.SecretsForProjects(cfg.ProjectName(), cfg.PathScopedProjectName()); err == nil {
 			_, needHelper = secrets["github"]
 		}
 	}
@@ -441,7 +441,7 @@ func configureTimezoneAndLocale(ctx context.Context, server incuscli.InstanceSer
 }
 
 // shellEscape returns a single-quoted string safe for embedding in shell
-// commands. Any embedded single quotes are replaced with the sequence '\''.
+// commands, including arguments that themselves contain single quotes.
 func shellEscape(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

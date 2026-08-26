@@ -61,6 +61,7 @@ func loadConfig() (*config.MergedConfig, error) {
 		return nil, err
 	}
 	merged.ContainerName = containerName
+	merged.ProjectKey = strings.TrimPrefix(containerName, "silo-")
 
 	// Use the shell the container was actually provisioned with, which may differ
 	// from the configured one if it could not be installed and silo fell back to

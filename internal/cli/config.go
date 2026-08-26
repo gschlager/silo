@@ -31,29 +31,33 @@ func newConfigCmd() *cobra.Command {
 func newConfigMigrateSecretsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "migrate-secrets",
-		Short: "Migrate this project's legacy secrets key",
-		Long: `Rename the current project's old basename-only key in secrets.yml to
-the path-scoped key used by current silo versions. The migration is atomic and
-idempotent. If both keys exist, no changes are made so they can be merged manually.`,
+		Short: "Restore this project's readable secrets key",
+		Long: `Rename the current project's temporary hash-suffixed key in secrets.yml
+to its registry-assigned readable key. The migration is atomic and idempotent.
+If both keys contain values, no changes are made so they can be merged manually.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cwd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("getting working directory: %w", err)
 			}
-			legacyKey := config.LegacyProjectName(cwd)
-			currentKey := config.ProjectName(cwd)
-			result, err := config.MigrateSecretsProjectKey(legacyKey, currentKey)
+			containerName, err := config.AssignContainerName(cwd)
+			if err != nil {
+				return err
+			}
+			currentKey := strings.TrimPrefix(containerName, "silo-")
+			pathKey := config.PathScopedProjectName(cwd)
+			result, err := config.MigrateSecretsProjectKey(pathKey, currentKey)
 			if err != nil {
 				return err
 			}
 			switch result {
 			case config.SecretsMigrated:
-				fmt.Printf("Migrated secrets key %q to %q in %s\n", legacyKey, currentKey, config.SecretsPath())
+				fmt.Printf("Migrated secrets key %q to %q in %s\n", pathKey, currentKey, config.SecretsPath())
 			case config.SecretsAlreadyCurrent:
 				fmt.Printf("Secrets already use %q; nothing to migrate.\n", currentKey)
 			case config.SecretsLegacyMissing:
-				fmt.Printf("No legacy secrets key %q found in %s; nothing to migrate.\n", legacyKey, config.SecretsPath())
+				fmt.Printf("No path-scoped secrets key %q found in %s; nothing to migrate.\n", pathKey, config.SecretsPath())
 			}
 			return nil
 		},
@@ -156,7 +160,7 @@ apply (by reference only — tokens are never resolved or printed).`,
 					view.Agents = append(view.Agents, name)
 				}
 			}
-			if secrets, err := config.SecretsForProject(cfg.ProjectName()); err == nil && len(secrets) > 0 {
+			if secrets, err := config.SecretsForProjects(cfg.ProjectName(), cfg.PathScopedProjectName()); err == nil && len(secrets) > 0 {
 				view.Secrets = make(map[string]string, len(secrets))
 				for k, v := range secrets {
 					view.Secrets[k] = maskSecret(v)

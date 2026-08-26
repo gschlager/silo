@@ -12,10 +12,11 @@ import (
 // MergedConfig is the fully resolved configuration used by all commands.
 type MergedConfig struct {
 	// Container settings.
-	Image         string
-	ContainerName string
-	ProjectDir    string
-	ProjectKey    string
+	Image          string
+	ContainerName  string
+	ProjectDir     string
+	ProjectKey     string
+	PathProjectKey string
 
 	// Command lists.
 	DefaultSetup []string
@@ -120,18 +121,17 @@ func (m *MergedConfig) UserHome() string {
 	return "/home/" + m.User
 }
 
-// ProjectName returns the stable, path-scoped key used for secrets and other
-// host-owned project policy. It is intentionally independent of the readable
-// container name.
+// ProjectName returns the readable registry-assigned key used for secrets.
 func (m *MergedConfig) ProjectName() string {
 	if m.ProjectKey != "" {
 		return m.ProjectKey
 	}
-	return ProjectName(m.ProjectDir)
+	return LegacyProjectName(m.ProjectDir)
 }
 
-// ProjectName returns a readable, path-scoped project key for a directory.
-func ProjectName(projectDir string) string {
+// PathScopedProjectName returns the path identity used internally by the
+// project registry and host-owned project policy.
+func PathScopedProjectName(projectDir string) string {
 	base := sanitizeName(filepath.Base(canonicalProjectPath(projectDir)))
 	const maxBaseLen = 41 // preserve the key format introduced with path scoping
 	if len(base) > maxBaseLen {
@@ -140,8 +140,16 @@ func ProjectName(projectDir string) string {
 	return base + "-" + projectIdentitySuffix(projectDir)
 }
 
-// LegacyProjectName returns the basename-only key used before project identity
-// hashes were introduced. It exists solely for the explicit secrets migration.
+// PathScopedProjectName returns the previous hash-suffixed secrets key. It is
+// retained as a read fallback and migration source.
+func (m *MergedConfig) PathScopedProjectName() string {
+	if m.PathProjectKey != "" {
+		return m.PathProjectKey
+	}
+	return PathScopedProjectName(m.ProjectDir)
+}
+
+// LegacyProjectName returns the traditional basename-only project key.
 func LegacyProjectName(projectDir string) string {
 	return sanitizeName(filepath.Base(projectDir))
 }
@@ -180,15 +188,16 @@ func (m *MergedConfig) WorkspacePath() string {
 func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *MergedConfig {
 	projectDir = canonicalProjectPath(projectDir)
 	m := &MergedConfig{
-		ContainerName: ContainerName(projectDir),
-		ProjectDir:    projectDir,
-		ProjectKey:    ProjectName(projectDir),
-		Shell:         global.Shell,
-		User:          global.User,
-		DefaultAgent:  global.DefaultAgent,
-		PassEnv:       global.PassEnv,
-		Notifications: global.Notifications,
-		Presets:       global.Presets,
+		ContainerName:  ContainerName(projectDir),
+		ProjectDir:     projectDir,
+		ProjectKey:     LegacyProjectName(projectDir),
+		PathProjectKey: PathScopedProjectName(projectDir),
+		Shell:          global.Shell,
+		User:           global.User,
+		DefaultAgent:   global.DefaultAgent,
+		PassEnv:        global.PassEnv,
+		Notifications:  global.Notifications,
+		Presets:        global.Presets,
 	}
 
 	// Image: project overrides global default.
@@ -242,7 +251,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 	// the container, so accepting mounts from .silo.yml would let a compromised
 	// repository expose arbitrary host paths on the next provision.
 	m.Mounts = append(m.Mounts, global.Mounts...)
-	m.Mounts = append(m.Mounts, global.ProjectMounts[m.ProjectName()]...)
+	m.Mounts = append(m.Mounts, global.ProjectMounts[m.PathScopedProjectName()]...)
 
 	// Git: global base, project overrides individual keys.
 	m.Git = maps.Clone(global.Git)

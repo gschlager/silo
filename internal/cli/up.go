@@ -3,11 +3,11 @@ package cli
 import (
 	"context"
 
-	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/gschlager/silo/internal/provision"
+	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +38,7 @@ Subsequent: start the stopped container (~1 second).`,
 			if !incus.Exists(server, name) {
 				// First run: give the project a slot in the central secrets file
 				// so the user has an obvious place to add its PAT.
-				if added, err := config.EnsureSecretsStub(cfg.ProjectName()); err != nil {
+				if added, err := config.EnsureSecretsStubForProject(cfg.ProjectName(), cfg.PathScopedProjectName()); err != nil {
 					color.Warn("could not update secrets file: %v", err)
 				} else if added {
 					color.Info("Added a secrets entry for %q — set its PAT in %s", cfg.ProjectName(), config.SecretsPath())

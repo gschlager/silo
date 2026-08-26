@@ -127,8 +127,11 @@ func TestAddProjectSecret(t *testing.T) {
 
 func TestProjectName(t *testing.T) {
 	m := &MergedConfig{ProjectDir: "/home/dev/migrations_tooling"}
-	if got := m.ProjectName(); !strings.HasPrefix(got, "migrations-tooling-") || len(got) != len("migrations-tooling-")+16 {
-		t.Errorf("ProjectName = %q, want migrations-tooling- plus 16 hex characters", got)
+	if got := m.ProjectName(); got != "migrations-tooling" {
+		t.Errorf("ProjectName = %q, want migrations-tooling", got)
+	}
+	if got := m.PathScopedProjectName(); !strings.HasPrefix(got, "migrations-tooling-") || len(got) != len("migrations-tooling-")+16 {
+		t.Errorf("PathScopedProjectName = %q, want migrations-tooling- plus 16 hex characters", got)
 	}
 }
 
@@ -138,13 +141,14 @@ func TestMigrateSecretsProjectKey(t *testing.T) {
 .shared: &shared
   AWS_REGION: eu-central-1
 
-migrations-tooling:
+migrations-tooling-15d3424052ab84c7:
   <<: *shared
   github: op://Employee/github/token # keep inline comment
 `)
 
-	current := "migrations-tooling-15d3424052ab84c7"
-	result, err := MigrateSecretsProjectKey("migrations-tooling", current)
+	pathScoped := "migrations-tooling-15d3424052ab84c7"
+	current := "migrations-tooling"
+	result, err := MigrateSecretsProjectKey(pathScoped, current)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,8 +160,8 @@ migrations-tooling:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, exists := secrets["migrations-tooling"]; exists {
-		t.Fatal("legacy key still exists")
+	if _, exists := secrets[pathScoped]; exists {
+		t.Fatal("path-scoped key still exists")
 	}
 	if got := secrets[current]["github"]; got != "op://Employee/github/token" {
 		t.Fatalf("migrated github secret = %q", got)
@@ -180,7 +184,7 @@ migrations-tooling:
 		t.Fatalf("secrets permissions = %o, want 600", got)
 	}
 
-	result, err = MigrateSecretsProjectKey("migrations-tooling", current)
+	result, err = MigrateSecretsProjectKey(pathScoped, current)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,6 +207,58 @@ func TestMigrateSecretsProjectKeyConflictDoesNotWrite(t *testing.T) {
 	}
 	if string(data) != original {
 		t.Fatalf("conflicting migration changed file:\n%s", data)
+	}
+}
+
+func TestMigrateSecretsProjectKeyRemovesObsoleteStub(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	writeSecrets(t, "migrations-tooling:\n  github: existing\nmigrations-tooling-hash:\n  # generated stub\n")
+
+	result, err := MigrateSecretsProjectKey("migrations-tooling-hash", "migrations-tooling")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != SecretsMigrated {
+		t.Fatalf("result = %v, want SecretsMigrated", result)
+	}
+	secrets, err := LoadSecrets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := secrets["migrations-tooling-hash"]; exists {
+		t.Fatal("obsolete hash-suffixed stub still exists")
+	}
+	if got := secrets["migrations-tooling"]["github"]; got != "existing" {
+		t.Fatalf("readable secret changed to %q", got)
+	}
+}
+
+func TestSecretsAliasesAndStub(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	writeSecrets(t, "project-hash:\n  github: fallback\n")
+
+	secrets, err := SecretsForProjects("project", "project-hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := secrets["github"]; got != "fallback" {
+		t.Fatalf("fallback secret = %q, want fallback", got)
+	}
+	if added, err := EnsureSecretsStubForProject("project", "project-hash"); err != nil || added {
+		t.Fatalf("EnsureSecretsStubForProject added duplicate alias: added=%v err=%v", added, err)
+	}
+}
+
+func TestSecretsAliasesSkipEmptyReadableStub(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	writeSecrets(t, "project:\n  # empty readable stub\nproject-hash:\n  github: fallback\n")
+
+	secrets, err := SecretsForProjects("project", "project-hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := secrets["github"]; got != "fallback" {
+		t.Fatalf("fallback secret = %q, want fallback", got)
 	}
 }
 

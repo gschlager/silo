@@ -55,7 +55,7 @@ func AssignContainerName(projectDir string) (name string, err error) {
 		return "", fmt.Errorf("reading %s: %w", path, readErr)
 	}
 
-	key := ProjectName(projectDir)
+	key := PathScopedProjectName(projectDir)
 	if assigned, ok := registry.Projects[key]; ok {
 		if !validContainerName(assigned) {
 			return "", fmt.Errorf("invalid container name %q for project %q in %s", assigned, key, path)

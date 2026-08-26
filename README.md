@@ -314,13 +314,13 @@ presets are plain config and take none.
 
 ### Secrets
 
-Per-project secrets live in one central file, `~/.config/silo/secrets.yml`, keyed by the project name plus a short hash of its canonical host path. The hash prevents two unrelated directories with the same basename from sharing secrets. On the first `silo up`, silo appends the exact key to use as a commented stub:
+Per-project secrets live in one central file, `~/.config/silo/secrets.yml`, keyed by the readable name assigned in `projects.yml`. On the first `silo up`, silo appends the exact key to use as a commented stub:
 
 ```yaml
 # ~/.config/silo/secrets.yml
-migrations-tooling-a1b2c3d4e5f6a7b8:
+migrations-tooling:
   github: op://Employee/migrations-pat/token   # reserved key: wires git + gh
-converters-f6e7d8c9b0a1b2c3:
+converters:
   github: op://Employee/converters-pat/token
   AWS_BEARER_TOKEN_BEDROCK: op://Employee/bedrock/key   # plain env var
 ```
@@ -330,14 +330,13 @@ converters-f6e7d8c9b0a1b2c3:
 - Secrets are resolved fresh at session and setup time and passed as environment variables — never baked into the container or written to disk. Rotating a PAT in 1Password takes effect on the next session with no reprovision.
 - Secrets reach `silo enter`/`silo run`, project setup, and [daemons](#daemons). Daemons get them because silo injects them into the systemd user manager when it starts the daemon (see Daemons) — still only in memory, never on disk.
 
-When upgrading from a silo version that used basename-only identities, run
-`silo config migrate-secrets` once from each project that has a legacy secrets
-entry. It atomically renames the basename-only key to the new path-scoped key,
+If you used the short-lived silo version that exposed path hashes in secrets,
+run `silo config migrate-secrets` once from each affected project. It atomically
+renames the hash-suffixed key back to the registry-assigned readable key,
 preserving comments and refusing to overwrite a key that already exists. The
-first `silo up` then creates a new path-scoped container rather than reusing the
-old one. Remove the old container after verifying the new environment. Silo
-intentionally does not fall back to basename-only secrets because doing so would
-restore the collision the path hash prevents.
+hash-suffixed key remains a read fallback until it is migrated, so upgrading
+does not interrupt existing credentials. A same-basename project that receives
+a suffixed registry name uses that distinct name for its secrets too.
 
 #### Sharing secrets between projects
 
