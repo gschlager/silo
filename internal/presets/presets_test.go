@@ -21,7 +21,7 @@ func parseUse(t *testing.T, doc string) config.UseList {
 
 func expand(t *testing.T, doc string) []string {
 	t.Helper()
-	cmds, err := Expand(parseUse(t, doc), "bash")
+	cmds, err := Expand(parseUse(t, doc), "bash", nil)
 	if err != nil {
 		t.Fatalf("Expand: %v", err)
 	}
@@ -136,14 +136,14 @@ use:
 }
 
 func TestRubyRequiresVersions(t *testing.T) {
-	_, err := Expand(parseUse(t, "use:\n  ruby:\n"), "bash")
+	_, err := Expand(parseUse(t, "use:\n  ruby:\n"), "bash", nil)
 	if err == nil || !strings.Contains(err.Error(), "versions") {
 		t.Errorf("expected a 'versions' error, got %v", err)
 	}
 }
 
 func TestUnknownPreset(t *testing.T) {
-	_, err := Expand(parseUse(t, "use:\n  bogus:\n"), "bash")
+	_, err := Expand(parseUse(t, "use:\n  bogus:\n"), "bash", nil)
 	if err == nil || !strings.Contains(err.Error(), "unknown preset") {
 		t.Errorf("expected an 'unknown preset' error, got %v", err)
 	}
@@ -169,5 +169,59 @@ use:
 	}
 	if rubyIdx == -1 || nodeIdx == -1 || rubyIdx > nodeIdx {
 		t.Errorf("expected ruby before node (ruby=%d node=%d):\n%s", rubyIdx, nodeIdx, strings.Join(cmds, "\n"))
+	}
+}
+
+// User presets are defined in the global config rather than in Go, so a bundle
+// needed by a few projects can be written once and opted into with `use:`.
+func TestUserPresetSetup(t *testing.T) {
+	user := map[string]config.UserPreset{
+		"segno": {Setup: []string{"curl -fsSL https://example.test/install.sh | bash"}},
+	}
+	cmds, err := Expand(parseUse(t, "use:\n  segno:\n"), "bash", user)
+	if err != nil {
+		t.Fatalf("Expand: %v", err)
+	}
+	if !contains(cmds, "curl -fsSL https://example.test/install.sh | bash") {
+		t.Errorf("expected the user preset's setup command, got:\n%s", strings.Join(cmds, "\n"))
+	}
+}
+
+// Built-ins take precedence, so shipping a new built-in later can't be silently
+// shadowed by a stale entry in someone's global config.
+func TestBuiltinPresetWinsOverUserPreset(t *testing.T) {
+	user := map[string]config.UserPreset{
+		"ruby": {Setup: []string{"echo shadowed"}},
+	}
+	cmds, err := Expand(parseUse(t, "use:\n  ruby:\n    versions: [3.4.1]\n"), "bash", user)
+	if err != nil {
+		t.Fatalf("Expand: %v", err)
+	}
+	if contains(cmds, "echo shadowed") {
+		t.Errorf("user preset shadowed the built-in ruby preset:\n%s", strings.Join(cmds, "\n"))
+	}
+}
+
+// User presets expand in `use:` order alongside built-ins, so a preset that
+// depends on a runtime can be listed after it.
+func TestUserPresetKeepsDeclarationOrder(t *testing.T) {
+	user := map[string]config.UserPreset{
+		"segno": {Setup: []string{"install-segno"}},
+	}
+	cmds, err := Expand(parseUse(t, "use:\n  ruby:\n    versions: [3.4.1]\n  segno:\n"), "bash", user)
+	if err != nil {
+		t.Fatalf("Expand: %v", err)
+	}
+	if cmds[len(cmds)-1] != "install-segno" {
+		t.Errorf("expected the user preset last, got:\n%s", strings.Join(cmds, "\n"))
+	}
+}
+
+// An unknown name should point at the user's own presets too, not just built-ins.
+func TestUnknownPresetListsUserPresets(t *testing.T) {
+	user := map[string]config.UserPreset{"segno": {}}
+	_, err := Expand(parseUse(t, "use:\n  bogus:\n"), "bash", user)
+	if err == nil || !strings.Contains(err.Error(), "segno") {
+		t.Errorf("expected the error to list 'segno', got %v", err)
 	}
 }

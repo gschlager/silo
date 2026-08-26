@@ -32,6 +32,24 @@ type GlobalConfig struct {
 	Mounts        []string            `yaml:"mounts,omitempty"`
 	Git           map[string]string   `yaml:"git,omitempty"`
 	Agents        []AgentGlobalConfig `yaml:"agents"`
+
+	// Presets are user-defined bundles a project opts into with `use:`, the
+	// same key the built-in ruby/node presets use. They exist so something
+	// needed by several projects — but not all of them — can be written once
+	// without running everywhere: a global `daemons:` or `setup:` would start
+	// in every container, which is rarely what a sidecar or a token-gated
+	// installer wants.
+	Presets map[string]UserPreset `yaml:"presets,omitempty"`
+}
+
+// UserPreset is a reusable bundle of setup commands, environment variables and
+// daemons, defined once in the global config and activated per project via
+// `use:`. Unlike the built-in presets (which are Go code and take parameters),
+// a user preset is plain config.
+type UserPreset struct {
+	Setup   []string                `yaml:"setup"`
+	Env     map[string]string       `yaml:"env"`
+	Daemons map[string]DaemonConfig `yaml:"daemons"`
 }
 
 // AgentGlobalConfig holds global agent settings.
@@ -137,6 +155,9 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 	}
 	if len(userCfg.Git) > 0 {
 		cfg.Git = userCfg.Git
+	}
+	if len(userCfg.Presets) > 0 {
+		cfg.Presets = userCfg.Presets
 	}
 
 	// Merge agents: user overrides per agent by name, defaults fill in the rest.

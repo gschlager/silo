@@ -43,6 +43,9 @@ type MergedConfig struct {
 	// Daemons.
 	Daemons map[string]DaemonConfig
 
+	// Presets defined in the global config, for `use:` expansion.
+	Presets map[string]UserPreset
+
 	// Container nesting (required for Docker, Podman, etc.).
 	Nesting bool
 
@@ -168,6 +171,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		DefaultAgent:  global.DefaultAgent,
 		PassEnv:       global.PassEnv,
 		Notifications: global.Notifications,
+		Presets:       global.Presets,
 	}
 
 	// Image: project overrides global default.
@@ -197,9 +201,24 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		m.Nesting = project.Nesting
 	}
 
-	// Env: project-level only.
+	// Env: user presets named in `use:` contribute a base, project env: wins.
+	usedPresets := usedUserPresets(global, m.Use)
+	for _, p := range usedPresets {
+		for k, v := range p.Env {
+			if m.Env == nil {
+				m.Env = make(map[string]string)
+			}
+			m.Env[k] = v
+		}
+	}
 	if project != nil && project.Env != nil {
-		m.Env = project.Env
+		if m.Env == nil {
+			m.Env = project.Env
+		} else {
+			for k, v := range project.Env {
+				m.Env[k] = v
+			}
+		}
 	}
 
 	// Mounts: union of global and project.
@@ -275,19 +294,44 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		m.Tools = project.Tools
 	}
 
-	// Daemons: project-level only. Collect daemon ports into Ports, skipping
-	// any whose container port is already forwarded. The same port may be
-	// declared both at the top level and on a daemon; forwarding it twice
-	// would try to bind the host port more than once and fail.
+	// Daemons: user presets named in `use:` contribute a base, project daemons:
+	// win on a name collision. Collect daemon ports into Ports, skipping any
+	// whose container port is already forwarded. The same port may be declared
+	// both at the top level and on a daemon; forwarding it twice would try to
+	// bind the host port more than once and fail.
+	for _, p := range usedPresets {
+		for name, d := range p.Daemons {
+			if m.Daemons == nil {
+				m.Daemons = make(map[string]DaemonConfig)
+			}
+			m.Daemons[name] = d
+		}
+	}
 	if project != nil {
-		m.Daemons = project.Daemons
+		if m.Daemons == nil {
+			m.Daemons = project.Daemons
+		} else {
+			for name, d := range project.Daemons {
+				m.Daemons[name] = d
+			}
+		}
+	}
+	if len(m.Daemons) > 0 {
 		seen := make(map[int]bool)
 		for _, pf := range m.Ports {
 			if cp, ok := containerPort(pf.Spec); ok {
 				seen[cp] = true
 			}
 		}
-		for daemonName, daemon := range project.Daemons {
+		// Sorted so which daemon claims a port shared by two of them is stable
+		// across runs rather than decided by map iteration order.
+		daemonNames := make([]string, 0, len(m.Daemons))
+		for name := range m.Daemons {
+			daemonNames = append(daemonNames, name)
+		}
+		sort.Strings(daemonNames)
+		for _, daemonName := range daemonNames {
+			daemon := m.Daemons[daemonName]
 			for _, pf := range daemon.Ports {
 				cp, ok := containerPort(pf.Spec)
 				if ok && seen[cp] {
@@ -311,6 +355,20 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 	}
 
 	return m
+}
+
+// usedUserPresets returns the user-defined presets a project opts into, in `use:`
+// declaration order. Names that aren't user presets are skipped — they're either
+// built-in presets (expanded separately, in the presets package, since those are
+// Go code with typed parameters) or a typo, which the presets package reports.
+func usedUserPresets(global *GlobalConfig, use UseList) []UserPreset {
+	var out []UserPreset
+	for _, u := range use {
+		if p, ok := global.Presets[u.Name]; ok {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // containerPort extracts the container port from a port spec like "3000:13000"

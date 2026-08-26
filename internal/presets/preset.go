@@ -41,20 +41,44 @@ func Available() []string {
 // Expand turns a project's `use:` list into setup-phase commands, in declaration
 // order. The result is meant to be prepended to the project's own `setup:` so
 // runtimes/services are ready before project commands like `bundle install`.
-func Expand(use config.UseList, shell string) ([]string, error) {
+//
+// user holds the presets defined in the global config. A built-in preset wins
+// over a user preset of the same name, so adding a built-in later can't be
+// silently shadowed by an old entry in someone's config. Only the setup
+// commands are returned here; a user preset's env: and daemons: are merged into
+// the resolved config by config.Merge.
+func Expand(use config.UseList, shell string, user map[string]config.UserPreset) ([]string, error) {
 	var cmds []string
 	for _, u := range use {
-		p, ok := registry[u.Name]
-		if !ok {
-			return nil, fmt.Errorf("unknown preset %q (available: %s)", u.Name, strings.Join(Available(), ", "))
+		if p, ok := registry[u.Name]; ok {
+			c, err := p.SetupCommands(u.Params, shell)
+			if err != nil {
+				return nil, fmt.Errorf("preset %q: %w", u.Name, err)
+			}
+			cmds = append(cmds, c...)
+			continue
 		}
-		c, err := p.SetupCommands(u.Params, shell)
-		if err != nil {
-			return nil, fmt.Errorf("preset %q: %w", u.Name, err)
+		if up, ok := user[u.Name]; ok {
+			cmds = append(cmds, up.Setup...)
+			continue
 		}
-		cmds = append(cmds, c...)
+		return nil, fmt.Errorf("unknown preset %q (available: %s)", u.Name, strings.Join(known(user), ", "))
 	}
 	return cmds, nil
+}
+
+// known returns every preset name a project can name in `use:` — the built-ins
+// plus whatever the global config defines — so an unknown-preset error points at
+// the user's own presets too, not just the built-in ones.
+func known(user map[string]config.UserPreset) []string {
+	names := Available()
+	for name := range user {
+		if _, builtin := registry[name]; !builtin {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 // scalarValues returns the string values of a scalar or sequence node. Values

@@ -66,7 +66,7 @@ func loadConfig() (*config.MergedConfig, error) {
 
 	// Expand built-in presets (use:) into setup commands, prepended so runtimes
 	// and services are ready before the project's own setup (e.g. bundle install).
-	presetCmds, err := presets.Expand(merged.Use, merged.Shell)
+	presetCmds, err := presets.Expand(merged.Use, merged.Shell, merged.Presets)
 	if err != nil {
 		return nil, err
 	}

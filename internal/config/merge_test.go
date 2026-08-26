@@ -225,3 +225,106 @@ func TestMerge_CarriesModeEnv(t *testing.T) {
 		t.Fatalf("ModeEnvKeys = %v, want sorted [AWS_REGION CLAUDE_CODE_USE_BEDROCK]", keys)
 	}
 }
+
+// useList builds a UseList without going through YAML, for tests that only care
+// about which presets are named.
+func useList(names ...string) UseList {
+	var u UseList
+	for _, n := range names {
+		u = append(u, PresetUse{Name: n})
+	}
+	return u
+}
+
+func TestMerge_UserPresetContributesDaemonsAndEnv(t *testing.T) {
+	global := &GlobalConfig{Presets: map[string]UserPreset{
+		"segno": {
+			Env: map[string]string{"SEGNO_HOME": "/opt/segno"},
+			Daemons: map[string]DaemonConfig{
+				"segno-claude": {Cmd: "segno-runner claude", Autostart: true},
+				"segno-codex":  {Cmd: "segno-runner codex", Autostart: true},
+			},
+		},
+	}}
+
+	// Opted in: the preset's daemons and env show up.
+	m := Merge(global, &ProjectConfig{Use: useList("segno")}, "/tmp/proj")
+	if len(m.Daemons) != 2 {
+		t.Errorf("expected 2 daemons from the preset, got %v", m.Daemons)
+	}
+	if m.Env["SEGNO_HOME"] != "/opt/segno" {
+		t.Errorf("expected the preset's env, got %v", m.Env)
+	}
+
+	// Not opted in: nothing from the preset runs. This is the whole point of
+	// use: over a global daemons: block.
+	m = Merge(global, &ProjectConfig{}, "/tmp/proj")
+	if len(m.Daemons) != 0 {
+		t.Errorf("preset daemons leaked into a project that didn't opt in: %v", m.Daemons)
+	}
+	if len(m.Env) != 0 {
+		t.Errorf("preset env leaked into a project that didn't opt in: %v", m.Env)
+	}
+}
+
+func TestMerge_ProjectOverridesUserPreset(t *testing.T) {
+	global := &GlobalConfig{Presets: map[string]UserPreset{
+		"segno": {
+			Env:     map[string]string{"SEGNO_HOME": "/opt/segno", "KEEP": "yes"},
+			Daemons: map[string]DaemonConfig{"segno-codex": {Cmd: "segno-runner codex"}},
+		},
+	}}
+	project := &ProjectConfig{
+		Use:     useList("segno"),
+		Env:     map[string]string{"SEGNO_HOME": "/srv/segno"},
+		Daemons: map[string]DaemonConfig{"segno-codex": {Cmd: "segno-runner codex --debug"}},
+	}
+
+	m := Merge(global, project, "/tmp/proj")
+	if m.Env["SEGNO_HOME"] != "/srv/segno" {
+		t.Errorf("project env should win, got %q", m.Env["SEGNO_HOME"])
+	}
+	if m.Env["KEEP"] != "yes" {
+		t.Error("preset env keys the project doesn't set should survive")
+	}
+	if got := m.Daemons["segno-codex"].Cmd; got != "segno-runner codex --debug" {
+		t.Errorf("project daemon should win, got %q", got)
+	}
+}
+
+func TestMerge_UserPresetDaemonPortsAreForwarded(t *testing.T) {
+	global := &GlobalConfig{Presets: map[string]UserPreset{
+		"segno": {Daemons: map[string]DaemonConfig{
+			"segno-web": {Cmd: "segno-runner web", Ports: []PortForward{{Spec: "4000:14000"}}},
+		}},
+	}}
+	m := Merge(global, &ProjectConfig{Use: useList("segno")}, "/tmp/proj")
+
+	var found bool
+	for _, p := range m.Ports {
+		if p.Spec == "4000:14000" && p.Name == "segno-web" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected the preset daemon's port to be forwarded and named, got %v", m.Ports)
+	}
+}
+
+// A port declared by two daemons is forwarded once; which daemon names it must
+// not depend on map iteration order.
+func TestMerge_DaemonPortNamingIsStable(t *testing.T) {
+	project := &ProjectConfig{Daemons: map[string]DaemonConfig{
+		"alpha": {Cmd: "a", Ports: []PortForward{{Spec: "3000:13000"}}},
+		"zulu":  {Cmd: "z", Ports: []PortForward{{Spec: "3000:13000"}}},
+	}}
+	for i := 0; i < 20; i++ {
+		m := Merge(&GlobalConfig{}, project, "/tmp/proj")
+		if len(m.Ports) != 1 {
+			t.Fatalf("expected the shared port forwarded once, got %v", m.Ports)
+		}
+		if m.Ports[0].Name != "alpha" {
+			t.Fatalf("expected 'alpha' to claim the port every run, got %q", m.Ports[0].Name)
+		}
+	}
+}

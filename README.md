@@ -210,7 +210,10 @@ The default login shell is `bash` (always present, including on images without z
 # Base image used when a project doesn't set image: (default: fedora/44)
 default_image: fedora/44
 
-# Packages installed in every container before project setup runs
+# Packages installed in every container before project setup runs.
+# Fail-fast: the first command that exits non-zero aborts provisioning, so
+# anything only some projects want (or that needs a token) belongs in a
+# preset instead — see "Presets".
 default_setup:
   - dnf install -y git curl wget make gcc jq ripgrep gh
 
@@ -254,6 +257,55 @@ agents:
 All fields are optional — list only what you want to override. Per-project `.silo.yml` values take precedence over the global ones (and `mounts`/`git` are merged, not replaced).
 
 Run `silo config edit` to open the global config in your editor, or `silo config path` to print its location. Run `silo config show` (from a project directory) to see the fully resolved configuration for that project — global + project merged, presets expanded into setup, and which secrets apply (by reference; tokens are never printed).
+
+### Presets
+
+A preset is a named bundle a project opts into with `use:`. Silo ships built-in
+presets for language runtimes (`ruby`, `node`), and you can define your own in
+the global config:
+
+```yaml
+# ~/.config/silo/config.yml
+presets:
+  segno:
+    setup:
+      - curl -fsSL https://segno.example/install.sh | bash
+    env:
+      SEGNO_HOME: /opt/segno
+    daemons:
+      segno-claude:
+        cmd: segno-runner claude
+        env:
+          SEGNO_TOKEN: op://Employee/segno-claude/credential
+      segno-codex:
+        cmd: segno-runner codex
+        env:
+          SEGNO_TOKEN: op://Employee/segno-codex/credential
+```
+
+```yaml
+# .silo.yml — in the three projects that want it, and nowhere else
+use:
+  segno:
+```
+
+A user preset can contribute `setup`, `env` and `daemons`. Definition is global,
+activation is per project — which is why this exists instead of a global
+`daemons:` or a longer `default_setup`: a sidecar wanted by three projects
+shouldn't start in all twenty, and an installer that needs a token shouldn't
+break provisioning for projects that don't have one.
+
+Precedence and ordering:
+
+- Presets expand in `use:` declaration order, and their setup commands run
+  before the project's own `setup:`. List a preset after the runtime it needs.
+- The project's `env:` and `daemons:` win over a preset's on a key collision, so
+  a project can override a single variable or swap one daemon's command.
+- A built-in preset wins over a user preset of the same name, so a built-in
+  added in a later release can't be silently shadowed by an old config entry.
+
+Built-in presets take typed parameters (`ruby: {versions: [3.4.1]}`); user
+presets are plain config and take none.
 
 ### Secrets
 
