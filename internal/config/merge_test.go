@@ -63,28 +63,20 @@ func TestContainerName(t *testing.T) {
 		projectDir string
 		want       string
 	}{
-		{"/home/dev/projects/myapp", "silo-myapp-"},
-		{"/home/dev/my_project", "silo-my-project-"},
-		{"/home/dev/my.app", "silo-my-app-"},
-		{"/home/dev/123app", "silo-s123app-"},
-		{"/home/dev/My App", "silo-My-App-"},
+		{"/home/dev/projects/myapp", "silo-myapp"},
+		{"/home/dev/my_project", "silo-my-project"},
+		{"/home/dev/my.app", "silo-my-app"},
+		{"/home/dev/123app", "silo-s123app"},
+		{"/home/dev/My App", "silo-My-App"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.projectDir, func(t *testing.T) {
 			got := ContainerName(tt.projectDir)
-			if !strings.HasPrefix(got, tt.want) || len(got) != len(tt.want)+16 {
-				t.Errorf("ContainerName(%q) = %q, want prefix %q plus 16 hex characters", tt.projectDir, got, tt.want)
+			if got != tt.want {
+				t.Errorf("ContainerName(%q) = %q, want %q", tt.projectDir, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestContainerNameSeparatesSameBasename(t *testing.T) {
-	a := ContainerName("/work/customer/app")
-	b := ContainerName("/tmp/untrusted/app")
-	if a == b {
-		t.Fatalf("same-basename projects collided: %q", a)
 	}
 }
 
@@ -106,6 +98,13 @@ func TestContainerNameFitsIncusLimit(t *testing.T) {
 	name := ContainerName("/tmp/" + strings.Repeat("a", 100))
 	if len(name) > 63 {
 		t.Fatalf("container name has %d characters, want at most 63: %q", len(name), name)
+	}
+}
+
+func TestProjectNamePreservesHashedKeyLength(t *testing.T) {
+	name := ProjectName("/tmp/" + strings.Repeat("a", 100))
+	if len(name) != 41+1+16 {
+		t.Fatalf("project key has %d characters, want 58: %q", len(name), name)
 	}
 }
 

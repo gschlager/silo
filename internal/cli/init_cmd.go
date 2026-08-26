@@ -225,9 +225,13 @@ func runInteractiveInit(cwd string) error {
 	}
 
 	cfg := config.ProjectConfig{}
+	containerName, err := config.AssignContainerName(cwd)
+	if err != nil {
+		return err
+	}
 
 	fmt.Printf("Project directory: %s\n", cwd)
-	fmt.Printf("Container name:    %s\n", config.ContainerName(cwd))
+	fmt.Printf("Container name:    %s\n", containerName)
 	fmt.Println()
 
 	// Detect image.

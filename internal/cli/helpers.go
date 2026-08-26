@@ -6,12 +6,12 @@ import (
 	"os"
 	"strings"
 
-	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/gschlager/silo/internal/presets"
 	"github.com/gschlager/silo/internal/provision"
+	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/spf13/cobra"
 )
 
@@ -27,8 +27,8 @@ func requireArgs(n int, what string) cobra.PositionalArgs {
 }
 
 // shellQuote quotes each argument for safe use in a POSIX shell command string.
-// Each argument is wrapped in single quotes, with any embedded single quotes
-// escaped as '\'' (end quote, escaped quote, start quote).
+// Each argument is wrapped in single quotes, with embedded quotes represented
+// using the standard POSIX shell quote-break sequence.
 func shellQuote(args []string) string {
 	quoted := make([]string, len(args))
 	for i, arg := range args {
@@ -56,6 +56,11 @@ func loadConfig() (*config.MergedConfig, error) {
 	}
 
 	merged := config.Merge(global, project, cwd)
+	containerName, err := config.AssignContainerName(cwd)
+	if err != nil {
+		return nil, err
+	}
+	merged.ContainerName = containerName
 
 	// Use the shell the container was actually provisioned with, which may differ
 	// from the configured one if it could not be installed and silo fell back to

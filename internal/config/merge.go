@@ -15,6 +15,7 @@ type MergedConfig struct {
 	Image         string
 	ContainerName string
 	ProjectDir    string
+	ProjectKey    string
 
 	// Command lists.
 	DefaultSetup []string
@@ -119,16 +120,24 @@ func (m *MergedConfig) UserHome() string {
 	return "/home/" + m.User
 }
 
-// ProjectName returns the short project name used to key the central secrets
-// file. It matches the container name without the "silo-" prefix.
+// ProjectName returns the stable, path-scoped key used for secrets and other
+// host-owned project policy. It is intentionally independent of the readable
+// container name.
 func (m *MergedConfig) ProjectName() string {
-	return strings.TrimPrefix(m.ContainerName, "silo-")
+	if m.ProjectKey != "" {
+		return m.ProjectKey
+	}
+	return ProjectName(m.ProjectDir)
 }
 
-// ProjectName returns the short project name for a directory: the container name
-// without the "silo-" prefix.
+// ProjectName returns a readable, path-scoped project key for a directory.
 func ProjectName(projectDir string) string {
-	return strings.TrimPrefix(ContainerName(projectDir), "silo-")
+	base := sanitizeName(filepath.Base(canonicalProjectPath(projectDir)))
+	const maxBaseLen = 41 // preserve the key format introduced with path scoping
+	if len(base) > maxBaseLen {
+		base = base[:maxBaseLen]
+	}
+	return base + "-" + projectIdentitySuffix(projectDir)
 }
 
 // LegacyProjectName returns the basename-only key used before project identity
@@ -173,6 +182,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 	m := &MergedConfig{
 		ContainerName: ContainerName(projectDir),
 		ProjectDir:    projectDir,
+		ProjectKey:    ProjectName(projectDir),
 		Shell:         global.Shell,
 		User:          global.User,
 		DefaultAgent:  global.DefaultAgent,
@@ -411,12 +421,22 @@ func distroOf(image string) string {
 	return image
 }
 
-// ContainerName derives a readable but collision-resistant container name from
-// the canonical project directory. The hash separates projects with the same
-// basename and also scopes their state and central secrets independently.
+// ContainerName derives the legacy readable container name. CLI configuration
+// loading replaces it with the name assigned by the host-side project registry;
+// keeping this as the default preserves compatibility for callers that do not
+// need to allocate a name.
 func ContainerName(projectDir string) string {
 	base := sanitizeName(filepath.Base(canonicalProjectPath(projectDir)))
-	const maxBaseLen = 41 // keep the full name within Incus' 63-character limit
+	const maxBaseLen = 58 // "silo-" plus the base must fit Incus' 63-char limit
+	if len(base) > maxBaseLen {
+		base = base[:maxBaseLen]
+	}
+	return "silo-" + base
+}
+
+func collisionContainerName(projectDir string) string {
+	base := sanitizeName(filepath.Base(canonicalProjectPath(projectDir)))
+	const maxBaseLen = 41
 	if len(base) > maxBaseLen {
 		base = base[:maxBaseLen]
 	}

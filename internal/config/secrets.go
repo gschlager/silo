@@ -133,9 +133,9 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) (err error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("creating %s: %w", dir, err)
 	}
-	tmp, err := os.CreateTemp(dir, ".secrets-*.tmp")
+	tmp, err := os.CreateTemp(dir, ".silo-*.tmp")
 	if err != nil {
-		return fmt.Errorf("creating temporary secrets file: %w", err)
+		return fmt.Errorf("creating temporary file for %s: %w", path, err)
 	}
 	tmpPath := tmp.Name()
 	defer func() {
@@ -145,16 +145,16 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) (err error) {
 		}
 	}()
 	if err = tmp.Chmod(mode); err != nil {
-		return fmt.Errorf("setting permissions on temporary secrets file: %w", err)
+		return fmt.Errorf("setting permissions on temporary file for %s: %w", path, err)
 	}
 	if _, err = tmp.Write(data); err != nil {
-		return fmt.Errorf("writing temporary secrets file: %w", err)
+		return fmt.Errorf("writing temporary file for %s: %w", path, err)
 	}
 	if err = tmp.Sync(); err != nil {
-		return fmt.Errorf("syncing temporary secrets file: %w", err)
+		return fmt.Errorf("syncing temporary file for %s: %w", path, err)
 	}
 	if err = tmp.Close(); err != nil {
-		return fmt.Errorf("closing temporary secrets file: %w", err)
+		return fmt.Errorf("closing temporary file for %s: %w", path, err)
 	}
 	if err = os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("replacing %s: %w", path, err)

@@ -314,7 +314,7 @@ presets are plain config and take none.
 
 ### Secrets
 
-Per-project secrets live in one central file, `~/.config/silo/secrets.yml`, keyed by the project name plus a short hash of its canonical host path. The hash prevents two unrelated directories with the same basename from sharing a container or secrets. On the first `silo up`, silo appends the exact key to use as a commented stub:
+Per-project secrets live in one central file, `~/.config/silo/secrets.yml`, keyed by the project name plus a short hash of its canonical host path. The hash prevents two unrelated directories with the same basename from sharing secrets. On the first `silo up`, silo appends the exact key to use as a commented stub:
 
 ```yaml
 # ~/.config/silo/secrets.yml
@@ -555,6 +555,7 @@ The mode can also be set as a default in `.silo.yml` or `.silo.local.yml` via `a
 ```
 ~/.config/silo/
 ├── config.yml                              # global overrides
+├── projects.yml                            # path hashes → stable container names
 ├── secrets.yml                             # per-project secrets (PATs, etc.)
 ├── gitignore                               # global gitignore for every container
 ├── agents/
@@ -569,10 +570,15 @@ The mode can also be set as a default in `.silo.yml` or `.silo.local.yml` via `a
 │           ├── .claude/
 │           └── .claude.json
 └── containers/
-    └── silo-myapp-a1b2c3d4e5f6a7b8/
+    └── silo-myapp/
         ├── mode.yml                        # per-project mode overrides (from silo mode)
         └── shell                           # shell the container was provisioned with
 ```
+
+Container names stay readable and backward-compatible (`silo-myapp`). Silo
+records the canonical-path identity in host-owned `projects.yml`; only a second
+project with the same basename receives a hash suffix. The registry stores the
+hash, not the host path.
 
 Each mode directory is mounted into the container at `/var/lib/silo/<agent>/`, and the paths listed under `links` are created as symlinks into that mount. Switching modes with `silo mode` swaps which mode directory is mounted — history, settings, and credentials from one mode never leak into another.
 

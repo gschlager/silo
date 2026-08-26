@@ -126,7 +126,7 @@ func TestAddProjectSecret(t *testing.T) {
 }
 
 func TestProjectName(t *testing.T) {
-	m := &MergedConfig{ContainerName: ContainerName("/home/dev/migrations_tooling")}
+	m := &MergedConfig{ProjectDir: "/home/dev/migrations_tooling"}
 	if got := m.ProjectName(); !strings.HasPrefix(got, "migrations-tooling-") || len(got) != len("migrations-tooling-")+16 {
 		t.Errorf("ProjectName = %q, want migrations-tooling- plus 16 hex characters", got)
 	}
