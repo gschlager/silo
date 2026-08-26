@@ -64,6 +64,7 @@ type resolvedView struct {
 	Update  []string            `yaml:"update,omitempty"`
 	Ports   []string            `yaml:"ports,omitempty"`
 	Env     map[string]string   `yaml:"env,omitempty"`
+	Git     map[string]string   `yaml:"git,omitempty"`
 	Secrets map[string]string   `yaml:"secrets,omitempty"`
 	Daemons []string            `yaml:"daemons,omitempty"`
 	Agents  []string            `yaml:"agents,omitempty"`
@@ -92,6 +93,7 @@ apply (by reference only — tokens are never resolved or printed).`,
 				Reset:  cfg.Reset,
 				Update: cfg.Update,
 				Env:    cfg.Env,
+				Git:    cfg.Git,
 			}
 			for _, p := range cfg.Ports {
 				view.Ports = append(view.Ports, p.Spec)
