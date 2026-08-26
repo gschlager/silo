@@ -55,6 +55,14 @@ func loadConfig() (*config.MergedConfig, error) {
 		return nil, err
 	}
 
+	var use config.UseList
+	if project != nil {
+		use = project.Use
+	}
+	if err := config.ValidateEnv(global, project, use); err != nil {
+		return nil, err
+	}
+
 	merged := config.Merge(global, project, cwd)
 	containerName, err := config.AssignContainerName(cwd)
 	if err != nil {

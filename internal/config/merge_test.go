@@ -366,3 +366,96 @@ func TestMerge_DaemonPortNamingIsStable(t *testing.T) {
 		}
 	}
 }
+
+func TestMerge_UserPresetSecrets(t *testing.T) {
+	global := &GlobalConfig{Presets: map[string]UserPreset{
+		"segno": {Secrets: map[string]string{
+			"SEGNO_INSTALL_TOKEN": "op://Employee/Segno Tokens/password",
+		}},
+	}}
+
+	m := Merge(global, &ProjectConfig{Use: useList("segno")}, "/tmp/proj")
+	if m.PresetSecrets["SEGNO_INSTALL_TOKEN"] != "op://Employee/Segno Tokens/password" {
+		t.Errorf("expected the preset's secret, got %v", m.PresetSecrets)
+	}
+
+	// Not opted in: the reference doesn't follow the project around.
+	m = Merge(global, &ProjectConfig{}, "/tmp/proj")
+	if len(m.PresetSecrets) != 0 {
+		t.Errorf("preset secrets leaked into a project that didn't opt in: %v", m.PresetSecrets)
+	}
+}
+
+// A preset secret must never end up in env:, which is written to disk verbatim.
+func TestMerge_PresetSecretsStayOutOfEnv(t *testing.T) {
+	global := &GlobalConfig{Presets: map[string]UserPreset{
+		"segno": {
+			Env:     map[string]string{"SEGNO_HOME": "/opt/segno"},
+			Secrets: map[string]string{"SEGNO_INSTALL_TOKEN": "op://Employee/Segno Tokens/password"},
+		},
+	}}
+	m := Merge(global, &ProjectConfig{Use: useList("segno")}, "/tmp/proj")
+
+	if _, ok := m.Env["SEGNO_INSTALL_TOKEN"]; ok {
+		t.Error("a preset secret must not appear in env: — env values are written to disk")
+	}
+	if m.Env["SEGNO_HOME"] != "/opt/segno" {
+		t.Errorf("plain preset env should still apply, got %v", m.Env)
+	}
+}
+
+func TestValidateEnv_RejectsSecretRefInPresetEnv(t *testing.T) {
+	global := &GlobalConfig{Presets: map[string]UserPreset{
+		"segno": {Env: map[string]string{
+			"SEGNO_INSTALL_TOKEN": "op://Employee/Segno Tokens/password",
+		}},
+	}}
+
+	err := ValidateEnv(global, &ProjectConfig{}, useList("segno"))
+	if err == nil {
+		t.Fatal("expected an error for an op:// reference in a preset's env:")
+	}
+	for _, want := range []string{"segno", "SEGNO_INSTALL_TOKEN", "secrets:"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q, got: %v", want, err)
+		}
+	}
+
+	// The same reference under secrets: is what we're telling people to write.
+	global.Presets["segno"] = UserPreset{Secrets: global.Presets["segno"].Env}
+	if err := ValidateEnv(global, &ProjectConfig{}, useList("segno")); err != nil {
+		t.Errorf("secrets: should be accepted, got: %v", err)
+	}
+}
+
+func TestValidateEnv_RejectsSecretRefInProjectEnv(t *testing.T) {
+	project := &ProjectConfig{Env: map[string]string{"TOKEN": "op://Employee/thing/password"}}
+
+	err := ValidateEnv(&GlobalConfig{}, project, nil)
+	if err == nil {
+		t.Fatal("expected an error for an op:// reference in a project's env:")
+	}
+	if !strings.Contains(err.Error(), "secrets.yml") {
+		t.Errorf("error should point at the secrets file, got: %v", err)
+	}
+}
+
+// A preset the project didn't opt into isn't its problem, even if it's broken.
+func TestValidateEnv_IgnoresUnusedPresets(t *testing.T) {
+	global := &GlobalConfig{Presets: map[string]UserPreset{
+		"other": {Env: map[string]string{"TOKEN": "op://Employee/thing/password"}},
+	}}
+	if err := ValidateEnv(global, &ProjectConfig{}, nil); err != nil {
+		t.Errorf("an unused preset should not fail validation, got: %v", err)
+	}
+}
+
+func TestValidateEnv_AllowsPlainValues(t *testing.T) {
+	global := &GlobalConfig{Presets: map[string]UserPreset{
+		"segno": {Env: map[string]string{"SEGNO_HOME": "/opt/segno"}},
+	}}
+	project := &ProjectConfig{Env: map[string]string{"RAILS_ENV": "development"}}
+	if err := ValidateEnv(global, project, useList("segno")); err != nil {
+		t.Errorf("plain values should pass, got: %v", err)
+	}
+}

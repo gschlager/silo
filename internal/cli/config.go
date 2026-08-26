@@ -160,8 +160,18 @@ apply (by reference only — tokens are never resolved or printed).`,
 					view.Agents = append(view.Agents, name)
 				}
 			}
+			// Preset secrets first, so a project entry of the same name displays
+			// as the one that actually wins — matching ResolveSessionEnv.
+			for k, v := range cfg.PresetSecrets {
+				if view.Secrets == nil {
+					view.Secrets = make(map[string]string)
+				}
+				view.Secrets[k] = maskSecret(v)
+			}
 			if secrets, err := config.SecretsForProjects(cfg.ProjectName(), cfg.PathScopedProjectName()); err == nil && len(secrets) > 0 {
-				view.Secrets = make(map[string]string, len(secrets))
+				if view.Secrets == nil {
+					view.Secrets = make(map[string]string, len(secrets))
+				}
 				for k, v := range secrets {
 					view.Secrets[k] = maskSecret(v)
 				}

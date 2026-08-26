@@ -48,6 +48,11 @@ type MergedConfig struct {
 	// Presets defined in the global config, for `use:` expansion.
 	Presets map[string]UserPreset
 
+	// PresetSecrets are the secrets: entries contributed by the presets this
+	// project opted into. They resolve alongside ~/.config/silo/secrets.yml —
+	// see provision.ResolveSessionEnv — and the project's own entries win.
+	PresetSecrets map[string]string
+
 	// Container nesting (required for Docker, Podman, etc.).
 	Nesting bool
 
@@ -235,6 +240,12 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 				m.Env = make(map[string]string)
 			}
 			m.Env[k] = v
+		}
+		for k, v := range p.Secrets {
+			if m.PresetSecrets == nil {
+				m.PresetSecrets = make(map[string]string)
+			}
+			m.PresetSecrets[k] = v
 		}
 	}
 	if project != nil && project.Env != nil {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -48,8 +50,18 @@ type GlobalConfig struct {
 // `use:`. Unlike the built-in presets (which are Go code and take parameters),
 // a user preset is plain config.
 type UserPreset struct {
-	Setup   []string                `yaml:"setup"`
-	Env     map[string]string       `yaml:"env"`
+	Setup []string `yaml:"setup"`
+	// Env holds plain settings. Values are literals: they are written into the
+	// container (/etc/environment.d and ~/.silo/env.sh) so every shell picks
+	// them up, which also means they persist on disk. Put tokens in Secrets.
+	Env map[string]string `yaml:"env"`
+	// Secrets holds op:// references (or literals) resolved on the host and
+	// passed as exec environment — never written to disk. They merge into the
+	// same set as ~/.config/silo/secrets.yml, so they reach project setup,
+	// enter/run/ra sessions and daemons, but only in projects that opted into
+	// the preset with `use:`. The reserved "github" name behaves as it does in
+	// secrets.yml: it wires the git credential helper and exports GH_TOKEN.
+	Secrets map[string]string       `yaml:"secrets"`
 	Daemons map[string]DaemonConfig `yaml:"daemons"`
 }
 
@@ -306,4 +318,53 @@ func defaultGlobalConfig() *GlobalConfig {
 			},
 		},
 	}
+}
+
+// ValidateEnv rejects env: entries that hold a 1Password reference. Unlike
+// secrets:, agents[].modes[].env and a daemon's env:, an env: value is never
+// resolved — it is written into the container verbatim, and it lands on disk in
+// /etc/environment.d and ~/.silo/env.sh. Left unchecked, an op:// value there
+// silently becomes a literal, so whatever consumes it fails somewhere far from
+// the cause (a curl that 401s during setup, say). Fail at load time instead, and
+// say where the value belongs.
+func ValidateEnv(global *GlobalConfig, project *ProjectConfig, use UseList) error {
+	for _, u := range use {
+		p, ok := global.Presets[u.Name]
+		if !ok {
+			continue
+		}
+		if name, ok := firstSecretRef(p.Env); ok {
+			return fmt.Errorf("preset %q: env value for %s is a 1Password reference, "+
+				"but env: values are written into the container as literals and are never resolved; "+
+				"move it to the preset's secrets: block", u.Name, name)
+		}
+	}
+
+	if project != nil {
+		if name, ok := firstSecretRef(project.Env); ok {
+			return fmt.Errorf("env value for %s is a 1Password reference, "+
+				"but env: values are written into the container as literals and are never resolved; "+
+				"move it to %s", name, SecretsPath())
+		}
+	}
+
+	return nil
+}
+
+// firstSecretRef returns the alphabetically first key whose value looks like a
+// 1Password reference. Sorted so the same entry is reported every run rather
+// than whichever one map iteration reached first.
+func firstSecretRef(env map[string]string) (string, bool) {
+	names := make([]string, 0, len(env))
+	for name := range env {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		if strings.HasPrefix(env[name], "op://") {
+			return name, true
+		}
+	}
+	return "", false
 }

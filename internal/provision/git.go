@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 
 	"github.com/gschlager/silo/internal/config"
@@ -73,28 +74,26 @@ chown -R %s:%s /home/%s/.silo`,
 }
 
 // ResolveSessionEnv resolves every credential source for a project into
-// environment variables: the central secrets file (base), then tool credentials
-// and git.credential (which override). Runs on the host; tokens are returned for
-// passing as exec env and are never written to disk. The reserved "github"
-// secret populates GITHUB_TOKEN and GH_TOKEN; the git helper consumes the former.
+// environment variables: secrets: blocks from the presets the project opted
+// into, then the central secrets file, then tool credentials and git.credential
+// (each overriding the last). Runs on the host; tokens are returned for passing
+// as exec env and are never written to disk. The reserved "github" secret
+// populates GITHUB_TOKEN and GH_TOKEN; the git helper consumes the former.
 func ResolveSessionEnv(cfg *config.MergedConfig) (map[string]string, error) {
 	env := map[string]string{}
+
+	// Preset secrets are the base so a project can override an inherited
+	// reference by naming it in its own secrets.yml block.
+	if err := resolveSecretsInto(env, cfg.PresetSecrets, "preset secret"); err != nil {
+		return nil, err
+	}
 
 	secrets, err := config.SecretsForProjects(cfg.ProjectName(), cfg.PathScopedProjectName())
 	if err != nil {
 		return nil, err
 	}
-	for name, ref := range secrets {
-		val, err := resolveSecret(ref)
-		if err != nil {
-			return nil, fmt.Errorf("resolving secret %q: %w", name, err)
-		}
-		if name == "github" {
-			env["GITHUB_TOKEN"] = val
-			env["GH_TOKEN"] = val
-		} else {
-			env[name] = val
-		}
+	if err := resolveSecretsInto(env, secrets, "secret"); err != nil {
+		return nil, err
 	}
 
 	tools, err := ResolveToolEnv(cfg.Tools)
@@ -141,6 +140,32 @@ func ResolveAgentEnv(agent config.MergedAgentConfig) (map[string]string, error) 
 		resolved[k] = val
 	}
 	return resolved, nil
+}
+
+// resolveSecretsInto resolves each reference in secrets and adds it to env under
+// its own name, applying the reserved "github" mapping. Names are visited in
+// sorted order so a failure reports the same entry every run rather than
+// whichever one map iteration reached first. what names the source in errors.
+func resolveSecretsInto(env, secrets map[string]string, what string) error {
+	names := make([]string, 0, len(secrets))
+	for name := range secrets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		val, err := resolveSecret(secrets[name])
+		if err != nil {
+			return fmt.Errorf("resolving %s %q: %w", what, name, err)
+		}
+		if name == "github" {
+			env["GITHUB_TOKEN"] = val
+			env["GH_TOKEN"] = val
+			continue
+		}
+		env[name] = val
+	}
+	return nil
 }
 
 // resolveSecret resolves a secrets-file value: a 1Password reference (op://…) is

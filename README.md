@@ -274,8 +274,12 @@ the global config:
 presets:
   segno:
     setup:
-      - curl -fsSL https://segno.example/install.sh | bash
-    env:
+      - >-
+        printf 'header = "Authorization: Bearer %s"\n' "$SEGNO_INSTALL_TOKEN" |
+        curl -fsSL --config - https://segno.example/runner -o ~/.local/bin/segno-runner
+    secrets:                          # resolved on the host, never on disk
+      SEGNO_INSTALL_TOKEN: op://Employee/segno-install/credential
+    env:                              # plain settings, written into the container
       SEGNO_HOME: /opt/segno
     daemons:
       segno-claude:
@@ -294,18 +298,39 @@ use:
   segno:
 ```
 
-A user preset can contribute `setup`, `env` and `daemons`. Definition is global,
-activation is per project — which is why this exists instead of a global
-`daemons:` or a longer `default_setup`: a sidecar wanted by three projects
-shouldn't start in all twenty, and an installer that needs a token shouldn't
-break provisioning for projects that don't have one.
+A user preset can contribute `setup`, `secrets`, `env` and `daemons`. Definition
+is global, activation is per project — which is why this exists instead of a
+global `daemons:` or a longer `default_setup`: a sidecar wanted by three
+projects shouldn't start in all twenty, and an installer that needs a token
+shouldn't break provisioning for projects that don't have one.
+
+**`secrets:` vs `env:`** — these are not interchangeable, and picking the wrong
+one fails in a confusing way:
+
+| | `secrets:` | `env:` |
+|---|---|---|
+| `op://` references | resolved on the host | **never resolved** — used as a literal |
+| Where the value lives | exec environment only | `/etc/environment.d` and `~/.silo/env.sh`, on disk |
+| Reaches | setup, `enter`/`run`/`ra`, daemons | every shell in the container |
+| Use for | tokens, credentials | `SEGNO_HOME`, `RAILS_ENV` |
+
+A preset's `secrets:` merge into the same set as
+[`secrets.yml`](#secrets), so they behave exactly like a project secret —
+including the reserved `github` name — but only in projects that opted into the
+preset. That is the point: the reference is written once, not repeated in every
+project's `secrets.yml` block.
+
+Putting an `op://` reference in an `env:` block is rejected at config load with
+a message pointing here, rather than silently becoming a literal that fails
+later as an unauthorized request halfway through provisioning.
 
 Precedence and ordering:
 
 - Presets expand in `use:` declaration order, and their setup commands run
   before the project's own `setup:`. List a preset after the runtime it needs.
-- The project's `env:` and `daemons:` win over a preset's on a key collision, so
-  a project can override a single variable or swap one daemon's command.
+- The project's `env:`, `daemons:` and `secrets.yml` entries win over a preset's
+  on a key collision, so a project can override a single variable, swap one
+  daemon's command, or point a secret at a different item.
 - A built-in preset wins over a user preset of the same name, so a built-in
   added in a later release can't be silently shadowed by an old config entry.
 
@@ -328,6 +353,7 @@ converters:
 - Each value is a **1Password reference** (`op://vault/item/field`) resolved on the host via the `op` CLI, or a literal. References are just pointers, not secrets, so this file mainly holds `op://` paths.
 - The reserved **`github`** key exports `GITHUB_TOKEN` and `GH_TOKEN` and wires the git credential helper for `github.com`. Every other key becomes a plain environment variable of that name.
 - Secrets are resolved fresh at session and setup time and passed as environment variables — never baked into the container or written to disk. Rotating a PAT in 1Password takes effect on the next session with no reprovision.
+- A [preset](#presets) can carry its own `secrets:` block, resolved the same way but scoped to the projects that opted into the preset with `use:`. Handy when several projects need the same reference and you'd rather not repeat it here.
 - Secrets reach `silo enter`/`silo run`, project setup, and [daemons](#daemons). Daemons get them because silo injects them into the systemd user manager when it starts the daemon (see Daemons) — still only in memory, never on disk.
 
 If you used the short-lived silo version that exposed path hashes in secrets,
