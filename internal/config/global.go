@@ -310,7 +310,11 @@ func defaultGlobalConfig() *GlobalConfig {
 				Enabled: true,
 				Cmd:     "codex",
 				Deps:    []string{"dnf install -y nodejs npm bubblewrap"},
-				Install: "npm install -g @openai/codex --prefix ~/.local",
+				// Persist the prefix in ~/.npmrc rather than passing --prefix
+				// on the command line: codex updates itself by shelling out to
+				// a plain `npm install -g @openai/codex`, which would otherwise
+				// target the root-owned /usr/local prefix and fail with EACCES.
+				Install: `npm config set prefix "$HOME/.local" && npm install -g @openai/codex`,
 				Mode:    "console",
 				Links: []LinkRule{
 					{Source: ".codex/", Target: "~/.codex/"},
