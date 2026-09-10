@@ -45,19 +45,32 @@ func resolveEnv(opts ExecOpts) map[string]string {
 	return env
 }
 
-// XDGRuntimeDirExport is a shell prefix that sets XDG_RUNTIME_DIR to the running
-// user's runtime dir. Prepend it before a `systemctl --user`/`journalctl --user`
-// command so it can reach the (lingering) user manager's D-Bus socket at
-// /run/user/<uid>/bus. Inside the container neither `su -` nor a User-scoped exec
-// sets XDG_RUNTIME_DIR up, and without it those commands fail with
-// "$DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined".
-const XDGRuntimeDirExport = "export XDG_RUNTIME_DIR=/run/user/$(id -u); "
+// UserManagerPrefix is a shell prefix that makes the (lingering) user manager
+// reachable. Prepend it before a `systemctl --user`/`journalctl --user` command.
+// It does two things:
+//
+//   - Sets XDG_RUNTIME_DIR to the running user's runtime dir, so those commands
+//     find the user manager's D-Bus socket at /run/user/<uid>/bus. Inside the
+//     container neither `su -` nor a User-scoped exec sets it up, and without it
+//     they fail with "$DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined".
+//   - Waits for that socket to appear. A container start returns as soon as its
+//     init is up, while logind spawns the lingering user's manager a moment
+//     later, so a `silo up` on a stopped container would otherwise race it and
+//     fail with "Failed to connect to user scope bus via local transport: No
+//     such file or directory". Once the manager is up (the common case) the loop
+//     costs nothing.
+const UserManagerPrefix = "export XDG_RUNTIME_DIR=/run/user/$(id -u); " +
+	`i=0; while [ ! -S "$XDG_RUNTIME_DIR/bus" ] && [ "$i" -lt ` + userManagerWaitTries + ` ]; do i=$((i+1)); sleep 0.25; done; `
 
-// SuUserManager builds a `su - <user> -c` command that runs cmd with
-// XDG_RUNTIME_DIR set (see XDGRuntimeDirExport), so a wrapped `systemctl --user`
-// or `journalctl --user` command can talk to the user manager.
+// userManagerWaitTries bounds the wait in UserManagerPrefix at 15 seconds, after
+// which the command runs anyway and reports the real error.
+const userManagerWaitTries = "60"
+
+// SuUserManager builds a `su - <user> -c` command that runs cmd with the user
+// manager reachable (see UserManagerPrefix), so a wrapped `systemctl --user` or
+// `journalctl --user` command can talk to it.
 func SuUserManager(user, cmd string) []string {
-	return []string{"su", "-", user, "-c", XDGRuntimeDirExport + cmd}
+	return []string{"su", "-", user, "-c", UserManagerPrefix + cmd}
 }
 
 // Exec runs a command inside the container and returns its combined output.

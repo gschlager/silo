@@ -174,7 +174,7 @@ With a daemon name, tails logs for that specific daemon.`,
 			// journalctl --user needs XDG_RUNTIME_DIR to reach the user manager;
 			// the login shell doesn't set it inside the container.
 			return incus.ExecInteractive(ctx, server, cfg.ContainerName, opts,
-				cfg.LoginCmd(incus.XDGRuntimeDirExport+journalCmd))
+				cfg.LoginCmd(incus.UserManagerPrefix+journalCmd))
 		},
 	}
 }
