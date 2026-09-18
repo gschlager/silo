@@ -191,7 +191,21 @@ All fields are optional. Setup commands run as the `dev` user with a login shell
 
 ### Local overrides
 
-Create a `.silo.local.yml` alongside `.silo.yml` to override settings per machine without modifying the shared config. Non-zero values in the local file replace the base values. Add `.silo.local.yml` to your project's `.gitignore`.
+Create a `.silo.local.yml` alongside `.silo.yml` to adjust settings per machine without modifying the shared config. Add `.silo.local.yml` to your project's `.gitignore`.
+
+The local file extends the keyed blocks rather than replacing them, so it only needs to list what it adds or changes:
+
+- `use`, `daemons`, `env`, `agents`, `tools`: local entries are added to the shared ones. An entry with the same name replaces the shared entry (a `use:` preset keeps its position but takes the local parameters).
+- `ports`: local forwards are appended. A local entry for a container port already forwarded in `.silo.yml` replaces that entry, so you can change the host port per machine.
+- `image`, `setup`, `sync`, `reset`, `update`, `git`, `nesting`: set in the local file, they replace the shared value entirely.
+
+```yaml
+# .silo.local.yml — add a preset and a daemon, keep everything from .silo.yml
+use:
+  valkey:
+daemons:
+  mailhog: mailhog
+```
 
 The project directory is writable from its container, so `.silo.local.yml` is not a trusted host-policy file: it cannot declare `mounts` either. Put host mounts in the global config. For secrets, prefer the central [Secrets](#secrets) file — it keeps every project's PAT outside the project.
 

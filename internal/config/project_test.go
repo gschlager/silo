@@ -112,10 +112,156 @@ env:
 	if len(cfg.Ports) != 1 || cfg.Ports[0].Spec != "8080:80" {
 		t.Errorf("Ports = %v, want [8080:80]", cfg.Ports)
 	}
-	// Env should be replaced by local.
+	// Env should be extended by local, local winning on a collision.
 	if cfg.Env["FOO"] != "override" {
 		t.Errorf("Env[FOO] = %q, want %q", cfg.Env["FOO"], "override")
 	}
+}
+
+func TestLoadProjectConfig_LocalExtendsKeyedBlocks(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, dir, ".silo.yml", `image: fedora/43
+use:
+  ruby:
+    version: "3.3"
+  node:
+setup:
+  - bundle install
+ports:
+  - "8080:80"
+  - name: web
+    port: 9292:9292
+env:
+  FOO: bar
+  KEEP: base
+agents:
+  claude:
+    mode: console
+tools:
+  gh:
+    credential: {}
+daemons:
+  redis: redis-server
+  pg:
+    cmd: postgres
+    ports:
+      - 5432
+`)
+	writeYAML(t, dir, ".silo.local.yml", `use:
+  ruby:
+    version: "3.4"
+  valkey:
+setup:
+  - echo local
+ports:
+  - "9292:19292"
+  - "3000"
+env:
+  FOO: override
+  EXTRA: local
+agents:
+  codex:
+    mode: console
+tools:
+  npm:
+    credential: {}
+daemons:
+  pg: pg_ctl start
+  mailhog: mailhog
+`)
+
+	cfg, err := LoadProjectConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// use: base order kept, ruby params replaced, valkey appended.
+	if len(cfg.Use) != 3 || cfg.Use[0].Name != "ruby" || cfg.Use[1].Name != "node" || cfg.Use[2].Name != "valkey" {
+		t.Fatalf("Use names = %v", useNames(cfg.Use))
+	}
+	var rubyParams struct {
+		Version string `yaml:"version"`
+	}
+	if err := cfg.Use[0].Params.Decode(&rubyParams); err != nil {
+		t.Fatal(err)
+	}
+	if rubyParams.Version != "3.4" {
+		t.Errorf("ruby version = %q, want %q", rubyParams.Version, "3.4")
+	}
+
+	// Command lists still replace.
+	if len(cfg.Setup) != 1 || cfg.Setup[0] != "echo local" {
+		t.Errorf("Setup = %v, want [echo local]", cfg.Setup)
+	}
+
+	// ports: 8080 kept, 9292 replaced in place (name dropped since local has none), 3000 appended.
+	if len(cfg.Ports) != 3 {
+		t.Fatalf("Ports = %v, want 3 entries", cfg.Ports)
+	}
+	if cfg.Ports[0].Spec != "8080:80" || cfg.Ports[1].Spec != "9292:19292" || cfg.Ports[1].Name != "" || cfg.Ports[2].Spec != "3000" {
+		t.Errorf("Ports = %v", cfg.Ports)
+	}
+
+	// env: extended, local wins.
+	if cfg.Env["FOO"] != "override" || cfg.Env["KEEP"] != "base" || cfg.Env["EXTRA"] != "local" {
+		t.Errorf("Env = %v", cfg.Env)
+	}
+
+	// agents/tools: extended.
+	if _, ok := cfg.Agents["claude"]; !ok {
+		t.Error("Agents lost claude from base")
+	}
+	if _, ok := cfg.Agents["codex"]; !ok {
+		t.Error("Agents missing codex from local")
+	}
+	if _, ok := cfg.Tools["gh"]; !ok {
+		t.Error("Tools lost gh from base")
+	}
+	if _, ok := cfg.Tools["npm"]; !ok {
+		t.Error("Tools missing npm from local")
+	}
+
+	// daemons: redis kept, pg replaced by local, mailhog added.
+	if len(cfg.Daemons) != 3 {
+		t.Fatalf("Daemons = %v, want 3 entries", cfg.Daemons)
+	}
+	if cfg.Daemons["redis"].Cmd != "redis-server" {
+		t.Errorf("Daemons[redis] = %v", cfg.Daemons["redis"])
+	}
+	if pg := cfg.Daemons["pg"]; pg.Cmd != "pg_ctl start" || len(pg.Ports) != 0 {
+		t.Errorf("Daemons[pg] = %v, want local replacement", pg)
+	}
+	if cfg.Daemons["mailhog"].Cmd != "mailhog" {
+		t.Errorf("Daemons[mailhog] = %v", cfg.Daemons["mailhog"])
+	}
+}
+
+func TestLoadProjectConfig_LocalDoesNotTouchBaseFile(t *testing.T) {
+	// Merging must not mutate the base config's maps/slices in place.
+	base := &ProjectConfig{
+		Env:     map[string]string{"A": "1"},
+		Daemons: map[string]DaemonConfig{"x": {Cmd: "x"}},
+		Use:     UseList{{Name: "ruby"}},
+		Ports:   []PortForward{{Spec: "80"}},
+	}
+	local := &ProjectConfig{
+		Env:     map[string]string{"B": "2"},
+		Daemons: map[string]DaemonConfig{"y": {Cmd: "y"}},
+		Use:     UseList{{Name: "node"}},
+		Ports:   []PortForward{{Spec: "81"}},
+	}
+	mergeProjectConfigs(base, local)
+	if len(base.Env) != 1 || len(base.Daemons) != 1 || len(base.Use) != 1 || len(base.Ports) != 1 {
+		t.Errorf("base mutated: %+v", base)
+	}
+}
+
+func useNames(u UseList) []string {
+	names := make([]string, len(u))
+	for i, p := range u {
+		names[i] = p.Name
+	}
+	return names
 }
 
 func TestLoadProjectConfig_LocalOnly(t *testing.T) {

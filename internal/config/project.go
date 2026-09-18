@@ -289,17 +289,19 @@ func loadProjectFile(dir string, names ...string) *projectFileResult {
 	return nil
 }
 
-// mergeProjectConfigs overlays local on top of base. Non-zero local values
-// replace base values; maps and slices from local replace (not append) base.
+// mergeProjectConfigs overlays local on top of base. Scalars and the command
+// lists (setup, sync, reset, update) are replaced when local sets them. The
+// keyed blocks (use, daemons, env, agents, tools, ports) are extended instead:
+// local entries are added to the base ones, and a local entry with the same
+// name (or, for ports, the same container port) replaces the base entry. So a
+// .silo.local.yml only needs to list what it adds or changes.
 func mergeProjectConfigs(base, local *ProjectConfig) *ProjectConfig {
 	m := *base
 
 	if local.Image != "" {
 		m.Image = local.Image
 	}
-	if local.Use != nil {
-		m.Use = local.Use
-	}
+	m.Use = mergeUseLists(base.Use, local.Use)
 	if local.Setup != nil {
 		m.Setup = local.Setup
 	}
@@ -312,30 +314,88 @@ func mergeProjectConfigs(base, local *ProjectConfig) *ProjectConfig {
 	if local.Update != nil {
 		m.Update = local.Update
 	}
-	if local.Ports != nil {
-		m.Ports = local.Ports
-	}
-	if local.Env != nil {
-		m.Env = local.Env
-	}
+	m.Ports = mergePortLists(base.Ports, local.Ports)
+	m.Env = mergeMaps(base.Env, local.Env)
 	if local.Git.Settings != nil || local.Git.Credential != nil {
 		m.Git = local.Git
 	}
-	if local.Agents != nil {
-		m.Agents = local.Agents
-	}
+	m.Agents = mergeMaps(base.Agents, local.Agents)
 	if local.Mounts != nil {
 		m.Mounts = local.Mounts
 	}
-	if local.Tools != nil {
-		m.Tools = local.Tools
-	}
-	if local.Daemons != nil {
-		m.Daemons = local.Daemons
-	}
+	m.Tools = mergeMaps(base.Tools, local.Tools)
+	m.Daemons = mergeMaps(base.Daemons, local.Daemons)
 	if local.Nesting {
 		m.Nesting = local.Nesting
 	}
 
 	return &m
+}
+
+// mergeMaps returns base extended by local, with local winning on a key
+// collision. Neither input is modified. A nil result means both were nil.
+func mergeMaps[V any](base, local map[string]V) map[string]V {
+	if base == nil && local == nil {
+		return nil
+	}
+	m := make(map[string]V, len(base)+len(local))
+	for k, v := range base {
+		m[k] = v
+	}
+	for k, v := range local {
+		m[k] = v
+	}
+	return m
+}
+
+// mergeUseLists appends the local presets to the base ones, keeping base order.
+// A preset named in both keeps its base position but takes the local params.
+func mergeUseLists(base, local UseList) UseList {
+	if base == nil && local == nil {
+		return nil
+	}
+	m := make(UseList, 0, len(base)+len(local))
+	m = append(m, base...)
+	for _, u := range local {
+		replaced := false
+		for i := range m {
+			if m[i].Name == u.Name {
+				m[i] = u
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			m = append(m, u)
+		}
+	}
+	return m
+}
+
+// mergePortLists appends the local port forwards to the base ones. A local
+// entry for a container port already forwarded by base replaces that base
+// entry, so the host side can be changed per machine without binding the
+// container port twice.
+func mergePortLists(base, local []PortForward) []PortForward {
+	if base == nil && local == nil {
+		return nil
+	}
+	m := make([]PortForward, 0, len(base)+len(local))
+	m = append(m, base...)
+	for _, pf := range local {
+		replaced := false
+		if cp, ok := containerPort(pf.Spec); ok {
+			for i := range m {
+				if bp, ok := containerPort(m[i].Spec); ok && bp == cp {
+					m[i] = pf
+					replaced = true
+					break
+				}
+			}
+		}
+		if !replaced {
+			m = append(m, pf)
+		}
+	}
+	return m
 }
