@@ -55,10 +55,9 @@ func (rubyPreset) SetupCommands(params yaml.Node, _ string) ([]string, error) {
 	var cmds []string
 
 	if len(mri) > 0 {
-		cmds = append(cmds,
-			`command -v rv >/dev/null 2>&1 || curl -LsSf https://rv.dev/install | sh`,
-			`. "$HOME/.cargo/env"`,
-		)
+		// rv's installer puts the binary in ~/.local/bin, which the activation
+		// file already has on PATH, so nothing extra is needed to call it.
+		cmds = append(cmds, `command -v rv >/dev/null 2>&1 || curl -LsSf https://rv.dev/install | sh`)
 		for _, v := range mri {
 			cmds = append(cmds, "rv ruby install "+v)
 		}
@@ -72,7 +71,6 @@ func (rubyPreset) SetupCommands(params yaml.Node, _ string) ([]string, error) {
 		// under `set -u` shells too.
 		rvInit := `if [ -n "${ZSH_VERSION-}" ]; then eval "$(rv shell init zsh)"; else eval "$(rv shell init bash)"; fi`
 		cmds = append(cmds,
-			activationGuard(`. "$HOME/.cargo/env"`, "cargo/env"),
 			activationGuard(rvInit, "rv shell init"),
 			// Activate rv for the rest of this setup session so later commands
 			// (bundle install, etc.) see the pinned ruby without needing `rv run`.
