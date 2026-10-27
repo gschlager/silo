@@ -7,7 +7,7 @@ License:        MIT
 URL:            https://github.com/gschlager/silo
 Source0:        https://github.com/gschlager/%{name}/archive/v%{version}.tar.gz
 
-BuildRequires:  golang >= 1.26
+BuildRequires:  golang >= 1.27
 
 %description
 Silo creates and manages secure, isolated local development environments

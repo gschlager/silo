@@ -1,6 +1,6 @@
 module github.com/gschlager/silo
 
-go 1.26.7
+go 1.27.0
 
 require (
 	github.com/alecthomas/chroma/v2 v2.27.0
