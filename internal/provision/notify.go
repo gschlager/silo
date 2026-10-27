@@ -9,9 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	incuscli "github.com/lxc/incus/v7/client"
 )
 
 const (

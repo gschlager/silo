@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/incus"
+	incuscli "github.com/lxc/incus/v7/client"
 )
 
 // EnsureShell makes sure the configured login shell exists inside the container

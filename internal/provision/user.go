@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/gschlager/silo/internal/incus"
+	incuscli "github.com/lxc/incus/v7/client"
 )
 
 // CreateUser creates the dev user inside the container with the given shell.

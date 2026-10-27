@@ -7,10 +7,10 @@ import (
 	"sort"
 	"strings"
 
-	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	incuscli "github.com/lxc/incus/v7/client"
 )
 
 // ReconcileDaemons makes the container's installed systemd user units match the

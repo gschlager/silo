@@ -13,12 +13,12 @@ import (
 )
 
 var (
-	arrow   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))  // green
-	warn    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))             // yellow
-	err_    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("1"))  // red
+	arrow   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2")) // green
+	warn    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))            // yellow
+	err_    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("1")) // red
 	dimmed  = lipgloss.NewStyle().Faint(true)
-	success = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))  // green
-	info_   = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))             // cyan
+	success = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2")) // green
+	info_   = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))            // cyan
 )
 
 var (

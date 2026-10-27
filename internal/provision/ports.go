@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	incuscli "github.com/lxc/incus/v7/client"
 )
 
 // ReconcilePorts makes the container's proxy devices match the configured port

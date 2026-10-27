@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	incuscli "github.com/lxc/incus/v7/client"
 )
 
 // ApplyGitignore writes the host-side global gitignore into the container as

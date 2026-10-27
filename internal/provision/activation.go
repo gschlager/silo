@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/gschlager/silo/internal/incus"
+	incuscli "github.com/lxc/incus/v7/client"
 )
 
 // systemActivationFile bootstraps the per-user activation file for bash login

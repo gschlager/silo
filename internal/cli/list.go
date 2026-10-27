@@ -2,9 +2,9 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"text/tabwriter"
-	"os"
 
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/spf13/cobra"

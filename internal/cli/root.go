@@ -11,9 +11,9 @@ var Version = "dev"
 
 func NewRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:   "silo",
-		Short: "Secure isolated local environments for AI agents",
-		Long: "\033[1;32msilo\033[0m " + Version + ` — Secure isolated local environments for AI agents.`,
+		Use:           "silo",
+		Short:         "Secure isolated local environments for AI agents",
+		Long:          "\033[1;32msilo\033[0m " + Version + ` — Secure isolated local environments for AI agents.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {

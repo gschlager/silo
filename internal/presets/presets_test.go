@@ -109,10 +109,10 @@ use:
     versions: [3.4, jruby]
 `)
 	for _, want := range []string{
-		"rv ruby install 3.4",     // MRI via rv
-		"ruby-install jruby",      // jruby via ruby-install
-		"java-latest-openjdk",     // JDK for jruby
-		"rv ruby pin 3.4",         // pin the only MRI version
+		"rv ruby install 3.4", // MRI via rv
+		"ruby-install jruby",  // jruby via ruby-install
+		"java-latest-openjdk", // JDK for jruby
+		"rv ruby pin 3.4",     // pin the only MRI version
 	} {
 		if !contains(cmds, want) {
 			t.Errorf("expected a command containing %q, got:\n%s", want, strings.Join(cmds, "\n"))
