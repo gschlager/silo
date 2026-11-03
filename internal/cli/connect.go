@@ -18,8 +18,8 @@ func newConnectCmd() *cobra.Command {
 		Use:   "connect <project-dir> <shell-line>",
 		Short: "Run a shell line in the container over plain stdio (used by herdr)",
 		Long: `Run a shell line in the project's container over plain stdio.
-This is the connection command silo herdr registers with herdr-core. It starts
-the container if needed and runs the line in a login shell as the agent user,
+This is the connection command silo up registers with herdr-core. It runs the
+line in a login shell as the agent user if the container is running,
 with the project's secrets and the agent mode env, but without a TTY: stdin and
 stdout carry herdr-core's byte protocol, so nothing else may be written to
 stdout.`,
@@ -44,7 +44,10 @@ stdout.`,
 				return err
 			}
 
-			if err := ensureRunning(ctx, server, cfg.ContainerName); err != nil {
+			// Never start the container here: herdr-core reconnects to every
+			// machine it knows, so that would boot all containers and undo
+			// silo down. A stopped one stays unreachable until silo up.
+			if err := requireRunning(server, cfg.ContainerName); err != nil {
 				return err
 			}
 
