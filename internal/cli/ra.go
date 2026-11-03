@@ -68,6 +68,7 @@ Examples:
 			if err := ensureRunning(ctx, server, cfg.ContainerName); err != nil {
 				return err
 			}
+			writeAgentFunctions(ctx, server, cfg)
 
 			// Start the notification bridge for this session.
 			if cfg.Notifications {

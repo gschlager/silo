@@ -141,3 +141,11 @@ func ensureRunning(ctx context.Context, server incuscli.InstanceServer, name str
 	}
 	return nil
 }
+
+// writeAgentFunctions refreshes the agents' shell functions in the container
+// (see provision.WriteAgentFunctions), so cmd: edits apply without a recreate.
+func writeAgentFunctions(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig) {
+	if err := provision.WriteAgentFunctions(ctx, server, cfg.ContainerName, cfg.User, cfg.Agents); err != nil {
+		color.Warn("could not write agent functions: %v", err)
+	}
+}

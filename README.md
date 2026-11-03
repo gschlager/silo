@@ -414,7 +414,7 @@ Edit the one file and the change applies to every container on its next `silo up
 
 Each agent has:
 
-- **`cmd`** — How to launch the agent (default: agent name)
+- **`cmd`** — How to launch the agent (default: agent name). silo also defines a shell function with the agent's name in the container, so starting the agent by name anywhere there (a shell, [herdr](#herdr)) runs this command
 - **`deps`** — System dependencies installed as root before the agent
 - **`install`** — Install command run as the dev user
 - **`mode`** — Default authentication mode (e.g. `oauth`, `console`, `bedrock`)

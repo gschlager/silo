@@ -28,17 +28,19 @@ Subsequent: start the stopped container (~1 second).`,
 				return err
 			}
 
-			// Once the container runs, make sure herdr knows it (if installed).
-			defer func() {
-				if err == nil {
-					ensureHerdrMachine(cfg)
-				}
-			}()
-
 			server, err := incus.Connect()
 			if err != nil {
 				return err
 			}
+
+			// Once the container runs, refresh the agent functions and make sure
+			// herdr knows it (if installed).
+			defer func() {
+				if err == nil {
+					writeAgentFunctions(ctx, server, cfg)
+					ensureHerdrMachine(cfg)
+				}
+			}()
 
 			name := cfg.ContainerName
 

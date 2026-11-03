@@ -50,6 +50,7 @@ stdout.`,
 			if err := requireRunning(server, cfg.ContainerName); err != nil {
 				return err
 			}
+			writeAgentFunctions(ctx, server, cfg)
 
 			// Credentials only: pass_env is about the host terminal, and the
 			// terminals here belong to herdr, not to whoever started its core.
