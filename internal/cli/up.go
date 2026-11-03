@@ -20,13 +20,20 @@ func newUpCmd() *cobra.Command {
 First run: create container, provision, run setup.
 Subsequent: start the stopped container (~1 second).`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			ctx := cmd.Context()
 
 			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
+
+			// Once the container runs, make sure herdr knows it (if installed).
+			defer func() {
+				if err == nil {
+					ensureHerdrMachine(cfg)
+				}
+			}()
 
 			server, err := incus.Connect()
 			if err != nil {

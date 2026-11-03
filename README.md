@@ -489,7 +489,6 @@ The env reaches the agent through `silo ra`. Run `silo down && silo up` after sw
 | `silo ra --resume`             | Default agent with flags                                 |
 | `silo mode`                    | Show current mode for all agents                         |
 | `silo mode claude bedrock`     | Switch agent to a different mode                         |
-| `silo herdr`                   | Add the container to [herdr](#herdr) as a machine        |
 
 ### Development workflow
 
@@ -624,13 +623,10 @@ Each mode directory is mounted into the container at `/var/lib/silo/<agent>/`, a
 
 ## herdr
 
-[herdr](https://herdr.dev) shows agents from several machines in one app. Run
-`silo herdr` in a project to add its container as a herdr machine:
-
-```bash
-silo herdr
-hc run --on silo-myapp --cwd /workspace/myapp claude
-```
+[herdr](https://herdr.dev) shows agents from several machines in one app. When
+herdr's `hc` is installed, `silo up` adds the container as a herdr machine named
+like the container (`silo-myapp`) and opens a shell in a space for the project,
+so it shows up in the sidebar. Start agents from that space.
 
 herdr-core reaches the container through `silo connect` instead of SSH, so the
 container needs no sshd. When adding, hc copies its own herdr-core to
@@ -639,7 +635,12 @@ terminals. The core runs in a login shell as the agent user, with the
 project's secrets and every enabled agent's mode env, just like a `silo ra`
 session. `pass_env` is not used, because the terminals belong to herdr. The
 core is long-running, so after changing secrets or `silo mode`, restart it with
-`hc machine update silo-myapp`. `silo rm` removes the machine from herdr again.
+`hc machine update silo-myapp`.
+
+`silo connect` never starts a stopped container. herdr-core reconnects to every
+machine it knows, so that would boot all containers whenever herdr starts. A
+stopped container shows as unreachable in herdr until the next `silo up`.
+`silo rm` removes the machine from herdr again.
 
 The host's core dials into the container, never the other way round. herdr-core
 only lets the container answer host terminals that started work in it, so an
