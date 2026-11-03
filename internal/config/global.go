@@ -24,13 +24,16 @@ func MarshalYAML(v any) ([]byte, error) {
 
 // GlobalConfig represents ~/.config/silo/config.yml.
 type GlobalConfig struct {
-	DefaultImage  string              `yaml:"default_image"`
-	DefaultSetup  []string            `yaml:"default_setup"`
-	DefaultAgent  string              `yaml:"default_agent,omitempty"`
-	PassEnv       []string            `yaml:"pass_env,omitempty"`
-	Shell         string              `yaml:"shell"`
-	User          string              `yaml:"user"`
-	Notifications bool                `yaml:"notifications,omitempty"`
+	DefaultImage  string   `yaml:"default_image"`
+	DefaultSetup  []string `yaml:"default_setup"`
+	DefaultAgent  string   `yaml:"default_agent,omitempty"`
+	PassEnv       []string `yaml:"pass_env,omitempty"`
+	Shell         string   `yaml:"shell"`
+	User          string   `yaml:"user"`
+	Notifications bool     `yaml:"notifications,omitempty"`
+	// Herdr adds containers to herdr (https://herdr.dev) when its hc is
+	// installed. On by default; `herdr: false` turns the integration off.
+	Herdr         *bool               `yaml:"herdr,omitempty"`
 	Mounts        []string            `yaml:"mounts,omitempty"`
 	ProjectMounts map[string][]string `yaml:"project_mounts,omitempty"`
 	Git           map[string]string   `yaml:"git,omitempty"`
@@ -162,6 +165,9 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 	}
 	if userCfg.Notifications {
 		cfg.Notifications = true
+	}
+	if userCfg.Herdr != nil {
+		cfg.Herdr = userCfg.Herdr
 	}
 	if len(userCfg.Mounts) > 0 {
 		cfg.Mounts = userCfg.Mounts

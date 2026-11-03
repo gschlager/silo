@@ -55,3 +55,17 @@ func TestHerdrLaunch(t *testing.T) {
 		t.Fatalf("without hc: err=%v out=%s", err, out)
 	}
 }
+
+func TestIsHerdrVersion(t *testing.T) {
+	for out, want := range map[string]bool{
+		"hc 0.1.17\n":         true,
+		"hc 1.0":              true,
+		"":                    false,
+		"hc version unknown":  false,
+		"HashiCorp hc v2.0.1": false,
+	} {
+		if got := isHerdrVersion(out); got != want {
+			t.Errorf("isHerdrVersion(%q) = %v, want %v", out, got, want)
+		}
+	}
+}

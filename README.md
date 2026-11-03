@@ -242,6 +242,9 @@ pass_env: [TERM, COLORTERM, LANG, LC_ALL]
 # Desktop notifications when an agent finishes or needs input (default: off)
 notifications: true
 
+# Add containers to herdr when its hc is installed (default: on, see "herdr")
+herdr: false
+
 # Host bind mounts (host:container[:ro]). Mounts are host-owned security policy,
 # so they are accepted only here, never from a repository's .silo*.yml files.
 mounts:
@@ -623,10 +626,12 @@ Each mode directory is mounted into the container at `/var/lib/silo/<agent>/`, a
 
 ## herdr
 
-[herdr](https://herdr.dev) shows agents from several machines in one app. When
-herdr's `hc` is installed, `silo up` adds the container as a herdr machine named
-like the container (`silo-myapp`) and opens a shell in a space for the project,
-so it shows up in the sidebar. Start agents from that space.
+[herdr](https://herdr.dev) shows agents from several machines in one app. silo
+detects herdr on its own: when herdr's `hc` is on the host's `PATH`, `silo up`
+adds the container as a herdr machine named like the container (`silo-myapp`)
+and opens a shell in a space for the project, so it shows up in the sidebar.
+Start agents from that space. Without herdr on the host, silo doesn't touch
+herdr at all and `silo ra` runs the agent directly.
 
 `silo ra` runs the agent as a terminal of that herdr-core too, in a new tab of
 the project's space, and attaches to it. So agents you start from the CLI show
@@ -653,6 +658,10 @@ The host's core dials into the container, never the other way round. herdr-core
 only lets the container answer host terminals that started work in it, so an
 agent in the container cannot run anything on the host through herdr. Agents
 started from herdr don't get `silo ra`'s pre-session snapshot.
+
+To turn the integration off even with herdr installed, set `herdr: false` in
+`~/.config/silo/config.yml`. silo then leaves herdr alone on `silo up` and
+`silo ra`; drop a machine it added before with `hc machine rm silo-myapp`.
 
 ## Security model
 

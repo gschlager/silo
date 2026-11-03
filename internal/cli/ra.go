@@ -138,8 +138,13 @@ Examples:
 			if len(extraArgs) > 0 {
 				agentCmd += " " + shellQuote(extraArgs)
 			}
-			shellCmd := herdrLaunch(cfg, agentName, agentCmd) +
-				"cd " + cfg.WorkspacePath() + " && " + agentCmd
+			shellCmd := "cd " + cfg.WorkspacePath() + " && " + agentCmd
+			// Only when the host has herdr, which added the container as a
+			// machine on silo up: an hc left in the container alone would start
+			// a core nobody watches.
+			if _, ok := herdrHC(cfg); ok {
+				shellCmd = herdrLaunch(cfg, agentName, agentCmd) + shellCmd
+			}
 
 			opts := incus.UserOpts(cfg.UserHome(), cfg.WorkspacePath())
 			opts.Env = env

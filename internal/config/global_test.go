@@ -52,3 +52,28 @@ func TestLoadGlobalConfig_ParsesModes(t *testing.T) {
 		t.Error("adding modes wiped the agent's default install command")
 	}
 }
+
+// The herdr integration is on unless the user turns it off with herdr: false.
+func TestLoadGlobalConfig_Herdr(t *testing.T) {
+	for yaml, want := range map[string]bool{
+		"":               true,
+		"herdr: true\n":  true,
+		"herdr: false\n": false,
+	} {
+		dir := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", dir)
+		if err := os.MkdirAll(filepath.Join(dir, "silo"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "silo", "config.yml"), []byte(yaml), 0600); err != nil {
+			t.Fatal(err)
+		}
+		global, err := LoadGlobalConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := Merge(global, nil, "/home/me/myapp").Herdr; got != want {
+			t.Errorf("config %q: Herdr = %v, want %v", yaml, got, want)
+		}
+	}
+}

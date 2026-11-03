@@ -19,15 +19,44 @@ type herdrTarget struct {
 	Target string `json:"target"`
 }
 
-// ensureHerdrMachine adds the container to herdr (https://herdr.dev) as a
-// machine when herdr is installed, so its agents show up in the app. herdr-core
-// reaches it through `silo connect` instead of SSH and copies its own hc there.
-// A newly added machine also gets a shell labeled with the project's space, so
-// the space shows up in the sidebar before any agent runs. Errors are only
-// warnings: herdr is optional.
-func ensureHerdrMachine(cfg *config.MergedConfig) {
+// herdrHC returns the path of herdr's hc when the herdr integration is on and
+// hc is installed on the host. "hc" is a short name, so it only counts if
+// `hc --version` answers like herdr-core does ("hc 0.1.17").
+func herdrHC(cfg *config.MergedConfig) (string, bool) {
+	if !cfg.Herdr {
+		return "", false
+	}
+	return findHerdrHC()
+}
+
+func findHerdrHC() (string, bool) {
 	hc, err := exec.LookPath("hc")
 	if err != nil {
+		return "", false
+	}
+	out, err := exec.Command(hc, "--version").Output()
+	if err != nil || !isHerdrVersion(string(out)) {
+		color.Debug("%s is not herdr's hc: %v %q", hc, err, out)
+		return "", false
+	}
+	return hc, true
+}
+
+// isHerdrVersion reports whether out is herdr-core's version line.
+func isHerdrVersion(out string) bool {
+	v, ok := strings.CutPrefix(strings.TrimSpace(out), "hc ")
+	return ok && v != "" && v[0] >= '0' && v[0] <= '9'
+}
+
+// ensureHerdrMachine adds the container to herdr (https://herdr.dev) as a
+// machine when the integration is on and herdr is installed, so its agents
+// show up in the app. herdr-core reaches it through `silo connect` instead of
+// SSH and copies its own hc there. A newly added machine also gets a shell
+// labeled with the project's space, so the space shows up in the sidebar
+// before any agent runs. Errors are only warnings: herdr is optional.
+func ensureHerdrMachine(cfg *config.MergedConfig) {
+	hc, ok := herdrHC(cfg)
+	if !ok {
 		return
 	}
 	if err := addHerdrMachine(hc, cfg); err != nil {
@@ -101,10 +130,12 @@ func herdrSpace(cfg *config.MergedConfig) string {
 }
 
 // removeHerdrMachine forgets the container's herdr machine, if herdr is
-// installed and knows it. Errors are only logged: most projects never use it.
+// installed and knows it. It ignores the herdr setting, so a machine added
+// before the integration was turned off goes away too. Errors are only logged:
+// most projects never use it.
 func removeHerdrMachine(name string) {
-	hc, err := exec.LookPath("hc")
-	if err != nil {
+	hc, ok := findHerdrHC()
+	if !ok {
 		return
 	}
 	if out, err := exec.Command(hc, "machine", "rm", name).CombinedOutput(); err != nil {

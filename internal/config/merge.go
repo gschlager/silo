@@ -62,6 +62,7 @@ type MergedConfig struct {
 	DefaultAgent  string
 	PassEnv       []string
 	Notifications bool
+	Herdr         bool // herdr integration enabled (it still needs hc installed)
 }
 
 // MergedAgentConfig combines global and project agent settings.
@@ -202,6 +203,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		DefaultAgent:   global.DefaultAgent,
 		PassEnv:        global.PassEnv,
 		Notifications:  global.Notifications,
+		Herdr:          global.Herdr == nil || *global.Herdr,
 		Presets:        global.Presets,
 	}
 
