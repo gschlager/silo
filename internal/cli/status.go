@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -19,7 +20,8 @@ var (
 )
 
 func newStatusCmd() *cobra.Command {
-	return &cobra.Command{
+	var asJSON bool
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show container state, config, and running daemons",
 		Args:  cobra.NoArgs,
@@ -39,6 +41,15 @@ func newStatusCmd() *cobra.Command {
 			name := cfg.ContainerName
 			exists := incus.Exists(server, name)
 			running := exists && incus.IsRunning(server, name)
+
+			var states map[string]string
+			if running {
+				states = daemonStates(ctx, server, cfg, sortedDaemonNames(cfg))
+			}
+
+			if asJSON {
+				return writeStatusJSON(os.Stdout, cfg, exists, running, states)
+			}
 
 			// Container info — always shown.
 			containerStatus := statusDim.Render("not created")
@@ -91,9 +102,16 @@ func newStatusCmd() *cobra.Command {
 			if len(cfg.Ports) > 0 {
 				fmt.Printf("\n%s\n", statusSection.Render("Ports"))
 				for _, p := range cfg.Ports {
+					label := p.Name
+					if p.Daemon != "" && p.Daemon != p.Name {
+						if label != "" {
+							label += ", "
+						}
+						label += "daemon " + p.Daemon
+					}
 					suffix := ""
-					if p.Name != "" {
-						suffix = "  (" + p.Name + ")"
+					if label != "" {
+						suffix = "  (" + label + ")"
 					}
 					parts := strings.SplitN(p.Spec, ":", 2)
 					if len(parts) == 2 {
@@ -127,19 +145,15 @@ func newStatusCmd() *cobra.Command {
 			// Daemons — from config, with live status when running.
 			if len(cfg.Daemons) > 0 {
 				fmt.Printf("\n%s\n", statusSection.Render("Daemons"))
-				for daemon, dcfg := range cfg.Daemons {
+				for _, daemon := range sortedDaemonNames(cfg) {
+					dcfg := cfg.Daemons[daemon]
 					state := statusDim.Render("stopped")
 					if running {
-						out, err := incus.Exec(ctx, server, name, incus.ExecOpts{},
-							incus.SuUserManager(cfg.User,
-								fmt.Sprintf("systemctl --user is-active silo-%s 2>/dev/null || true", daemon)))
-						if err == nil {
-							switch strings.TrimSpace(out) {
-							case "active":
-								state = statusGreen.Render("running")
-							case "failed":
-								state = statusRed.Render("failed")
-							}
+						switch states[daemon] {
+						case "running":
+							state = statusGreen.Render("running")
+						case "failed":
+							state = statusRed.Render("failed")
 						}
 					} else if exists {
 						state = statusDim.Render("container stopped")
@@ -171,6 +185,8 @@ func newStatusCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print container, daemon and port state as JSON")
+	return cmd
 }
 
 func sortedKeys(m map[string]string) []string {

@@ -122,13 +122,16 @@ update:
 # Port forwards (container_port:host_port, or just port for same on both sides)
 # Ports can also be defined on daemons (see below). A port declared both here
 # and on a daemon is forwarded once; the entry in this section wins, so it
-# controls the host-side mapping.
+# controls the host-side mapping. It's still listed under that daemon in
+# `silo status`.
 ports:
   - 5432:15432   # PostgreSQL
   # Forwards can be named — the name shows up in `silo status` and is used for
-  # the Incus device name (handy when a forward fails to start):
+  # the Incus device name (handy when a forward fails to start). `http: true`
+  # marks a web server, so `silo status --json` reports a URL for it:
   - name: web
     port: 9292:9292
+    http: true
 
 # Environment variables
 env:
@@ -481,6 +484,7 @@ The env reaches the agent through `silo ra`. Run `silo down && silo up` after sw
 | `silo cp <src> <dst>`          | Copy files between host and container (`:` prefix)       |
 | `silo list`                    | List all silo containers                                 |
 | `silo status`                  | Show container state, config, and daemons                |
+| `silo status --json`           | Container, daemon and port state as JSON (for scripts)   |
 
 ### Agents
 

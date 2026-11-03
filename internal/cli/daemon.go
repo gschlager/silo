@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/gschlager/silo/internal/color"
@@ -46,11 +45,7 @@ func newDaemonListCmd() *cobra.Command {
 				return nil
 			}
 
-			names := make([]string, 0, len(cfg.Daemons))
-			for name := range cfg.Daemons {
-				names = append(names, name)
-			}
-			sort.Strings(names)
+			names := sortedDaemonNames(cfg)
 
 			server, err := incus.Connect()
 			if err != nil {
@@ -58,22 +53,16 @@ func newDaemonListCmd() *cobra.Command {
 			}
 			running := incus.Exists(server, cfg.ContainerName) &&
 				incus.IsRunning(server, cfg.ContainerName)
+			var states map[string]string
+			if running {
+				states = daemonStates(ctx, server, cfg, names)
+			}
 
 			for _, name := range names {
 				dcfg := cfg.Daemons[name]
 				state := "stopped"
-				if running {
-					out, err := incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{},
-						incus.SuUserManager(cfg.User,
-							fmt.Sprintf("systemctl --user is-active silo-%s 2>/dev/null || true", name)))
-					if err == nil {
-						switch strings.TrimSpace(out) {
-						case "active":
-							state = "running"
-						case "failed":
-							state = "failed"
-						}
-					}
+				if s, ok := states[name]; ok {
+					state = s
 				}
 				extra := ""
 				if !dcfg.Autostart {
