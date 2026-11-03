@@ -489,6 +489,7 @@ The env reaches the agent through `silo ra`. Run `silo down && silo up` after sw
 | `silo ra --resume`             | Default agent with flags                                 |
 | `silo mode`                    | Show current mode for all agents                         |
 | `silo mode claude bedrock`     | Switch agent to a different mode                         |
+| `silo herdr`                   | Add the container to [herdr](#herdr) as a machine        |
 
 ### Development workflow
 
@@ -620,6 +621,30 @@ project with the same basename receives a hash suffix. The registry stores the
 hash, not the host path.
 
 Each mode directory is mounted into the container at `/var/lib/silo/<agent>/`, and the paths listed under `links` are created as symlinks into that mount. Switching modes with `silo mode` swaps which mode directory is mounted — history, settings, and credentials from one mode never leak into another.
+
+## herdr
+
+[herdr](https://herdr.dev) shows agents from several machines in one app. Run
+`silo herdr` in a project to add its container as a herdr machine:
+
+```bash
+silo herdr
+hc run --on silo-myapp --cwd /workspace/myapp claude
+```
+
+herdr-core reaches the container through `silo connect` instead of SSH, so the
+container needs no sshd. When adding, hc copies its own herdr-core to
+`~/.local/bin` in the container and starts a core there, which owns the agent
+terminals. The core runs in a login shell as the agent user, with the
+project's secrets and every enabled agent's mode env, just like a `silo ra`
+session. `pass_env` is not used, because the terminals belong to herdr. The
+core is long-running, so after changing secrets or `silo mode`, restart it with
+`hc machine update silo-myapp`. `silo rm` removes the machine from herdr again.
+
+The host's core dials into the container, never the other way round. herdr-core
+only lets the container answer host terminals that started work in it, so an
+agent in the container cannot run anything on the host through herdr. Agents
+started from herdr don't get `silo ra`'s pre-session snapshot.
 
 ## Security model
 

@@ -69,6 +69,7 @@ func newRmCmd() *cobra.Command {
 			// Clean up per-container state. The mode selection is kept so a later
 			// `silo up` restores it, unless --purge asks for a full reset.
 			agents.CleanupContainerDirs(cfg.ContainerName, purge)
+			removeHerdrMachine(name)
 
 			fmt.Fprintln(os.Stderr, "Done.")
 			return nil
