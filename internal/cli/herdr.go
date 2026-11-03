@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
@@ -108,4 +110,36 @@ func removeHerdrMachine(name string) {
 	if out, err := exec.Command(hc, "machine", "rm", name).CombinedOutput(); err != nil {
 		color.Debug("hc machine rm %s: %v: %s", name, err, out)
 	}
+}
+
+// herdrLaunch returns a shell prefix that, when the container has herdr's hc,
+// starts the agent as a terminal of the container's herdr-core and attaches to
+// it, so a silo ra session shows up in herdr like one started there. The agent
+// then gets the core's env (see silo connect), not this session's, and keeps
+// running after ctrl+\ detaches. Without hc, or if starting it fails, the
+// shell falls through to running the agent directly.
+func herdrLaunch(cfg *config.MergedConfig, agentName, agentCmd string) string {
+	name := herdrTerminalName("ra-" + agentName + "-" + time.Now().Format("150405"))
+	run := shellQuote([]string{"hc", "run", "--bg", "--rm", "--no-parent", "--name", name,
+		"--cwd", cfg.WorkspacePath(),
+		"--label", "herdr.space=" + herdrSpace(cfg),
+		"--label", "herdr.tab=" + name,
+		"--", cfg.ShellPath(), "-lc", agentCmd})
+	return "if command -v hc >/dev/null 2>&1 && " + run + " >/dev/null; then " +
+		`echo 'silo: running in herdr; ctrl+\ detaches and leaves the agent running' >&2; ` +
+		"exec hc attach " + name + "; fi; "
+}
+
+// herdrTerminalName makes s a valid hc terminal name: 1-32 of a-z 0-9 - _.
+func herdrTerminalName(s string) string {
+	s = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r + 'a' - 'A'
+		}
+		return '-'
+	}, s)
+	return s[:min(len(s), 32)]
 }

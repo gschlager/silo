@@ -134,10 +134,12 @@ Examples:
 			}
 
 			// Build the agent command with passthrough args.
-			shellCmd := "cd " + cfg.WorkspacePath() + " && " + agentCfg.AgentCmd(agentName)
+			agentCmd := agentCfg.AgentCmd(agentName)
 			if len(extraArgs) > 0 {
-				shellCmd += " " + shellQuote(extraArgs)
+				agentCmd += " " + shellQuote(extraArgs)
 			}
+			shellCmd := herdrLaunch(cfg, agentName, agentCmd) +
+				"cd " + cfg.WorkspacePath() + " && " + agentCmd
 
 			opts := incus.UserOpts(cfg.UserHome(), cfg.WorkspacePath())
 			opts.Env = env

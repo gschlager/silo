@@ -628,6 +628,13 @@ herdr's `hc` is installed, `silo up` adds the container as a herdr machine named
 like the container (`silo-myapp`) and opens a shell in a space for the project,
 so it shows up in the sidebar. Start agents from that space.
 
+`silo ra` runs the agent as a terminal of that herdr-core too, in a new tab of
+the project's space, and attaches to it. So agents you start from the CLI show
+up in herdr as well, and keep running when you detach with `ctrl+\` or close
+the terminal; reattach from herdr or with `hc attach`. Sessions started before
+the container was a herdr machine don't show up; continue them with
+`silo ra --resume`.
+
 herdr-core reaches the container through `silo connect` instead of SSH, so the
 container needs no sshd. When adding, hc copies its own herdr-core to
 `~/.local/bin` in the container and starts a core there, which owns the agent
