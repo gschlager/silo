@@ -122,9 +122,17 @@ type DaemonConfig struct {
 //	  - 5432:15432
 //	  - name: web
 //	    port: 9292:9292
+//	    http: true
 type PortForward struct {
 	Name string // optional label; drives status display and the device name
 	Spec string // "container:host" or "container"
+	// HTTP marks the forward as a web server, so `silo status --json` reports
+	// a URL for it. Ports without it (e.g. Postgres) are just forwards.
+	HTTP bool
+	// Daemon is the daemon this forward belongs to. Not read from YAML; Merge
+	// sets it from the daemons: block, including when a top-level entry
+	// already forwards the daemon's port.
+	Daemon string
 }
 
 // UnmarshalYAML accepts a bare port spec string or a {name, port} mapping.
@@ -138,6 +146,7 @@ func (p *PortForward) UnmarshalYAML(value *yaml.Node) error {
 		var raw struct {
 			Name string    `yaml:"name"`
 			Port yaml.Node `yaml:"port"`
+			HTTP bool      `yaml:"http"`
 		}
 		if err := value.Decode(&raw); err != nil {
 			return err
@@ -147,22 +156,43 @@ func (p *PortForward) UnmarshalYAML(value *yaml.Node) error {
 		}
 		p.Name = raw.Name
 		p.Spec = raw.Port.Value
+		p.HTTP = raw.HTTP
 		return nil
 	default:
 		return fmt.Errorf("invalid port forward entry")
 	}
 }
 
-// MarshalYAML writes the shorthand string form when unnamed and the mapping form
-// otherwise, so generated configs stay compact.
+// MarshalYAML writes the shorthand string form when it carries nothing but the
+// spec and the mapping form otherwise, so generated configs stay compact.
 func (p PortForward) MarshalYAML() (any, error) {
-	if p.Name == "" {
+	if p.Name == "" && !p.HTTP {
 		return p.Spec, nil
 	}
 	return struct {
-		Name string `yaml:"name"`
+		Name string `yaml:"name,omitempty"`
 		Port string `yaml:"port"`
-	}{p.Name, p.Spec}, nil
+		HTTP bool   `yaml:"http,omitempty"`
+	}{p.Name, p.Spec, p.HTTP}, nil
+}
+
+// ContainerPort returns the container side of the spec, or false if malformed.
+func (p PortForward) ContainerPort() (int, bool) {
+	return containerPort(p.Spec)
+}
+
+// HostPort returns the host side of the spec ("3000" means the same port on
+// both sides), or false if malformed.
+func (p PortForward) HostPort() (int, bool) {
+	field := p.Spec
+	if i := strings.IndexByte(field, ':'); i >= 0 {
+		field = field[i+1:]
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(field))
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 // DeviceName returns the Incus proxy-device name for this forward. Named forwards

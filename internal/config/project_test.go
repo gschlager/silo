@@ -293,6 +293,8 @@ ports:
     port: 9292:9292
   - name: ai
     port: 8000
+  - port: 1313:11313
+    http: true
 daemons:
   worker:
     cmd: bin/worker
@@ -311,6 +313,7 @@ daemons:
 		{Spec: "9292"},
 		{Name: "web", Spec: "9292:9292"},
 		{Name: "ai", Spec: "8000"},
+		{Spec: "1313:11313", HTTP: true},
 	}
 	if len(cfg.Ports) != len(want) {
 		t.Fatalf("Ports = %#v, want %d entries", cfg.Ports, len(want))

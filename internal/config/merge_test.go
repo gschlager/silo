@@ -189,11 +189,12 @@ func TestMerge_DaemonPortsDeduped(t *testing.T) {
 
 	// The two overlapping daemon ports (9292, 8000) are dropped; only the new
 	// worker port (7000) is added to the two top-level ports. The top-level
-	// entries win, so the "web" forward keeps its name and 9292:9292 mapping.
+	// entries win, so the "web" forward keeps its name and 9292:9292 mapping,
+	// but they still record which daemon they belong to.
 	want := map[string]PortForward{
-		"9292:9292":  {Name: "web", Spec: "9292:9292"},
-		"8000:18000": {Spec: "8000:18000"},
-		"7000":       {Name: "worker", Spec: "7000"}, // labeled with its daemon
+		"9292:9292":  {Name: "web", Spec: "9292:9292", Daemon: "web"},
+		"8000:18000": {Spec: "8000:18000", Daemon: "ai"},
+		"7000":       {Name: "worker", Spec: "7000", Daemon: "worker"}, // labeled with its daemon
 	}
 	if len(m.Ports) != len(want) {
 		t.Fatalf("Ports = %v, want %d entries", m.Ports, len(want))
@@ -457,5 +458,27 @@ func TestValidateEnv_AllowsPlainValues(t *testing.T) {
 	project := &ProjectConfig{Env: map[string]string{"RAILS_ENV": "development"}}
 	if err := ValidateEnv(global, project, useList("segno")); err != nil {
 		t.Errorf("plain values should pass, got: %v", err)
+	}
+}
+
+// A daemon's http: flag carries over to the top-level entry that forwards its
+// port, and annotating that entry doesn't write through to the project config.
+func TestMerge_DaemonPortHTTPOnTopLevelEntry(t *testing.T) {
+	global := &GlobalConfig{Shell: "zsh", User: "dev", DefaultImage: "fedora/43"}
+	project := &ProjectConfig{
+		Ports: []PortForward{{Spec: "1313:11313"}},
+		Daemons: map[string]DaemonConfig{
+			"hugo": {Cmd: "hugo server", Ports: []PortForward{{Spec: "1313", HTTP: true}}},
+		},
+	}
+
+	m := Merge(global, project, "/tmp/test")
+
+	want := PortForward{Spec: "1313:11313", HTTP: true, Daemon: "hugo"}
+	if len(m.Ports) != 1 || m.Ports[0] != want {
+		t.Fatalf("Ports = %#v, want [%#v]", m.Ports, want)
+	}
+	if project.Ports[0] != (PortForward{Spec: "1313:11313"}) {
+		t.Errorf("merge modified the project config: %#v", project.Ports[0])
 	}
 }

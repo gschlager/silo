@@ -230,7 +230,8 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		m.Sync = project.Sync
 		m.Reset = project.Reset
 		m.Update = project.Update
-		m.Ports = project.Ports
+		// Copied: the daemon pass below annotates entries in place.
+		m.Ports = append([]PortForward(nil), project.Ports...)
 		m.Nesting = project.Nesting
 	}
 
@@ -356,10 +357,12 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 		}
 	}
 	if len(m.Daemons) > 0 {
-		seen := make(map[int]bool)
-		for _, pf := range m.Ports {
+		// Container port -> index in m.Ports, so a daemon port that's already
+		// forwarded can still be attributed to its daemon.
+		seen := make(map[int]int)
+		for i, pf := range m.Ports {
 			if cp, ok := containerPort(pf.Spec); ok {
-				seen[cp] = true
+				seen[cp] = i
 			}
 		}
 		// Sorted so which daemon claims a port shared by two of them is stable
@@ -373,11 +376,18 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 			daemon := m.Daemons[daemonName]
 			for _, pf := range daemon.Ports {
 				cp, ok := containerPort(pf.Spec)
-				if ok && seen[cp] {
+				if i, dup := seen[cp]; ok && dup {
+					// Already forwarded (top-level entry or an earlier daemon):
+					// keep that mapping but record the owner and the http flag.
+					if m.Ports[i].Daemon == "" {
+						m.Ports[i].Daemon = daemonName
+					}
+					m.Ports[i].HTTP = m.Ports[i].HTTP || pf.HTTP
 					continue
 				}
+				pf.Daemon = daemonName
 				if ok {
-					seen[cp] = true
+					seen[cp] = len(m.Ports)
 				}
 				// Label unnamed daemon ports with the daemon name so status output
 				// and Incus device names identify them. Disambiguate by container
