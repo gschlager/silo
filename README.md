@@ -629,8 +629,9 @@ Each mode directory is mounted into the container at `/var/lib/silo/<agent>/`, a
 
 [herdr](https://herdr.dev) shows agents from several machines in one app. silo
 detects herdr on its own: when herdr's `hc` is on the host's `PATH`, `silo up`
-adds the container as a herdr machine named like the container (`silo-myapp`)
-and opens a shell in a space for the project, so it shows up in the sidebar.
+adds the container as a herdr machine named like the container without the
+`silo-` prefix (`myapp`) and opens a shell in a space for the project, so it
+shows up in the sidebar.
 Start agents from that space. Without herdr on the host, silo doesn't touch
 herdr at all and `silo ra` runs the agent directly.
 

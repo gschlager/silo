@@ -60,8 +60,14 @@ func ensureHerdrMachine(cfg *config.MergedConfig) {
 		return
 	}
 	if err := addHerdrMachine(hc, cfg); err != nil {
-		color.Warn("could not add %s to herdr: %v", cfg.ContainerName, err)
+		color.Warn("could not add %s to herdr: %v", herdrMachineName(cfg.ContainerName), err)
 	}
+}
+
+// herdrMachineName is the container's machine name in herdr: the container
+// name without the "silo-" prefix, which only adds noise in herdr's sidebar.
+func herdrMachineName(container string) string {
+	return strings.TrimPrefix(container, "silo-")
 }
 
 func addHerdrMachine(hc string, cfg *config.MergedConfig) error {
@@ -87,16 +93,20 @@ func addHerdrMachine(hc string, cfg *config.MergedConfig) error {
 		return fmt.Errorf("parsing hc machine ls: %w", err)
 	}
 
+	name := herdrMachineName(cfg.ContainerName)
 	known := false
 	for _, m := range list.Machines {
-		if m.Name != cfg.ContainerName {
+		// Machines added before the prefix was dropped are still named like
+		// the container; replace those too.
+		if m.Name != name && m.Name != cfg.ContainerName {
 			continue
 		}
-		if m.Target == via {
+		if m.Name == name && m.Target == via {
 			return nil
 		}
-		// Reached another way (the project moved, or another silo binary):
-		// forget it and add it again. Its terminals keep running.
+		// Reached another way (the project moved, or another silo binary) or
+		// under its old name: forget it and add it again. Its terminals keep
+		// running.
 		color.Debug("herdr reaches %s with %s, replacing it", m.Name, m.Target)
 		if out, err := exec.Command(hc, "machine", "rm", m.Name).CombinedOutput(); err != nil {
 			return fmt.Errorf("hc machine rm: %w: %s", err, out)
@@ -104,8 +114,8 @@ func addHerdrMachine(hc string, cfg *config.MergedConfig) error {
 		known = true
 	}
 
-	color.Status("Adding %s to herdr...", cfg.ContainerName)
-	if out, err := exec.Command(hc, "machine", "add", "--name", cfg.ContainerName, "--install", "--via", via).CombinedOutput(); err != nil {
+	color.Status("Adding %s to herdr...", name)
+	if out, err := exec.Command(hc, "machine", "add", "--name", name, "--install", "--via", via).CombinedOutput(); err != nil {
 		return fmt.Errorf("hc machine add: %w: %s", err, out)
 	}
 	if known {
@@ -113,7 +123,7 @@ func addHerdrMachine(hc string, cfg *config.MergedConfig) error {
 	}
 
 	// No argv: that machine's own shell.
-	if out, err := exec.Command(hc, "run", "--bg", "--on", cfg.ContainerName, "--no-parent",
+	if out, err := exec.Command(hc, "run", "--bg", "--on", name, "--no-parent",
 		"--cwd", cfg.WorkspacePath(),
 		"--label", "herdr.space="+herdrSpace(cfg),
 		"--label", "herdr.tab=shell").CombinedOutput(); err != nil {
@@ -133,13 +143,17 @@ func herdrSpace(cfg *config.MergedConfig) string {
 // installed and knows it. It ignores the herdr setting, so a machine added
 // before the integration was turned off goes away too. Errors are only logged:
 // most projects never use it.
-func removeHerdrMachine(name string) {
+func removeHerdrMachine(container string) {
 	hc, ok := findHerdrHC()
 	if !ok {
 		return
 	}
-	if out, err := exec.Command(hc, "machine", "rm", name).CombinedOutput(); err != nil {
-		color.Debug("hc machine rm %s: %v: %s", name, err, out)
+	// Also the container's own name, which machines were added under before
+	// the prefix was dropped.
+	for _, name := range []string{herdrMachineName(container), container} {
+		if out, err := exec.Command(hc, "machine", "rm", name).CombinedOutput(); err != nil {
+			color.Debug("hc machine rm %s: %v: %s", name, err, out)
+		}
 	}
 }
 
