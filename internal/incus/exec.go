@@ -217,6 +217,17 @@ func ExecInteractive(ctx context.Context, server incuscli.InstanceServer, contai
 
 // ExecStreaming runs a command and streams stdout/stderr to the given writers.
 func ExecStreaming(ctx context.Context, server incuscli.InstanceServer, container string, opts ExecOpts, command []string, stdout, stderr io.Writer) error {
+	return execStream(ctx, server, container, opts, command, io.NopCloser(bytes.NewReader(nil)), stdout, stderr)
+}
+
+// ExecPipe runs a command without a TTY and connects it to this process's
+// stdin, stdout and stderr, passing bytes through unchanged. It is for
+// commands that speak a protocol over stdio, such as herdr-core's connect.
+func ExecPipe(ctx context.Context, server incuscli.InstanceServer, container string, opts ExecOpts, command []string) error {
+	return execStream(ctx, server, container, opts, command, os.Stdin, os.Stdout, os.Stderr)
+}
+
+func execStream(ctx context.Context, server incuscli.InstanceServer, container string, opts ExecOpts, command []string, stdin io.ReadCloser, stdout, stderr io.Writer) error {
 	req := api.InstanceExecPost{
 		Command:     command,
 		WaitForWS:   true,
@@ -227,7 +238,7 @@ func ExecStreaming(ctx context.Context, server incuscli.InstanceServer, containe
 	}
 
 	args := &incuscli.InstanceExecArgs{
-		Stdin:  io.NopCloser(bytes.NewReader(nil)),
+		Stdin:  stdin,
 		Stdout: stdout,
 		Stderr: stderr,
 	}

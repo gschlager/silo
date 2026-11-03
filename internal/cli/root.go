@@ -59,6 +59,7 @@ func NewRootCmd() *cobra.Command {
 	// Agents.
 	addCmd("agent", newRaCmd())
 	addCmd("agent", newModeCmd())
+	addCmd("agent", newConnectCmd())
 
 	// Development workflow.
 	addCmd("workflow", newSyncCmd())
