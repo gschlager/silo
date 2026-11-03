@@ -149,3 +149,25 @@ func writeAgentFunctions(ctx context.Context, server incuscli.InstanceServer, cf
 		color.Warn("could not write agent functions: %v", err)
 	}
 }
+
+// startNotifyBridge starts the desktop notification bridge for this session
+// and returns its cleanup func. It does nothing when notifications are off or
+// the container is in herdr: herdr already alerts when an agent needs input,
+// and the bridge would only run while this session does, so agents in herdr
+// would notify twice or not at all depending on which terminal is open.
+func startNotifyBridge(cfg *config.MergedConfig) func() {
+	if !cfg.Notifications {
+		return func() {}
+	}
+	if _, ok := herdrHC(cfg); ok {
+		color.Debug("herdr is active, not starting notification bridge")
+		return func() {}
+	}
+	color.Debug("starting notification bridge")
+	cleanup, err := provision.StartNotifyBridge(cfg.ContainerName)
+	if err != nil {
+		color.Warn("could not start notifications: %v", err)
+		return func() {}
+	}
+	return cleanup
+}

@@ -239,7 +239,8 @@ user: dev
 # not for getting values to a daemon — daemons never see pass_env (see Daemons).
 pass_env: [TERM, COLORTERM, LANG, LC_ALL]
 
-# Desktop notifications when an agent finishes or needs input (default: off)
+# Desktop notifications when an agent finishes or needs input (default: off).
+# Not used for containers in herdr, which alerts on its own.
 notifications: true
 
 # Add containers to herdr when its hc is installed (default: on, see "herdr")
@@ -658,6 +659,9 @@ The host's core dials into the container, never the other way round. herdr-core
 only lets the container answer host terminals that started work in it, so an
 agent in the container cannot run anything on the host through herdr. Agents
 started from herdr don't get `silo ra`'s pre-session snapshot.
+
+herdr alerts you itself when an agent needs input, so silo doesn't send its own
+desktop notifications (`notifications: true`) for a container in herdr.
 
 To turn the integration off even with herdr installed, set `herdr: false` in
 `~/.config/silo/config.yml`. silo then leaves herdr alone on `silo up` and

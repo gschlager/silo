@@ -70,16 +70,7 @@ Examples:
 			}
 			writeAgentFunctions(ctx, server, cfg)
 
-			// Start the notification bridge for this session.
-			if cfg.Notifications {
-				color.Debug("starting notification bridge")
-				cleanup, err := provision.StartNotifyBridge(cfg.ContainerName)
-				if err != nil {
-					color.Warn("could not start notifications: %v", err)
-				} else {
-					defer cleanup()
-				}
-			}
+			defer startNotifyBridge(cfg)()
 
 			agentName := cfg.ResolveDefaultAgent()
 			var extraArgs []string

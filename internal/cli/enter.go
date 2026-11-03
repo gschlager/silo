@@ -37,16 +37,7 @@ func newEnterCmd() *cobra.Command {
 				color.Warn("could not apply global gitignore: %v", err)
 			}
 
-			// Start the notification bridge for this session.
-			if cfg.Notifications {
-				color.Debug("starting notification bridge")
-				cleanup, err := provision.StartNotifyBridge(cfg.ContainerName)
-				if err != nil {
-					color.Warn("could not start notifications: %v", err)
-				} else {
-					defer cleanup()
-				}
-			}
+			defer startNotifyBridge(cfg)()
 
 			color.Debug("resolving session env (tool credentials)")
 			opts := incus.UserOpts(cfg.UserHome(), cfg.WorkspacePath())
