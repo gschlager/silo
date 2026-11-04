@@ -229,16 +229,19 @@ func buildBaseLocked(ctx context.Context, server incuscli.InstanceServer, spec B
 		return err
 	}
 	defer unlock()
-	return buildBaseHoldingLock(ctx, server, spec, tmpl, mode)
+	_, err = buildBaseHoldingLock(ctx, server, spec, tmpl, mode)
+	return err
 }
 
-func buildBaseHoldingLock(ctx context.Context, server incuscli.InstanceServer, spec BaseSpec, tmpl string, mode buildMode) error {
+// buildBaseHoldingLock does the work of buildBaseLocked; the caller holds the
+// build lock. It reports whether it built a new template.
+func buildBaseHoldingLock(ctx context.Context, server incuscli.InstanceServer, spec BaseSpec, tmpl string, mode buildMode) (bool, error) {
 	// Check again: another process may have built it while we waited.
 	if mode != buildAlways {
 		if t, err := incus.GetInstance(server, tmpl); err == nil && t.Config[baseHashKey] == spec.Hash() {
 			builtAt, _ := time.Parse(time.RFC3339, t.Config[baseBuiltKey])
 			if mode == buildIfOutdated || time.Since(builtAt) <= baseMaxAge {
-				return nil
+				return false, nil
 			}
 		} else if err == nil {
 			status("Base template %s is out of date, rebuilding...", tmpl)
@@ -249,29 +252,29 @@ func buildBaseHoldingLock(ctx context.Context, server incuscli.InstanceServer, s
 	if incus.Exists(server, build) { // leftover from an interrupted build
 		incus.Stop(ctx, server, build)
 		if err := incus.Delete(ctx, server, build); err != nil {
-			return err
+			return false, err
 		}
 	}
 	if err := buildBase(ctx, server, spec, build); err != nil {
-		return err
+		return false, err
 	}
 
 	unlock, err := lockFile(".base.lock", true)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer unlock()
 	if incus.Exists(server, tmpl) {
 		incus.Stop(ctx, server, tmpl)
 		if err := incus.Delete(ctx, server, tmpl); err != nil {
-			return err
+			return false, err
 		}
 	}
 	if err := incus.Rename(ctx, server, build, tmpl); err != nil {
-		return err
+		return false, err
 	}
 	os.Remove(refreshFailedPath(tmpl))
-	return nil
+	return true, nil
 }
 
 // RebuildBase builds the base template for spec from scratch, replacing the
@@ -302,9 +305,15 @@ func RefreshBase(ctx context.Context, server incuscli.InstanceServer, spec BaseS
 	}
 	defer unlock()
 
-	if err := buildBaseHoldingLock(ctx, server, spec, tmpl, buildIfOld); err != nil {
+	built, err := buildBaseHoldingLock(ctx, server, spec, tmpl, buildIfOld)
+	if err != nil {
 		os.WriteFile(refreshFailedPath(tmpl), []byte(err.Error()+"\n"), 0600)
 		return err
+	}
+	if built {
+		color.Success("Base template %s is ready.", tmpl)
+	} else {
+		fmt.Printf("Base template %s is up to date; nothing to do.\n", tmpl)
 	}
 	return nil
 }
@@ -380,6 +389,7 @@ func buildBase(ctx context.Context, server incuscli.InstanceServer, spec BaseSpe
 		return err
 	}
 
+	status("Saving base template...")
 	// Reset the machine ID so every copy generates its own on first boot.
 	// Copies sharing one would also share DHCP client IDs, and with them IPs.
 	if _, err := incus.Exec(ctx, server, name, incus.ExecOpts{}, []string{
