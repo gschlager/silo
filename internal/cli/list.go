@@ -41,7 +41,7 @@ func newListCmd() *cobra.Command {
 				}
 				// Trim "silo-" prefix for display.
 				displayName := strings.TrimPrefix(inst.Name, "silo-")
-				created := inst.CreatedAt.Format("2006-01-02 15:04")
+				created := inst.CreatedAt.Local().Format("2006-01-02 15:04")
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", displayName, inst.Status, image, created)
 			}
 			w.Flush()

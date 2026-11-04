@@ -443,7 +443,7 @@ func newTmpLsCmd() *cobra.Command {
 					source = inst.Config[tmpCloneKey]
 				}
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", strings.TrimPrefix(inst.Name, "silo-"), inst.Status, source,
-					inst.CreatedAt.Format("2006-01-02 15:04"))
+					inst.CreatedAt.Local().Format("2006-01-02 15:04"))
 				n++
 			}
 			if n == 0 {
