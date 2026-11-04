@@ -246,12 +246,14 @@ The default login shell is `bash` (always present, including on images without z
 # Base image used when a project doesn't set image: (default: fedora/44)
 default_image: fedora/44
 
-# Packages installed in every container before project setup runs.
+# Packages installed in every container before project setup runs (they end
+# up in the base template). This replaces the built-in list below, so copy it
+# all when you only want to add a package.
 # Fail-fast: the first command that exits non-zero aborts provisioning, so
 # anything only some projects want (or that needs a token) belongs in a
 # preset instead — see "Presets".
 default_setup:
-  - dnf install -y git curl wget make gcc jq ripgrep gh
+  - dnf install -y git curl wget make gcc which jq socat ripgrep fd-find tree gh ncurses
 
 # Agent silo ra launches when you don't name one (default: first defined, claude)
 default_agent: claude
