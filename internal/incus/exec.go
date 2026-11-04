@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/lxc/incus/v7/shared/api"
+	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )
 
@@ -174,8 +175,11 @@ func ExecInteractive(ctx context.Context, server incuscli.InstanceServer, contai
 	signal.Notify(sigCh, syscall.SIGWINCH)
 	defer signal.Stop(sigCh)
 
+	stdin, stopStdin := cancelableStdin()
+	defer stopStdin()
+
 	args := &incuscli.InstanceExecArgs{
-		Stdin:  os.Stdin,
+		Stdin:  stdin,
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 		Control: func(conn *websocket.Conn) {
@@ -212,6 +216,33 @@ func ExecInteractive(ctx context.Context, server incuscli.InstanceServer, contai
 		return ctx.Err()
 	case err := <-errCh:
 		return err
+	}
+}
+
+// cancelableStdin returns a reader for the terminal and a function that stops
+// it. The Incus client copies stdin to the container in a goroutine that is
+// still blocked in Read after the command exits, and that read would swallow
+// the next line typed at a prompt (silo tmp asking whether to remove the
+// container). A non-blocking duplicate of stdin goes through Go's poller, so
+// closing it ends that read.
+func cancelableStdin() (io.Reader, func()) {
+	stdinFd := int(os.Stdin.Fd())
+	if !term.IsTerminal(stdinFd) {
+		return os.Stdin, func() {}
+	}
+	fd, err := unix.Dup(stdinFd)
+	if err != nil {
+		return os.Stdin, func() {}
+	}
+	// O_NONBLOCK is shared with stdin itself; it's switched back below.
+	if err := unix.SetNonblock(fd, true); err != nil {
+		unix.Close(fd)
+		return os.Stdin, func() {}
+	}
+	f := os.NewFile(uintptr(fd), "stdin")
+	return f, func() {
+		f.Close()
+		unix.SetNonblock(stdinFd, false)
 	}
 }
 
