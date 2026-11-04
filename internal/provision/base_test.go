@@ -93,3 +93,22 @@ func TestAgentsNotIn(t *testing.T) {
 		t.Errorf("got %v, want only pi", got)
 	}
 }
+
+// A background refresh must skip, not wait, while another build holds the lock.
+func TestLockFileNoWait(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	unlock, err := lockFile(".base-build.lock", true)
+	if err != nil || unlock == nil {
+		t.Fatalf("first lock: %v", err)
+	}
+	second, err := lockFile(".base-build.lock", false)
+	if err != nil || second != nil {
+		t.Fatalf("second lock while held = (%v, %v), want (nil, nil)", second != nil, err)
+	}
+	unlock()
+	third, err := lockFile(".base-build.lock", false)
+	if err != nil || third == nil {
+		t.Fatalf("lock after release: %v", err)
+	}
+	third()
+}

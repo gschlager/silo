@@ -114,8 +114,12 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 	}()
 	defer signal.Stop(sigCh)
 
-	// Provision minimal container with just the agent.
-	if err := provision.ProvisionMinimal(ctx, server, cfg, agentName); err != nil {
+	if _, ok := cfg.Agents[agentName]; !ok {
+		return fmt.Errorf("unknown agent %q", agentName)
+	}
+	// A copy of the base template; with no project config, there's nothing
+	// project-specific to set up.
+	if err := provision.Provision(ctx, server, cfg, provision.Options{}); err != nil {
 		return err
 	}
 

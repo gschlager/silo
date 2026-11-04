@@ -22,13 +22,15 @@ the bare image. A template is a stopped container per image with default_setup,
 the login shell, the dev user and the globally enabled agents already set up.
 
 silo builds a template on first use and rebuilds it when any of those inputs
-change. Without a subcommand, lists the existing templates.`,
+change. A template older than a week is still used, and rebuilt in the
+background for the next container. Without a subcommand, lists the existing
+templates.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return listBases()
 		},
 	}
-	cmd.AddCommand(newBaseListCmd(), newBaseRebuildCmd(), newBaseRmCmd())
+	cmd.AddCommand(newBaseListCmd(), newBaseRebuildCmd(), newBaseRmCmd(), newBaseRefreshCmd())
 	return cmd
 }
 
@@ -140,6 +142,35 @@ containers are not affected; the next new container rebuilds its template.`,
 			return nil
 		},
 	}
+}
+
+// newBaseRefreshCmd is what `silo up` starts in the background when a template
+// is getting old. Hidden: it's not meant to be run by hand.
+func newBaseRefreshCmd() *cobra.Command {
+	var image string
+	cmd := &cobra.Command{
+		Use:    "refresh",
+		Short:  "Rebuild a base template if it's older than a week",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			global, err := config.LoadGlobalConfig()
+			if err != nil {
+				return err
+			}
+			cwd, _ := os.Getwd()
+			spec := provision.BaseSpecFor(config.Merge(global, &config.ProjectConfig{Image: image}, cwd))
+			server, err := incus.Connect()
+			if err != nil {
+				return err
+			}
+			color.EnableDebug() // the output only goes to the log file
+			return provision.RefreshBase(cmd.Context(), server, spec)
+		},
+	}
+	cmd.Flags().StringVar(&image, "image", "", "Image whose template to refresh")
+	cmd.MarkFlagRequired("image")
+	return cmd
 }
 
 // baseSpecForCwd returns the base template spec for the current directory.

@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gschlager/silo/internal/agents"
 	"github.com/gschlager/silo/internal/color"
@@ -15,87 +14,21 @@ import (
 	incuscli "github.com/lxc/incus/v7/client"
 )
 
-// ProvisionMinimal creates a lightweight container with just networking, a user,
-// and a single agent installed. Used for temporary containers like silo init --auto.
-func ProvisionMinimal(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig, agentName string) (err error) {
-	name := cfg.ContainerName
-
-	// Buffer command output in non-verbose mode and replay it if anything fails.
-	color.StartCapture()
-	defer func() {
-		if err != nil {
-			color.DumpCapture()
-		}
-		color.StopCapture()
-	}()
-
-	status("Creating temporary container %s...", name)
-	if err := incus.Launch(ctx, server, cfg.Image, name); err != nil {
-		return err
-	}
-
-	status("Waiting for network...")
-	networkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	if err := incus.WaitForNetwork(networkCtx, server, name, "dns.google"); err != nil {
-		return err
-	}
-
-	// Mount project directory.
-	status("Mounting project directory...")
-	if err := incus.AddDiskDevice(ctx, server, name, "workspace", cfg.ProjectDir, cfg.WorkspacePath(), false); err != nil {
-		return err
-	}
-
-	// Run default_setup.
-	if len(cfg.DefaultSetup) > 0 {
-		status("Running default setup...")
-		if err := runCommands(ctx, server, name, incus.ExecOpts{}, cfg.DefaultSetup); err != nil {
-			return fmt.Errorf("default_setup failed: %w", err)
-		}
-	}
-
-	// Ensure the configured login shell exists before creating the user.
-	effectiveShell, err := EnsureShell(ctx, server, name, cfg.Shell)
-	if err != nil {
-		return err
-	}
-	cfg.Shell = effectiveShell
-
-	// Create user.
-	status("Creating user %s...", cfg.User)
-	if err := CreateUser(ctx, server, name, cfg.User, cfg.Shell); err != nil {
-		return err
-	}
-
-	// Install the requested agent.
-	agentCfg, ok := cfg.Agents[agentName]
-	if !ok {
-		return fmt.Errorf("unknown agent %q", agentName)
-	}
-	if agentCfg.Install != "" {
-		singleAgent := map[string]config.MergedAgentConfig{agentName: agentCfg}
-		if err := agents.InstallAgents(ctx, server, name, cfg.User, cfg.Shell, singleAgent); err != nil {
-			return err
-		}
-	}
-
-	// Set up agent data directory.
-	if len(agentCfg.Links) > 0 {
-		status("Setting up agent directory...")
-		singleAgent := map[string]config.MergedAgentConfig{agentName: agentCfg}
-		if err := agents.SetupAgentDirs(ctx, server, name, cfg.ContainerName, singleAgent); err != nil {
-			return err
-		}
-	}
-
-	return nil
+// Options adjust Provision.
+type Options struct {
+	// Keep leaves a container whose provisioning failed in place (still
+	// running) so it can be inspected instead of being torn down.
+	Keep bool
+	// FreshBase rebuilds the base template before copying it.
+	FreshBase bool
+	// Clone is a git URL cloned into the workspace inside the container,
+	// instead of mounting the project directory from the host.
+	Clone string
 }
 
-// Provision runs the full first-run provisioning flow for a container. When
-// keepOnFailure is set, a failed provision leaves the container in place (still
-// running) so it can be inspected instead of being torn down.
-func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig, keepOnFailure bool) error {
+// Provision runs the full first-run provisioning flow for a container.
+func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig, opts Options) error {
+	keepOnFailure := opts.Keep
 	name := cfg.ContainerName
 
 	// Buffer provisioning command output in non-verbose mode so it can be
@@ -106,7 +39,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	// Step 1: Create the container, stopped, as a copy of the base template:
 	// default_setup, the shell, the user and the global agents are already
 	// done there. The template is built first if it's missing or outdated.
-	base, err := copyFromBase(ctx, server, BaseSpecFor(cfg), name)
+	base, err := copyFromBase(ctx, server, BaseSpecFor(cfg), name, opts.FreshBase)
 	if err != nil {
 		if incus.Exists(server, name) { // a copy that failed halfway
 			incus.Delete(context.Background(), server, name)
@@ -153,9 +86,11 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	status("Mounting project directory...")
-	if err := incus.AddDiskDevice(ctx, server, name, "workspace", cfg.ProjectDir, cfg.WorkspacePath(), false); err != nil {
-		return err
+	if opts.Clone == "" {
+		status("Mounting project directory...")
+		if err := incus.AddDiskDevice(ctx, server, name, "workspace", cfg.ProjectDir, cfg.WorkspacePath(), false); err != nil {
+			return err
+		}
 	}
 
 	for i, mountSpec := range cfg.Mounts {
@@ -222,7 +157,14 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 7: Resolve tool credentials (passed at runtime, not baked in).
+	// Step 7: Clone the repository into the workspace, if asked to. Runs after
+	// the credential helper, so private GitHub repos work with a token.
+	if opts.Clone != "" {
+		status("Cloning %s...", opts.Clone)
+		if err := cloneWorkspace(ctx, server, cfg, opts.Clone); err != nil {
+			return err
+		}
+	}
 
 	// Step 8: Install the agents the project enables on top of the template's.
 	if extra := agentsNotIn(cfg.Agents, base.agents); len(extra) > 0 {
@@ -307,6 +249,29 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 
 	success = true
 	status("Environment ready!")
+	return nil
+}
+
+// cloneWorkspace clones url into the workspace path as the dev user, with the
+// session credentials (GITHUB_TOKEN etc.) in the environment.
+func cloneWorkspace(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig, url string) error {
+	ws := cfg.WorkspacePath()
+	if _, err := incus.Exec(ctx, server, cfg.ContainerName, incus.ExecOpts{}, []string{
+		"sh", "-c", fmt.Sprintf("mkdir -p /workspace && chown %s: /workspace", cfg.User),
+	}); err != nil {
+		return fmt.Errorf("creating /workspace: %w", err)
+	}
+	env, err := ResolveSessionEnv(cfg)
+	if err != nil {
+		return fmt.Errorf("resolving credentials for the clone: %w", err)
+	}
+	userOpts := incus.UserOpts(cfg.UserHome(), cfg.UserHome())
+	userOpts.Env = env
+	cmd := "command -v git >/dev/null || { echo 'git is not installed (add it to default_setup)' >&2; exit 1; }; git clone -- " +
+		shellEscape(url) + " " + shellEscape(ws)
+	if err := incus.ExecStreaming(ctx, server, cfg.ContainerName, userOpts, cfg.LoginCmd(cmd), color.DetailOut(), color.DetailErr()); err != nil {
+		return fmt.Errorf("cloning %s: %w", url, err)
+	}
 	return nil
 }
 

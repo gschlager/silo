@@ -6,9 +6,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gschlager/silo/internal/agents"
@@ -128,32 +130,69 @@ type baseInfo struct {
 	agents map[string]bool
 }
 
+// baseMaxAge is how old a template may get before it's rebuilt in the
+// background. Rebuilding (rather than updating in place) picks up the current
+// upstream image, packages from default_setup and the latest agents.
+const baseMaxAge = 7 * 24 * time.Hour
+
+// baseRetryAfter is how long silo waits before trying another background
+// rebuild after one failed.
+const baseRetryAfter = 24 * time.Hour
+
 // copyFromBase creates the stopped container `name` from the base template for
-// spec, building or rebuilding the template first when needed. The lock is
-// held through the copy so a concurrent rebuild can't delete the template
-// mid-copy.
-func copyFromBase(ctx context.Context, server incuscli.InstanceServer, spec BaseSpec, name string) (baseInfo, error) {
-	unlock, err := lockBase()
+// spec. A missing or outdated template is built first, which the caller waits
+// for. A template that's merely old is used as is and rebuilt in the
+// background for next time. With fresh, the template is always rebuilt first.
+func copyFromBase(ctx context.Context, server incuscli.InstanceServer, spec BaseSpec, name string, fresh bool) (baseInfo, error) {
+	tmpl := BaseName(spec.Image)
+	if fresh {
+		if err := buildBaseLocked(ctx, server, spec, tmpl, buildAlways); err != nil {
+			return baseInfo{}, err
+		}
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		info, copied, builtAt, err := copyIfCurrent(ctx, server, spec, tmpl, name)
+		if err != nil {
+			return baseInfo{}, err
+		}
+		if copied {
+			if age := time.Since(builtAt); !builtAt.IsZero() && age > baseMaxAge {
+				startBackgroundRefresh(spec.Image, tmpl, age)
+			}
+			return info, nil
+		}
+		if err := buildBaseLocked(ctx, server, spec, tmpl, buildIfOutdated); err != nil {
+			return baseInfo{}, err
+		}
+	}
+	return baseInfo{}, fmt.Errorf("base template %s is still outdated after rebuilding it", tmpl)
+}
+
+// copyIfCurrent copies the template if it exists and matches spec. It holds the
+// swap lock so a rebuild can't replace the template mid-copy.
+func copyIfCurrent(ctx context.Context, server incuscli.InstanceServer, spec BaseSpec, tmpl, name string) (info baseInfo, copied bool, builtAt time.Time, err error) {
+	unlock, err := lockFile(".base.lock", true)
 	if err != nil {
-		return baseInfo{}, err
+		return info, false, builtAt, err
 	}
 	defer unlock()
 
-	tmpl := BaseName(spec.Image)
-	if err := ensureBase(ctx, server, spec, tmpl, false); err != nil {
-		return baseInfo{}, err
+	t, err := incus.GetInstance(server, tmpl)
+	if err != nil || t.Config[baseHashKey] != spec.Hash() {
+		return info, false, builtAt, nil
 	}
+	builtAt, _ = time.Parse(time.RFC3339, t.Config[baseBuiltKey])
 
 	status("Creating container %s from base template %s...", name, tmpl)
 	if err := incus.CopySnapshot(ctx, server, tmpl, baseSnapshot, name); err != nil {
-		return baseInfo{}, err
+		return info, false, builtAt, err
 	}
 
 	inst, err := incus.GetInstance(server, name)
 	if err != nil {
-		return baseInfo{}, err
+		return info, false, builtAt, err
 	}
-	info := baseInfo{shell: inst.Config[baseShellKey], agents: make(map[string]bool)}
+	info = baseInfo{shell: inst.Config[baseShellKey], agents: make(map[string]bool)}
 	for _, a := range strings.Split(inst.Config[baseAgentsKey], ",") {
 		if a != "" {
 			info.agents[a] = true
@@ -167,39 +206,41 @@ func copyFromBase(ctx context.Context, server incuscli.InstanceServer, spec Base
 		}
 	}
 	if err := incus.UpdateConfig(ctx, server, name, strip); err != nil {
-		return baseInfo{}, err
+		return info, false, builtAt, err
 	}
-	return info, nil
+	return info, true, builtAt, nil
 }
 
-// RebuildBase builds the base template for spec from scratch, replacing the
-// existing one.
-func RebuildBase(ctx context.Context, server incuscli.InstanceServer, spec BaseSpec) error {
-	unlock, err := lockBase()
+type buildMode int
+
+const (
+	buildIfOutdated buildMode = iota // missing or hash differs
+	buildIfOld                       // ... or older than baseMaxAge
+	buildAlways
+)
+
+// buildBaseLocked rebuilds the template under the build lock, so only one
+// build runs at a time. The new template is built under a temporary name and
+// only swapped in (under the swap lock) once complete, so copies can continue
+// during a build and a failed build leaves the previous template in place.
+func buildBaseLocked(ctx context.Context, server incuscli.InstanceServer, spec BaseSpec, tmpl string, mode buildMode) error {
+	unlock, err := lockFile(".base-build.lock", true)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-
-	color.StartCapture()
-	defer color.StopCapture()
-	if err := ensureBase(ctx, server, spec, BaseName(spec.Image), true); err != nil {
-		color.DumpCapture()
-		return err
-	}
-	return nil
+	return buildBaseHoldingLock(ctx, server, spec, tmpl, mode)
 }
 
-// ensureBase makes sure the template exists and matches spec. A new template is
-// built under a temporary name and only swapped in once it's complete, so a
-// failed build leaves the previous template in place.
-func ensureBase(ctx context.Context, server incuscli.InstanceServer, spec BaseSpec, tmpl string, force bool) error {
-	hash := spec.Hash()
-	if !force {
-		if inst, err := incus.GetInstance(server, tmpl); err == nil {
-			if inst.Config[baseHashKey] == hash {
+func buildBaseHoldingLock(ctx context.Context, server incuscli.InstanceServer, spec BaseSpec, tmpl string, mode buildMode) error {
+	// Check again: another process may have built it while we waited.
+	if mode != buildAlways {
+		if t, err := incus.GetInstance(server, tmpl); err == nil && t.Config[baseHashKey] == spec.Hash() {
+			builtAt, _ := time.Parse(time.RFC3339, t.Config[baseBuiltKey])
+			if mode == buildIfOutdated || time.Since(builtAt) <= baseMaxAge {
 				return nil
 			}
+		} else if err == nil {
 			status("Base template %s is out of date, rebuilding...", tmpl)
 		}
 	}
@@ -214,17 +255,104 @@ func ensureBase(ctx context.Context, server incuscli.InstanceServer, spec BaseSp
 	if err := buildBase(ctx, server, spec, build); err != nil {
 		return err
 	}
+
+	unlock, err := lockFile(".base.lock", true)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if incus.Exists(server, tmpl) {
 		incus.Stop(ctx, server, tmpl)
 		if err := incus.Delete(ctx, server, tmpl); err != nil {
 			return err
 		}
 	}
-	return incus.Rename(ctx, server, build, tmpl)
+	if err := incus.Rename(ctx, server, build, tmpl); err != nil {
+		return err
+	}
+	os.Remove(refreshFailedPath(tmpl))
+	return nil
+}
+
+// RebuildBase builds the base template for spec from scratch, replacing the
+// existing one.
+func RebuildBase(ctx context.Context, server incuscli.InstanceServer, spec BaseSpec) error {
+	color.StartCapture()
+	defer color.StopCapture()
+	if err := buildBaseLocked(ctx, server, spec, BaseName(spec.Image), buildAlways); err != nil {
+		color.DumpCapture()
+		return err
+	}
+	return nil
+}
+
+// RefreshBase rebuilds the template if it's older than baseMaxAge. It's what
+// the background process started by startBackgroundRefresh runs. It does
+// nothing if another build is already running. A failure is recorded, so the
+// next `silo up` reports it and doesn't retry right away.
+func RefreshBase(ctx context.Context, server incuscli.InstanceServer, spec BaseSpec) error {
+	tmpl := BaseName(spec.Image)
+	unlock, err := lockFile(".base-build.lock", false)
+	if err != nil {
+		return err
+	}
+	if unlock == nil {
+		fmt.Println("Another base template build is running; nothing to do.")
+		return nil
+	}
+	defer unlock()
+
+	if err := buildBaseHoldingLock(ctx, server, spec, tmpl, buildIfOld); err != nil {
+		os.WriteFile(refreshFailedPath(tmpl), []byte(err.Error()+"\n"), 0600)
+		return err
+	}
+	return nil
+}
+
+// startBackgroundRefresh starts a detached `silo base refresh` for the image,
+// unless a recent background refresh failed. Output goes to a log file.
+func startBackgroundRefresh(image, tmpl string, age time.Duration) {
+	failed := refreshFailedPath(tmpl)
+	if fi, err := os.Stat(failed); err == nil && time.Since(fi.ModTime()) < baseRetryAfter {
+		color.Warn("The last background rebuild of base template %s failed; see %s or run `silo base rebuild`.", tmpl, RefreshLogPath())
+		return
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		color.Warn("could not start the base template refresh: %v", err)
+		return
+	}
+	log, err := os.OpenFile(RefreshLogPath(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		color.Warn("could not start the base template refresh: %v", err)
+		return
+	}
+	defer log.Close()
+
+	cmd := exec.Command(exe, "base", "refresh", "--image", image)
+	cmd.Stdout = log
+	cmd.Stderr = log
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // survive the terminal closing
+	if err := cmd.Start(); err != nil {
+		color.Warn("could not start the base template refresh: %v", err)
+		return
+	}
+	cmd.Process.Release()
+	status("Base template %s is %d days old; rebuilding it in the background for the next container.", tmpl, int(age.Hours()/24))
+}
+
+// RefreshLogPath is where the background template refresh writes its output.
+func RefreshLogPath() string {
+	return filepath.Join(config.GlobalConfigDir(), "base-refresh.log")
+}
+
+func refreshFailedPath(tmpl string) string {
+	return filepath.Join(config.GlobalConfigDir(), "."+tmpl+".refresh-failed")
 }
 
 func buildBase(ctx context.Context, server incuscli.InstanceServer, spec BaseSpec, name string) (err error) {
-	status("Building base template from %s (one-time, reused by new containers)...", spec.Image)
+	status("Building base template from %s (reused by new containers)...", spec.Image)
 	if err := incus.Create(ctx, server, spec.Image, name); err != nil {
 		return err
 	}
@@ -322,19 +450,27 @@ func startAndWaitForNetwork(ctx context.Context, server incuscli.InstanceServer,
 	return incus.WaitForNetwork(networkCtx, server, name, "dns.google")
 }
 
-// lockBase serializes template builds and copies across silo processes.
-func lockBase() (unlock func(), err error) {
+// lockFile takes an exclusive lock on a file in the silo config dir. With
+// wait false it returns a nil unlock func when the lock is already held.
+func lockFile(name string, wait bool) (unlock func(), err error) {
 	dir := config.GlobalConfigDir()
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("creating %s: %w", dir, err)
 	}
-	f, err := os.OpenFile(filepath.Join(dir, ".base.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	f, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
-		return nil, fmt.Errorf("opening base template lock: %w", err)
+		return nil, fmt.Errorf("opening lock %s: %w", name, err)
 	}
-	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
+	how := unix.LOCK_EX
+	if !wait {
+		how |= unix.LOCK_NB
+	}
+	if err := unix.Flock(int(f.Fd()), how); err != nil {
 		f.Close()
-		return nil, fmt.Errorf("locking base template: %w", err)
+		if !wait && err == unix.EWOULDBLOCK {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("locking %s: %w", name, err)
 	}
 	return func() { f.Close() }, nil
 }
