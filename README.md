@@ -75,6 +75,22 @@ silo builds the template the first time it's needed and rebuilds it when one of 
 
 To keep it fresh, a template older than a week is still used, but silo rebuilds it in the background for the next container (log: `~/.config/silo/base-refresh.log`). A rebuild starts from the current upstream image and installs the latest agents, so there's nothing to update in place. `silo up --fresh` rebuilds it first and waits, for when you need the latest right now.
 
+### Throwaway containers
+
+`silo tmp` starts a container from the base template, runs your default agent in it and removes the container when the agent exits:
+
+```sh
+silo tmp                                                   # current directory, mounted
+silo tmp markdown-it/linkify-it                            # cloned inside the container
+silo tmp https://github.com/markdown-it/linkify-it/issues/126   # ... and the agent starts on the issue
+silo tmp ../other --shell                                  # a shell instead of an agent
+silo tmp owner/repo -- "fix the failing test"              # arguments after -- go to the agent
+```
+
+A directory doesn't need a `.silo.yml`, but if it has one it's used, except for `ports:` (they'd clash with the project's own container). A cloned repository only gets the global config. Its credentials come from the repo's entry in `secrets.yml` (e.g. `linkify-it:`), or else from a `tmp:` entry, so you can keep one GitHub token there for throwaway work.
+
+A clone that has uncommitted or unpushed changes isn't removed without asking. Pass `--keep` to keep the container anyway; kept ones are listed by `silo tmp ls`, reopened with `silo tmp enter <name>` and removed with `silo tmp rm <name>` (or `--all`).
+
 ## Project configuration
 
 Create a `.silo.yml` in your project root (or run `silo init` to generate one):
@@ -494,6 +510,8 @@ The env reaches the agent through `silo ra`. Run `silo down && silo up` after sw
 | `silo list`                    | List all silo containers                                 |
 | `silo status`                  | Show container state, config, and daemons                |
 | `silo status --json`           | Container, daemon and port state as JSON (for scripts)   |
+| `silo tmp [dir\|repo\|url]`     | Throwaway container with an agent, removed on exit       |
+| `silo tmp ls` / `enter` / `rm` | List, reopen or remove kept tmp containers               |
 | `silo base`                    | List the base templates new containers are copied from   |
 | `silo base rebuild`            | Rebuild the template for this project's image            |
 | `silo base rm [name...]`       | Remove base templates (all without arguments)            |

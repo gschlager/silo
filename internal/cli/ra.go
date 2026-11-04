@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/gschlager/silo/internal/provision"
+	incuscli "github.com/lxc/incus/v7/client"
 	"github.com/spf13/cobra"
 )
 
@@ -88,8 +90,7 @@ Examples:
 			if agentName == "" {
 				return fmt.Errorf("no agents configured")
 			}
-			agentCfg, ok := cfg.Agents[agentName]
-			if !ok {
+			if _, ok := cfg.Agents[agentName]; !ok {
 				return fmt.Errorf("unknown agent %q (configured agents: %s)", agentName, agentNames(cfg))
 			}
 
@@ -102,45 +103,7 @@ Examples:
 				incus.CleanupSnapshots(ctx, server, cfg.ContainerName, "pre-session-", 3)
 			}
 
-			// Ensure the agent mode directory exists (empty; never seeded from host).
-			color.Debug("preparing agent dir for %s (mode=%s)", agentName, agentCfg.Mode)
-			if err := agents.EnsureModeDir(agentName, agentCfg.Mode); err != nil {
-				return err
-			}
-
-			// Build environment variables (host env + tool credentials + agent-specific).
-			color.Debug("resolving session env (tool credentials)")
-			env, err := sessionEnv(cfg)
-			if err != nil {
-				return err
-			}
-			// Agent env: active mode's env block plus explicit overrides, with any
-			// op:// references resolved from 1Password on the host.
-			agentEnv, err := provision.ResolveAgentEnv(agentCfg)
-			if err != nil {
-				return err
-			}
-			for k, v := range agentEnv {
-				env[k] = v
-			}
-
-			// Build the agent command with passthrough args.
-			agentCmd := agentCfg.AgentCmd(agentName)
-			if len(extraArgs) > 0 {
-				agentCmd += " " + shellQuote(extraArgs)
-			}
-			shellCmd := "cd " + cfg.WorkspacePath() + " && " + agentCmd
-			// Only when the host has herdr, which added the container as a
-			// machine on silo up: an hc left in the container alone would start
-			// a core nobody watches.
-			if _, ok := herdrHC(cfg); ok {
-				shellCmd = herdrLaunch(cfg, agentName, agentCmd) + shellCmd
-			}
-
-			opts := incus.UserOpts(cfg.UserHome(), cfg.WorkspacePath())
-			opts.Env = env
-			color.Debug("exec %s (terminal goes raw — no further output)", agentName)
-			return incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd))
+			return execAgent(ctx, server, cfg, agentName, extraArgs)
 		},
 	}
 
@@ -149,6 +112,55 @@ Examples:
 	cmd.DisableFlagParsing = true
 
 	return cmd
+}
+
+// execAgent runs an agent interactively in the workspace, with the session
+// credentials and the agent's mode env. The container must be running.
+func execAgent(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig, agentName string, extraArgs []string) error {
+	agentCfg, ok := cfg.Agents[agentName]
+	if !ok {
+		return fmt.Errorf("unknown agent %q (configured agents: %s)", agentName, agentNames(cfg))
+	}
+
+	// Ensure the agent mode directory exists (empty; never seeded from host).
+	color.Debug("preparing agent dir for %s (mode=%s)", agentName, agentCfg.Mode)
+	if err := agents.EnsureModeDir(agentName, agentCfg.Mode); err != nil {
+		return err
+	}
+
+	// Build environment variables (host env + tool credentials + agent-specific).
+	color.Debug("resolving session env (tool credentials)")
+	env, err := sessionEnv(cfg)
+	if err != nil {
+		return err
+	}
+	// Agent env: active mode's env block plus explicit overrides, with any
+	// op:// references resolved from 1Password on the host.
+	agentEnv, err := provision.ResolveAgentEnv(agentCfg)
+	if err != nil {
+		return err
+	}
+	for k, v := range agentEnv {
+		env[k] = v
+	}
+
+	// Build the agent command with passthrough args.
+	agentCmd := agentCfg.AgentCmd(agentName)
+	if len(extraArgs) > 0 {
+		agentCmd += " " + shellQuote(extraArgs)
+	}
+	shellCmd := "cd " + cfg.WorkspacePath() + " && " + agentCmd
+	// Only when the host has herdr, which added the container as a machine on
+	// silo up: an hc left in the container alone would start a core nobody
+	// watches.
+	if _, ok := herdrHC(cfg); ok {
+		shellCmd = herdrLaunch(cfg, agentName, agentCmd) + shellCmd
+	}
+
+	opts := incus.UserOpts(cfg.UserHome(), cfg.WorkspacePath())
+	opts.Env = env
+	color.Debug("exec %s (terminal goes raw — no further output)", agentName)
+	return incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd))
 }
 
 func agentNames(cfg *config.MergedConfig) string {
