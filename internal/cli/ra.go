@@ -145,7 +145,7 @@ func execAgent(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	}
 
 	// Build the agent command with passthrough args.
-	agentCmd := agentCfg.AgentCmd(agentName)
+	agentCmd := agentLaunchCmd(agentCfg, agentName)
 	if len(extraArgs) > 0 {
 		agentCmd += " " + shellQuote(extraArgs)
 	}
@@ -161,6 +161,14 @@ func execAgent(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	opts.Env = env
 	color.Debug("exec %s (terminal goes raw — no further output)", agentName)
 	return incus.ExecInteractive(ctx, server, cfg.ContainerName, opts, cfg.LoginCmd(shellCmd))
+}
+
+// agentLaunchCmd returns the agent's cmd: for running in a login shell. In the
+// container the agent's name is also a shell function that adds cmd: (see
+// provision.WriteAgentFunctions); SILO_AGENT_CMD makes it call the program as
+// is, so the flags in cmd: aren't passed twice. codex rejects a repeated flag.
+func agentLaunchCmd(agentCfg config.MergedAgentConfig, agentName string) string {
+	return "SILO_AGENT_CMD=1 " + agentCfg.AgentCmd(agentName)
 }
 
 func agentNames(cfg *config.MergedConfig) string {
