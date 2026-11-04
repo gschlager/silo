@@ -55,6 +55,7 @@ func NewRootCmd() *cobra.Command {
 	addCmd("environment", newRunCmd())
 	addCmd("environment", newCpCmd())
 	addCmd("environment", newStatusCmd())
+	addCmd("environment", newBaseCmd())
 
 	// Agents.
 	addCmd("agent", newRaCmd())
