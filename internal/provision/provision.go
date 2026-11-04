@@ -103,9 +103,15 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	color.StartCapture()
 	defer color.StopCapture()
 
-	// Step 1: Create and start the container.
-	status("Creating container %s from %s...", name, cfg.Image)
-	if err := incus.Launch(ctx, server, cfg.Image, name); err != nil {
+	// Step 1: Create the container, stopped, as a copy of the base template:
+	// default_setup, the shell, the user and the global agents are already
+	// done there. The template is built first if it's missing or outdated.
+	base, err := copyFromBase(ctx, server, BaseSpecFor(cfg), name)
+	if err != nil {
+		if incus.Exists(server, name) { // a copy that failed halfway
+			incus.Delete(context.Background(), server, name)
+		}
+		color.DumpCapture()
 		return err
 	}
 
@@ -124,21 +130,15 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}()
 
+	// Step 2: Container settings and devices, added while the container is
+	// still stopped so proxy devices bind cleanly on start.
 	// Silo lazily starts containers on demand; keep Incus from auto-starting
 	// every silo container on host boot.
 	if err := incus.SetConfig(ctx, server, name, "boot.autostart", "false"); err != nil {
 		return fmt.Errorf("disabling autostart: %w", err)
 	}
 
-	// Step 2: Wait for network.
-	status("Waiting for network...")
-	networkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	if err := incus.WaitForNetwork(networkCtx, server, name, "dns.google"); err != nil {
-		return err
-	}
-
-	// Step 3: Container nesting (required for Docker, Podman, etc.).
+	// Container nesting (required for Docker, Podman, etc.).
 	if cfg.Nesting {
 		status("Enabling container nesting...")
 		if err := incus.SetConfig(ctx, server, name, "security.nesting", "true"); err != nil {
@@ -146,7 +146,6 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 3: Set up port forwards.
 	if len(cfg.Ports) > 0 {
 		status("Setting up port forwards...")
 		if err := ReconcilePorts(ctx, server, name, cfg.Ports); err != nil {
@@ -154,13 +153,11 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 4: Mount the project directory.
 	status("Mounting project directory...")
 	if err := incus.AddDiskDevice(ctx, server, name, "workspace", cfg.ProjectDir, cfg.WorkspacePath(), false); err != nil {
 		return err
 	}
 
-	// Step 5: Set up additional mounts.
 	for i, mountSpec := range cfg.Mounts {
 		source, target, readonly, err := parseMountSpec(mountSpec)
 		if err != nil {
@@ -182,39 +179,21 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 6: Run default_setup (as root, before user creation so shell is available).
-	if len(cfg.DefaultSetup) > 0 {
-		status("Running default setup...")
-		if err := runCommands(ctx, server, name, incus.ExecOpts{}, cfg.DefaultSetup); err != nil {
-			return fmt.Errorf("default_setup failed: %w", err)
-		}
-	}
-
-	// Step 6b: Ensure the configured login shell exists (install it if missing,
-	// fall back to bash). Decoupled from default_setup so it runs for every image
-	// — silo execs every command through this shell. Persist the effective shell
-	// so later commands agree even when it differs from the configured one.
-	effectiveShell, err := EnsureShell(ctx, server, name, cfg.Shell)
-	if err != nil {
+	// Step 3: Start and wait for network.
+	if err := startAndWaitForNetwork(ctx, server, name); err != nil {
 		return err
 	}
-	cfg.Shell = effectiveShell
-	if err := config.SaveContainerShell(name, effectiveShell); err != nil {
+
+	// Use and persist the shell the template ended up with (it falls back to
+	// bash if the configured one couldn't be installed), so later commands agree.
+	if base.shell != "" {
+		cfg.Shell = base.shell
+	}
+	if err := config.SaveContainerShell(name, cfg.Shell); err != nil {
 		color.Warn("could not record effective shell: %v", err)
 	}
 
-	// Step 7: Create dev user.
-	status("Creating user %s...", cfg.User)
-	if err := CreateUser(ctx, server, name, cfg.User, cfg.Shell); err != nil {
-		return err
-	}
-
-	// Step 7b: Enable prefix history search (Up/Down) for bash line editing.
-	if err := configureInputrc(ctx, server, name); err != nil {
-		color.Warn("could not configure inputrc: %v", err)
-	}
-
-	// Step 8: Configure git.
+	// Step 4: Configure git.
 	if len(cfg.Git) > 0 {
 		status("Configuring git...")
 		if err := ConfigureGit(ctx, server, name, cfg.User, cfg.Git); err != nil {
@@ -222,12 +201,12 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 8b: Apply the global gitignore (git's per-user excludes file).
+	// Step 5: Apply the global gitignore (git's per-user excludes file).
 	if err := ApplyGitignore(ctx, server, name, cfg.User); err != nil {
 		color.Warn("could not apply global gitignore: %v", err)
 	}
 
-	// Step 9: Install the GitHub credential helper when a github token source is
+	// Step 6: Install the GitHub credential helper when a github token source is
 	// configured — either a project git.credential or a central secrets 'github'
 	// key. The helper reads $GITHUB_TOKEN at runtime, so nothing is baked in.
 	needHelper := cfg.GitCredential != nil
@@ -243,16 +222,16 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 10: Resolve tool credentials (passed at runtime, not baked in).
+	// Step 7: Resolve tool credentials (passed at runtime, not baked in).
 
-	// Step 11: Install agents.
-	if len(cfg.Agents) > 0 {
-		if err := agents.InstallAgents(ctx, server, name, cfg.User, cfg.Shell, cfg.Agents); err != nil {
+	// Step 8: Install the agents the project enables on top of the template's.
+	if extra := agentsNotIn(cfg.Agents, base.agents); len(extra) > 0 {
+		if err := agents.InstallAgents(ctx, server, name, cfg.User, cfg.Shell, extra); err != nil {
 			return err
 		}
 	}
 
-	// Step 12: Set up agent data directories.
+	// Step 9: Set up agent data directories.
 	if len(cfg.Agents) > 0 {
 		status("Setting up agent directories...")
 		if err := agents.SetupAgentDirs(ctx, server, name, cfg.ContainerName, cfg.Agents); err != nil {
@@ -260,13 +239,13 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 12: Set timezone and locale.
+	// Step 10: Set timezone and locale.
 	status("Configuring timezone and locale...")
 	if err := configureTimezoneAndLocale(ctx, server, name); err != nil {
 		color.Warn("could not set timezone/locale: %v", err)
 	}
 
-	// Step 13: Set environment variables.
+	// Step 11: Set environment variables.
 	if len(cfg.Env) > 0 {
 		status("Setting environment variables...")
 		if err := setEnvironment(ctx, server, name, cfg.User, cfg.Env); err != nil {
@@ -274,7 +253,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 14: Run project setup (as dev user with login shell).
+	// Step 12: Run project setup (as dev user with login shell).
 	if len(cfg.Setup) > 0 {
 		status("Running project setup...")
 		userOpts := incus.UserOpts("/home/"+cfg.User, cfg.WorkspacePath())
@@ -290,7 +269,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 15: Set up daemons. Install the unit files, then start the autostart
+	// Step 13: Set up daemons. Install the unit files, then start the autostart
 	// ones ourselves (with env: and secrets injected) rather than enabling them
 	// for boot.
 	if len(cfg.Daemons) > 0 {
@@ -303,7 +282,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 16: Set up notifications (persistent pieces only — the listener
+	// Step 14: Set up notifications (persistent pieces only — the listener
 	// is started per-session by silo ra / silo enter).
 	if cfg.Notifications {
 		status("Setting up notifications...")
@@ -312,7 +291,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 17: Mark as initialized.
+	// Step 15: Mark as initialized.
 	rootOpts := incus.ExecOpts{}
 	if _, err := incus.Exec(ctx, server, name, rootOpts, []string{
 		"sh", "-c", fmt.Sprintf("touch /home/%s/.silo-initialized", cfg.User),
@@ -320,7 +299,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		return fmt.Errorf("creating init marker: %w", err)
 	}
 
-	// Step 18: Take initial snapshot.
+	// Step 16: Take initial snapshot.
 	status("Taking initial snapshot...")
 	if err := incus.CreateSnapshot(ctx, server, name, "initial"); err != nil {
 		color.Warn("could not create initial snapshot: %v", err)
@@ -329,6 +308,17 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	success = true
 	status("Environment ready!")
 	return nil
+}
+
+// agentsNotIn returns the enabled agents that aren't in have.
+func agentsNotIn(all map[string]config.MergedAgentConfig, have map[string]bool) map[string]config.MergedAgentConfig {
+	out := make(map[string]config.MergedAgentConfig)
+	for name, a := range all {
+		if a.Enabled && !have[name] {
+			out[name] = a
+		}
+	}
+	return out
 }
 
 // IsInitialized checks if a container has been fully provisioned.

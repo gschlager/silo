@@ -69,3 +69,20 @@ func TestAssignContainerNameCanonicalizesSymlinks(t *testing.T) {
 		t.Fatalf("canonical aliases got different assignments: %q and %q", realName, linkName)
 	}
 }
+
+// silo-base-* names belong to base templates, so a project whose name would
+// collide gets the hash-suffixed name instead (which no template uses).
+func TestAssignContainerNameAvoidsBasePrefix(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir := filepath.Join(t.TempDir(), "base-fedora-44")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	name, err := AssignContainerName(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name == "silo-base-fedora-44" {
+		t.Errorf("got %q, which is the base template's name", name)
+	}
+}

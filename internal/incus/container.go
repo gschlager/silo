@@ -16,24 +16,57 @@ const imageServerURL = "https://images.linuxcontainers.org"
 
 // Launch creates and starts a new container from the given image.
 func Launch(ctx context.Context, server incuscli.InstanceServer, image, name string) error {
+	if err := Create(ctx, server, image, name); err != nil {
+		return err
+	}
+	return Start(ctx, server, name)
+}
+
+// Create creates a new container from the given image without starting it.
+func Create(ctx context.Context, server incuscli.InstanceServer, image, name string) error {
 	source, err := imageSource(server, image)
 	if err != nil {
 		return err
 	}
+	return createInstance(ctx, server, name, source)
+}
 
-	// Create the instance.
-	req := api.InstancesPost{
+// CopySnapshot creates a new, stopped container from a snapshot of another
+// one. The server drops the source's volatile keys (MAC addresses etc.), so
+// the copy gets its own. On btrfs and ZFS pools this is a cheap clone.
+func CopySnapshot(ctx context.Context, server incuscli.InstanceServer, source, snapshot, name string) error {
+	return createInstance(ctx, server, name, api.InstanceSource{
+		Type:   "copy",
+		Source: source + "/" + snapshot,
+	})
+}
+
+func createInstance(ctx context.Context, server incuscli.InstanceServer, name string, source api.InstanceSource) error {
+	op, err := server.CreateInstance(api.InstancesPost{
 		Name:   name,
 		Type:   api.InstanceTypeContainer,
 		Source: source,
-	}
-
-	op, err := server.CreateInstance(req)
+	})
 	if err != nil {
 		return fmt.Errorf("creating container %q: %w", name, err)
 	}
+	if err := waitOp(ctx, op); err != nil {
+		return fmt.Errorf("waiting for container creation: %w", err)
+	}
+	return nil
+}
 
-	// Wait for the operation, respecting context cancellation.
+// Rename renames a stopped container.
+func Rename(ctx context.Context, server incuscli.InstanceServer, name, newName string) error {
+	op, err := server.RenameInstance(name, api.InstancePost{Name: newName})
+	if err != nil {
+		return fmt.Errorf("renaming container %q to %q: %w", name, newName, err)
+	}
+	return waitOp(ctx, op)
+}
+
+// waitOp waits for an Incus operation, respecting context cancellation.
+func waitOp(ctx context.Context, op incuscli.Operation) error {
 	errCh := make(chan error, 1)
 	go func() { errCh <- op.Wait() }()
 	select {
@@ -41,13 +74,8 @@ func Launch(ctx context.Context, server incuscli.InstanceServer, image, name str
 		_ = op.Cancel()
 		return ctx.Err()
 	case err := <-errCh:
-		if err != nil {
-			return fmt.Errorf("waiting for container creation: %w", err)
-		}
+		return err
 	}
-
-	// Start the container.
-	return Start(ctx, server, name)
 }
 
 // imageSource resolves image to an instance source. It prefers the public
@@ -226,7 +254,12 @@ func WaitForNetwork(ctx context.Context, server incuscli.InstanceServer, name st
 	}
 }
 
-// ListSiloInstances returns all Incus instances whose name starts with "silo-".
+// BaseMarkerKey marks a container as a base template rather than a project's
+// container. Templates are hidden from ListSiloInstances.
+const BaseMarkerKey = "user.silo.base"
+
+// ListSiloInstances returns all Incus instances whose name starts with "silo-",
+// except base templates.
 func ListSiloInstances(server incuscli.InstanceServer) ([]api.Instance, error) {
 	instances, err := server.GetInstances(api.InstanceTypeContainer)
 	if err != nil {
@@ -234,6 +267,9 @@ func ListSiloInstances(server incuscli.InstanceServer) ([]api.Instance, error) {
 	}
 	var result []api.Instance
 	for _, inst := range instances {
+		if inst.Config[BaseMarkerKey] == "true" {
+			continue
+		}
 		if len(inst.Name) > 5 && inst.Name[:5] == "silo-" {
 			result = append(result, inst)
 		}

@@ -137,3 +137,27 @@ func SetConfig(ctx context.Context, server incuscli.InstanceServer, container, k
 		return err
 	}
 }
+
+// UpdateConfig sets several instance configuration keys in one update. An
+// empty value removes the key.
+func UpdateConfig(ctx context.Context, server incuscli.InstanceServer, container string, values map[string]string) error {
+	inst, etag, err := server.GetInstance(container)
+	if err != nil {
+		return fmt.Errorf("getting container %q: %w", container, err)
+	}
+	if inst.Config == nil {
+		inst.Config = make(map[string]string)
+	}
+	for k, v := range values {
+		if v == "" {
+			delete(inst.Config, k)
+		} else {
+			inst.Config[k] = v
+		}
+	}
+	op, err := server.UpdateInstance(container, inst.Writable(), etag)
+	if err != nil {
+		return fmt.Errorf("updating config on %q: %w", container, err)
+	}
+	return waitOp(ctx, op)
+}

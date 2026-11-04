@@ -64,11 +64,16 @@ func AssignContainerName(projectDir string) (name string, err error) {
 	}
 
 	assigned := ContainerName(projectDir)
+	// silo-base-* is reserved for base templates (e.g. silo-base-fedora-44).
+	taken := strings.HasPrefix(assigned, "silo-base-")
 	for _, used := range registry.Projects {
 		if used == assigned {
-			assigned = collisionContainerName(projectDir)
+			taken = true
 			break
 		}
+	}
+	if taken {
+		assigned = collisionContainerName(projectDir)
 	}
 	registry.Projects[key] = assigned
 	encoded, err := MarshalYAML(&registry)

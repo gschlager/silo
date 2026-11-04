@@ -38,6 +38,9 @@ type MergedConfig struct {
 	// Agent configuration (merged: project replaces global per agent).
 	Agents     map[string]MergedAgentConfig
 	AgentOrder []string // preserves definition order from global config
+	// BaseAgents are the agents enabled in the global config. They're installed
+	// into the shared base template, so they don't depend on the project.
+	BaseAgents []string
 
 	// Tools.
 	Tools map[string]ToolConfig
@@ -288,6 +291,9 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 	for _, ga := range global.Agents {
 		m.AgentOrder = append(m.AgentOrder, ga.Name)
 		globalAgents[ga.Name] = ga
+		if ga.Enabled && ga.Install != "" {
+			m.BaseAgents = append(m.BaseAgents, ga.Name)
+		}
 		m.Agents[ga.Name] = MergedAgentConfig{
 			Cmd:     ga.Cmd,
 			Deps:    ga.Deps,
