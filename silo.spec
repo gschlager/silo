@@ -1,3 +1,6 @@
+# The binary is built stripped (-s -w), so there is no debug info to package
+%global debug_package %{nil}
+
 Name:           silo
 Version:        %{version}
 Release:        1%{?dist}
