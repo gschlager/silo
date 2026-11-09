@@ -2,13 +2,14 @@
 %global debug_package %{nil}
 
 Name:           silo
-Version:        %{version}
+# Version, Source0 and the %setup directory are filled in by .copr/srpm.sh
+Version:        0
 Release:        1%{?dist}
 Summary:        Secure isolated local environments for AI agents
 
 License:        MIT
 URL:            https://github.com/gschlager/silo
-Source0:        https://github.com/gschlager/%{name}/archive/v%{version}.tar.gz
+Source0:        %{name}.tar.gz
 
 BuildRequires:  golang >= 1.27.3
 BuildRequires:  systemd-rpm-macros
@@ -23,7 +24,7 @@ for AI agents using Incus containers.
 %setup -q -n %{name}-%{version}
 
 %build
-go build -ldflags="-s -w -X github.com/gschlager/silo/internal/cli.Version=%{version}" -o %{name} ./cmd/silo
+go build -mod=vendor -ldflags="-s -w -X github.com/gschlager/silo/internal/cli.Version=%{version}" -o %{name} ./cmd/silo
 
 %install
 install -Dpm 0755 %{name} %{buildroot}%{_bindir}/%{name}

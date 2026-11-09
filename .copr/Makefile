@@ -1,6 +1,10 @@
-.PHONY: srpm
+# COPR calls this as: make -f .copr/Makefile srpm outdir=<dir> spec=<spec>
+# (SCM source, build method "make srpm"). See .copr/srpm.sh.
 
+COPR_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+outdir ?= $(COPR_DIR)../dist
+spec ?= $(COPR_DIR)../silo.spec
+
+.PHONY: srpm
 srpm:
-	dnf -y install golang rpm-build
-	spectool -g -R ../silo.spec
-	rpmbuild -bs --define "_sourcedir $$(rpm --eval '%{_topdir}')/SOURCES" --define "version $$(git describe --tags --abbrev=0 | sed 's/^v//')" ../silo.spec --resultdir $(outdir)
+	sh $(COPR_DIR)srpm.sh "$(outdir)" "$(spec)"
