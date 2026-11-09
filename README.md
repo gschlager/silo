@@ -11,10 +11,10 @@ AI coding agents run with your full user permissions. They can read any file, co
 ## Quick start
 
 ```bash
-# Install silo. The RPM pulls in Incus and enables its units.
-# Without the RPM, install Incus first:
-# https://linuxcontainers.org/incus/docs/main/installing/
-go install github.com/gschlager/silo/cmd/silo@latest
+# Install silo from COPR (Fedora 45 or newer). The RPM pulls in Incus
+# and enables its units.
+sudo dnf copr enable gschlager/silo
+sudo dnf install silo
 
 # Prepare the host: Incus access, first-time init, firewall, memory cap
 silo setup
@@ -32,6 +32,8 @@ silo up
 # Run an AI agent
 silo ra
 ```
+
+On other distributions, [install Incus](https://linuxcontainers.org/incus/docs/main/installing/) first, then take the binary from a [GitHub release](https://github.com/gschlager/silo/releases) or run `go install github.com/gschlager/silo/cmd/silo@latest`.
 
 `silo init` spins up a temporary container, uses an AI agent to analyze your project, and generates a `.silo.yml` configuration file. It shows you the result with syntax highlighting and lets you refine it interactively. `silo up` provisions the environment, and `silo ra` launches your default agent inside it.
 
@@ -752,7 +754,7 @@ make install    # install to $GOPATH/bin
 make vet        # run go vet
 ```
 
-Releases are built with [GoReleaser](https://goreleaser.com/) and published as GitHub releases with RPM packages.
+Pushing a `v*` tag makes a release: [GoReleaser](https://goreleaser.com/) publishes the tarballs as a GitHub release, and COPR builds the RPM for the same tag. An RPM built from an untagged commit gets a snapshot version like `0.6.0^20261110git1a2b3c4`.
 
 ## Requirements
 
