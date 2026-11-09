@@ -16,7 +16,7 @@ archives:
     name_template: "silo-{{.Version}}-{{.Os}}-{{.Arch}}"
 
 changelog:
-  use: github-native
+  use: git
 
 release:
   github:
