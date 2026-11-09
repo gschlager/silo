@@ -24,9 +24,19 @@ nfpms:
     license: MIT
     formats:
       - rpm
+    dependencies:
+      - incus
+      - nftables
     contents:
       - src: LICENSE
         dst: /usr/share/licenses/silo/LICENSE
+      - src: packaging/silo-incus-docker-fix.service
+        dst: /usr/lib/systemd/system/silo-incus-docker-fix.service
+      - src: packaging/80-silo.preset
+        dst: /usr/lib/systemd/system-preset/80-silo.preset
+    scripts:
+      postinstall: packaging/rpm-postinstall.sh
+      preremove: packaging/rpm-preremove.sh
 
 changelog:
   use: github-native

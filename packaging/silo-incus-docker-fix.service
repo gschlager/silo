@@ -1,0 +1,17 @@
+# Docker's firewall rules drop forwarded traffic, which cuts Incus containers
+# off from the network. This lets traffic from and to the Incus bridge through
+# Docker's DOCKER-USER chain. It runs whenever Docker starts and does nothing
+# on hosts without Docker.
+[Unit]
+Description=Allow Incus bridge traffic through Docker's firewall
+After=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft insert rule ip filter DOCKER-USER iifname "incusbr0" accept
+ExecStart=/usr/sbin/nft insert rule ip filter DOCKER-USER oifname "incusbr0" accept
+
+[Install]
+WantedBy=docker.service

@@ -1,0 +1,5 @@
+# Units silo needs, enabled when the silo package is installed.
+enable incus.socket
+enable incus-user.socket
+enable incus-startup.service
+enable silo-incus-docker-fix.service

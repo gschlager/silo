@@ -11,11 +11,13 @@ AI coding agents run with your full user permissions. They can read any file, co
 ## Quick start
 
 ```bash
-# Install Incus (if not already installed)
-# See https://linuxcontainers.org/incus/docs/main/installing/
-
-# Install silo
+# Install silo. The RPM pulls in Incus and enables its units.
+# Without the RPM, install Incus first:
+# https://linuxcontainers.org/incus/docs/main/installing/
 go install github.com/gschlager/silo/cmd/silo@latest
+
+# Prepare the host: Incus access, first-time init, firewall, memory cap
+silo setup
 
 # Set up shell completions
 silo completion install
@@ -596,8 +598,8 @@ Note that this scopes *naming*, not *access*: the manager environment is shared,
 
 | Command                        | Description                                              |
 |--------------------------------|----------------------------------------------------------|
-| `silo setup`                   | Cap the combined memory of all containers on the host (default 80%) |
-| `silo setup --memory-max 24GiB`| Set a specific combined memory cap                       |
+| `silo setup`                   | Prepare the host: Incus access, init, firewall, memory cap (default 80%) |
+| `silo setup --memory-max 24GiB`| Same, with a specific combined memory cap                |
 | `silo init`                    | Generate `.silo.yml` with AI (default)                   |
 | `silo init -m`                 | Generate `.silo.yml` with interactive wizard             |
 | `silo init --agent codex`      | Use a specific agent for generation                      |
@@ -726,6 +728,17 @@ Silo isolates AI agents in Linux system containers (Incus/LXC) with kernel-level
 | Agent exploits kernel vulnerability        | No         | Containers share the host kernel                                  |
 
 `silo ra` takes a snapshot before each agent session, enabling rollback if an agent corrupts the environment. The 3 most recent pre-session snapshots are kept; older ones are cleaned up automatically. Manual snapshots via `silo snapshot create` are never affected.
+
+### Host setup
+
+Run `silo setup` once on a new machine (it's safe to run again, every step checks first):
+
+- **Incus access**: adds you to the `incus-admin` group. Log out and back in afterwards.
+- **First-time init**: if Incus has no storage pool yet, it runs `incus admin init` with a NAT bridge (`incusbr0`), a default storage pool (a btrfs subvolume when `/var/lib/incus` is on btrfs, a plain directory otherwise) and a default profile using both. An existing Incus setup is never changed.
+- **Firewall**: when firewalld is running, puts `incusbr0` into the trusted zone so containers get DHCP, DNS and internet access.
+- **Memory cap**: see below.
+
+The RPM also installs `silo-incus-docker-fix.service`. Docker's firewall rules drop forwarded traffic, which cuts Incus containers off from the network; this unit lets the `incusbr0` traffic through whenever Docker starts. On hosts without Docker it does nothing.
 
 ### Capping container memory
 
