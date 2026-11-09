@@ -15,29 +15,6 @@ archives:
   - format: tar.gz
     name_template: "silo-{{.Version}}-{{.Os}}-{{.Arch}}"
 
-nfpms:
-  - package_name: silo
-    vendor: Gerhard Schlager
-    homepage: https://github.com/gschlager/silo
-    maintainer: Gerhard Schlager <gerhard@schlager.dev>
-    description: Secure isolated local environments for AI agents
-    license: MIT
-    formats:
-      - rpm
-    dependencies:
-      - incus
-      - nftables
-    contents:
-      - src: LICENSE
-        dst: /usr/share/licenses/silo/LICENSE
-      - src: packaging/silo-incus-docker-fix.service
-        dst: /usr/lib/systemd/system/silo-incus-docker-fix.service
-      - src: packaging/80-silo.preset
-        dst: /usr/lib/systemd/system-preset/80-silo.preset
-    scripts:
-      postinstall: packaging/rpm-postinstall.sh
-      preremove: packaging/rpm-preremove.sh
-
 changelog:
   use: github-native
 
