@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
@@ -172,13 +173,33 @@ func resolveSecretsInto(env, secrets map[string]string, what string) error {
 // read via the op CLI on the host; anything else is treated as a literal.
 func resolveSecret(ref string) (string, error) {
 	if strings.HasPrefix(ref, "op://") {
-		out, err := exec.Command("op", "read", ref).Output()
-		if err != nil {
-			return "", fmt.Errorf("reading from 1Password (%s): %w", ref, err)
-		}
-		return strings.TrimSpace(string(out)), nil
+		return readOp(ref)
 	}
 	return ref, nil
+}
+
+// opValues remembers what op read returned in this process. One `silo up`
+// resolves the same secrets for setup, the clone and the daemons, and each op
+// call is a separate process that 1Password may want to approve.
+var (
+	opMu     sync.Mutex
+	opValues = map[string]string{}
+)
+
+// readOp reads a 1Password reference with the op CLI, once per process.
+func readOp(ref string) (string, error) {
+	opMu.Lock()
+	defer opMu.Unlock()
+	if v, ok := opValues[ref]; ok {
+		return v, nil
+	}
+	out, err := exec.Command("op", "read", ref).Output()
+	if err != nil {
+		return "", fmt.Errorf("reading from 1Password (%s): %w", ref, err)
+	}
+	v := strings.TrimSpace(string(out))
+	opValues[ref] = v
+	return v, nil
 }
 
 // resolveCredential resolves a credential from its configured source.
@@ -189,11 +210,7 @@ func resolveCredential(cred *config.CredentialConfig) (string, error) {
 		if cred.Ref == "" {
 			return "", fmt.Errorf("1password credential requires 'ref' field")
 		}
-		out, err := exec.Command("op", "read", cred.Ref).Output()
-		if err != nil {
-			return "", fmt.Errorf("reading from 1Password (%s): %w", cred.Ref, err)
-		}
-		return strings.TrimSpace(string(out)), nil
+		return readOp(cred.Ref)
 
 	case "token":
 		if cred.Value != "" {
