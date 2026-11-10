@@ -3,6 +3,7 @@ package cli
 import (
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
+	"github.com/gschlager/silo/internal/svcapi"
 	"github.com/spf13/cobra"
 )
 
@@ -10,6 +11,8 @@ import (
 var Version = "dev"
 
 func NewRootCmd() *cobra.Command {
+	svcapi.Version = Version
+
 	rootCmd := &cobra.Command{
 		Use:           "silo",
 		Short:         "Secure isolated local environments for AI agents",
@@ -77,6 +80,7 @@ func NewRootCmd() *cobra.Command {
 
 	// Configuration.
 	addCmd("config", newSetupCmd())
+	addCmd("config", newServiceCmd())
 	addCmd("config", newInitCmd())
 	addCmd("config", newConfigCmd())
 	addCmd("config", newCompletionCmd())

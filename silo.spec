@@ -31,9 +31,18 @@ install -Dpm 0755 %{name} %{buildroot}%{_bindir}/%{name}
 install -Dpm 0644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 install -Dpm 0644 packaging/silo-incus-docker-fix.service %{buildroot}%{_unitdir}/silo-incus-docker-fix.service
 install -Dpm 0644 packaging/80-silo.preset %{buildroot}%{_presetdir}/80-silo.preset
+%{_userunitdir}/silo.socket
+%{_userunitdir}/silo.service
+%{_userpresetdir}/80-silo.preset
+install -Dpm 0644 packaging/silo.socket %{buildroot}%{_userunitdir}/silo.socket
+install -Dpm 0644 packaging/silo.service %{buildroot}%{_userunitdir}/silo.service
+install -Dpm 0644 packaging/80-silo-user.preset %{buildroot}%{_userpresetdir}/80-silo.preset
 
 %post
 %systemd_post silo-incus-docker-fix.service
+# Enables the silo service for every user from their next login on (through
+# the user preset). silo setup starts it right away.
+%systemd_user_post silo.socket silo.service
 # The incus units come from the incus package, whose %%post ran before our
 # preset file existed, so apply the preset to them on first install.
 if [ $1 -eq 1 ]; then
@@ -42,6 +51,7 @@ fi
 
 %preun
 %systemd_preun silo-incus-docker-fix.service
+%systemd_user_preun silo.socket silo.service
 
 %postun
 %systemd_postun silo-incus-docker-fix.service
@@ -51,3 +61,6 @@ fi
 %{_bindir}/%{name}
 %{_unitdir}/silo-incus-docker-fix.service
 %{_presetdir}/80-silo.preset
+%{_userunitdir}/silo.socket
+%{_userunitdir}/silo.service
+%{_userpresetdir}/80-silo.preset

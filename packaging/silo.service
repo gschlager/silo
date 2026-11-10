@@ -1,0 +1,12 @@
+[Unit]
+Description=silo service (secrets cache, container sockets, .localhost proxy)
+Requires=silo.socket
+After=silo.socket
+
+[Service]
+ExecStart=/usr/bin/silo service run
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+Also=silo.socket

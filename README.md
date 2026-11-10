@@ -602,6 +602,7 @@ Note that this scopes *naming*, not *access*: the manager environment is shared,
 |--------------------------------|----------------------------------------------------------|
 | `silo setup`                   | Prepare the host: Incus access, init, firewall, memory cap (default 80%) |
 | `silo setup --memory-max 24GiB`| Same, with a specific combined memory cap                |
+| `silo service status`          | Show the state of the [silo service](#the-silo-service)  |
 | `silo init`                    | Generate `.silo.yml` with AI (default)                   |
 | `silo init -m`                 | Generate `.silo.yml` with interactive wizard             |
 | `silo init --agent codex`      | Use a specific agent for generation                      |
@@ -708,6 +709,21 @@ To turn the integration off even with herdr installed, set `herdr: false` in
 `~/.config/silo/config.yml`. silo then leaves herdr alone on `silo up` and
 `silo ra`; drop a machine it added before with `hc machine rm silo-myapp`.
 
+## The silo service
+
+Some things don't fit into a single silo command, so silo also runs as a small background service per user: `silo.service`, a systemd user service started through `silo.socket`. The RPM enables it for every user from their next login on, and `silo setup` installs and starts it right away (also for `go install` builds).
+
+The CLI talks to it over `$XDG_RUNTIME_DIR/silo/silo.sock`, which only your user can open; the service also checks the uid of every connection. That socket is never mounted into a container. Everything that uses the service keeps working without it, minus the feature itself.
+
+When silo and the service come from different builds (after an upgrade, or a rebuilt binary), the CLI asks the service to stop and systemd starts the new binary on the next connection.
+
+| Command                | Description                                         |
+|------------------------|-----------------------------------------------------|
+| `silo service status`  | Show whether the service runs and what it does       |
+| `silo service restart` | Restart the service                                  |
+
+Logs go to the journal: `journalctl --user -u silo`.
+
 ## Security model
 
 Silo isolates AI agents in Linux system containers (Incus/LXC) with kernel-level namespaces. Each container has its own filesystem root, process tree, network stack, and user namespace.
@@ -739,6 +755,7 @@ Run `silo setup` once on a new machine (it's safe to run again, every step check
 - **First-time init**: if Incus has no storage pool yet, it runs `incus admin init` with a NAT bridge (`incusbr0`), a default storage pool (a btrfs subvolume when `/var/lib/incus` is on btrfs, a plain directory otherwise) and a default profile using both. An existing Incus setup is never changed.
 - **Firewall**: when firewalld is running, puts `incusbr0` into the trusted zone so containers get DHCP, DNS and internet access.
 - **Memory cap**: see below.
+- **silo service**: installs, enables and starts it, see [The silo service](#the-silo-service).
 
 The RPM also installs `silo-incus-docker-fix.service`. Docker's firewall rules drop forwarded traffic, which cuts Incus containers off from the network; this unit lets the `incusbr0` traffic through whenever Docker starts. On hosts without Docker it does nothing.
 

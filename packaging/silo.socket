@@ -1,0 +1,10 @@
+[Unit]
+Description=silo service socket
+
+[Socket]
+ListenStream=%t/silo/silo.sock
+SocketMode=0600
+DirectoryMode=0700
+
+[Install]
+WantedBy=sockets.target

@@ -42,6 +42,8 @@ func newSetupCmd() *cobra.Command {
     created inside the delegated incus.service cgroup, and sets MemoryMax on
     incus.service. A runaway process or a tmpfs fill hits this shared limit
     and gets OOM-killed inside a container, sparing the host.
+  - Installs and starts the silo service (a systemd user service), see
+    ` + "`silo service`" + `.
 
 Steps that need root shell out to sudo.`,
 		Args: cobra.NoArgs,
@@ -69,6 +71,11 @@ Steps that need root shell out to sudo.`,
 			color.Status("Capping combined container memory on %s...", incusUnit)
 			if err := ensureMemoryMax(cmd, memoryMax); err != nil {
 				return err
+			}
+
+			color.Status("Checking the silo service...")
+			if err := installService(); err != nil {
+				return fmt.Errorf("installing the silo service: %w", err)
 			}
 
 			// Container cgroup placement (needs API access).
