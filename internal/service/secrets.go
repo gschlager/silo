@@ -94,6 +94,8 @@ func (s *Server) secretRoutes() {
 		return none{}, nil
 	})
 	handle(s.mux, "POST /v1/secrets/forget", func(r *http.Request, _ *none) (svcapi.ForgetResult, error) {
-		return svcapi.ForgetResult{Count: s.secrets.forget("asked to")}, nil
+		n := s.secrets.forget("asked to")
+		s.events.publish(Event{Type: "secrets-forgotten", Message: "asked to"})
+		return svcapi.ForgetResult{Count: n}, nil
 	})
 }

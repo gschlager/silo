@@ -89,7 +89,10 @@ func (s *Server) onStarted(name string) {
 	if err == nil {
 		err = provision.StartConfiguredDaemons(ctx, srv, cfg)
 	}
-	if err != nil {
+	if err == nil {
+		s.events.publish(Event{Type: "daemons-started", Container: name})
+	} else {
+		s.events.publish(Event{Type: "daemons-failed", Container: name, Message: err.Error()})
 		log.Printf("%s: starting daemons: %v", name, err)
 		go desktopNotify(context.Background(), "silo: "+projectLabel(name),
 			fmt.Sprintf("Couldn't start the daemons: %v. Run silo up in the project.", err))

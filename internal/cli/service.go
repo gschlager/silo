@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,7 +28,7 @@ base templates.
 
 silo setup installs and starts it. Logs: journalctl --user -u silo`,
 	}
-	cmd.AddCommand(newServiceStatusCmd(), newServiceForgetCmd(), newServiceRestartCmd(), newServiceRunCmd())
+	cmd.AddCommand(newServiceStatusCmd(), newServiceEventsCmd(), newServiceForgetCmd(), newServiceRestartCmd(), newServiceRunCmd())
 	return cmd
 }
 
@@ -155,4 +157,51 @@ func upperFirst(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+func newServiceEventsCmd() *cobra.Command {
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "events",
+		Short: "Follow what the service sees and does (container starts, notifications, ...)",
+		Long: `Follow the service's events until interrupted: containers starting and
+stopping, idle stops, daemons started by the service, silo-notify messages,
+URLs opened from containers, commit signatures and base template refreshes.
+
+With --json, every event is one JSON object per line, for tools.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := svcapi.Dial()
+			if err != nil {
+				return err
+			}
+			body, err := c.Stream(cmd.Context(), "/v1/events")
+			if err != nil {
+				return err
+			}
+			defer body.Close()
+			lines := bufio.NewScanner(body)
+			for lines.Scan() {
+				if asJSON {
+					fmt.Println(lines.Text())
+					continue
+				}
+				var e svcapi.Event
+				if json.Unmarshal(lines.Bytes(), &e) != nil {
+					continue
+				}
+				line := e.Time.Local().Format("15:04:05") + "  " + e.Type
+				if e.Container != "" {
+					line += "  " + e.Container
+				}
+				if e.Message != "" {
+					line += "  " + e.Message
+				}
+				fmt.Println(line)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print one JSON object per event")
+	return cmd
 }

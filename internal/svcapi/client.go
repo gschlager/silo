@@ -281,3 +281,17 @@ func (c *Client) Proxy() (ProxyInfo, error) {
 	err := c.Do(ctx, "GET", "/v1/proxy", nil, &p)
 	return p, err
 }
+
+// Event is one line of the service's event stream (GET /v1/events).
+// Fields only get added, never renamed.
+type Event struct {
+	Time time.Time `json:"time"`
+	// Type is one of: container-started, container-stopped,
+	// container-deleted, container-idle-stopped, daemons-started,
+	// daemons-failed, notification, open-requested, opened,
+	// commit-signed, signing-refused, base-refresh-started,
+	// base-refresh-finished, base-refresh-failed, secrets-forgotten.
+	Type      string `json:"type"`
+	Container string `json:"container,omitempty"`
+	Message   string `json:"message,omitempty"`
+}

@@ -75,6 +75,7 @@ func (s *Server) handleOpen(container string, w http.ResponseWriter, r *http.Req
 		http.Error(w, "another URL from this container is still waiting for a click", http.StatusTooManyRequests)
 		return
 	}
+	s.publish(Event{Type: "open-requested", Container: container, Message: target})
 	go func() {
 		defer s.opening.done(container)
 		ctx, cancel := context.WithTimeout(context.Background(), confirmTimeout)
@@ -85,6 +86,7 @@ func (s *Server) handleOpen(container string, w http.ResponseWriter, r *http.Req
 			return
 		}
 		log.Printf("%s: opening %s", container, target)
+		s.publish(Event{Type: "opened", Container: container, Message: target})
 		openInBrowser(target)
 	}()
 	w.WriteHeader(http.StatusAccepted)

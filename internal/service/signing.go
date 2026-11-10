@@ -39,6 +39,14 @@ type signingAgent struct {
 	signingKey func() (ssh.PublicKey, error)
 	// upstream connects to the host's agent.
 	upstream func() (agent.ExtendedAgent, func(), error)
+	// report publishes an event (commit-signed, signing-refused); may be nil.
+	report func(typ, msg string)
+}
+
+func (a *signingAgent) event(typ, msg string) {
+	if a.report != nil {
+		a.report(typ, msg)
+	}
 }
 
 func (a *signingAgent) List() ([]*agent.Key, error) {
@@ -73,10 +81,12 @@ func (a *signingAgent) SignWithFlags(key ssh.PublicKey, data []byte, flags agent
 	want, err := a.signingKey()
 	if err != nil || want == nil || !bytes.Equal(key.Marshal(), want.Marshal()) {
 		log.Printf("%s: signing: refused a request for another key", a.container)
+		a.event("signing-refused", "another key")
 		return nil, errRefused
 	}
 	if !isGitSSHSig(data) {
 		log.Printf("%s: signing: refused data that isn't a git signature", a.container)
+		a.event("signing-refused", "not a git signature")
 		return nil, errRefused
 	}
 	up, done, err := a.upstream()
@@ -90,6 +100,7 @@ func (a *signingAgent) SignWithFlags(key ssh.PublicKey, data []byte, flags agent
 		return nil, err
 	}
 	log.Printf("%s: signed a git object", a.container)
+	a.event("commit-signed", "")
 	return sig, nil
 }
 

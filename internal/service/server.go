@@ -39,6 +39,7 @@ type Server struct {
 	proxy    *proxy
 	activity activity
 	idle     *idleTracker
+	events   *eventBus
 	// containerConfig loads a container's project config; configFor, or a
 	// stub in tests.
 	containerConfig func(name string) (*config.MergedConfig, error)
@@ -82,6 +83,8 @@ func runWith(ctx context.Context, opts Options) error {
 	s.base = newBaseJobs()
 	s.proxy = newProxy(s)
 	s.idle = newIdleTracker()
+	s.events = newEventBus()
+	s.base.report = s.publish
 	defer s.hub.closeAll()
 	provision.Secrets = s.secrets
 	s.routes()
@@ -101,7 +104,11 @@ func runWith(ctx context.Context, opts Options) error {
 		go s.proxy.listen(ctx)
 	}
 	if !opts.NoDBus {
-		go watchSession(ctx, func(reason string) { s.secrets.forget(reason) })
+		go watchSession(ctx, func(reason string) {
+			if n := s.secrets.forget(reason); n > 0 {
+				s.events.publish(Event{Type: "secrets-forgotten", Message: reason})
+			}
+		})
 	}
 
 	srv := &http.Server{Handler: s.mux, ReadHeaderTimeout: 10 * time.Second}
@@ -179,12 +186,20 @@ func (s *Server) routes() {
 	handle(s.mux, "GET /v1/proxy", func(r *http.Request, _ *none) (svcapi.ProxyInfo, error) {
 		return s.proxy.info(), nil
 	})
+	s.mux.HandleFunc("GET /v1/events", s.handleEvents)
 	handle(s.mux, "POST /v1/shutdown", func(r *http.Request, _ *none) (none, error) {
 		log.Printf("asked to stop")
 		// Answer first, then stop.
 		time.AfterFunc(50*time.Millisecond, s.stopOnce)
 		return none{}, nil
 	})
+}
+
+// publish sends an event to the event stream (nothing without one, in tests).
+func (s *Server) publish(e Event) {
+	if s.events != nil {
+		s.events.publish(e)
+	}
 }
 
 // every calls fn every interval until ctx is done.

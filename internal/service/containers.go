@@ -119,7 +119,14 @@ func (s *Server) openContainerSockets(name string) (*containerSockets, error) {
 		socks.close()
 		return nil, err
 	}
-	go serveSigningAgent(al, &signingAgent{container: name, signingKey: configuredSigningKey, upstream: dialHostAgent})
+	go serveSigningAgent(al, &signingAgent{
+		container:  name,
+		signingKey: configuredSigningKey,
+		upstream:   dialHostAgent,
+		report: func(typ, msg string) {
+			s.events.publish(Event{Type: typ, Container: name, Message: msg})
+		},
+	})
 	socks.closers = append(socks.closers, al)
 	return socks, nil
 }
@@ -156,6 +163,9 @@ func readText(w http.ResponseWriter, r *http.Request, max int64) (string, error)
 func (s *Server) notify(container, msg string) {
 	if msg == "" {
 		return
+	}
+	if s.events != nil {
+		s.events.publish(Event{Type: "notification", Container: container, Message: msg})
 	}
 	g, err := config.LoadGlobalConfig()
 	if err != nil || !g.Notifications {

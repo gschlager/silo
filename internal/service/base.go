@@ -20,6 +20,14 @@ type baseJobs struct {
 	running map[string]bool
 	// start runs a refresh and waits for it; a stub in tests.
 	start func(image string) error
+	// report publishes an event; may be nil.
+	report func(e Event)
+}
+
+func (b *baseJobs) event(typ, image string) {
+	if b.report != nil {
+		b.report(Event{Type: typ, Message: image})
+	}
 }
 
 func newBaseJobs() *baseJobs {
@@ -47,12 +55,15 @@ func (b *baseJobs) refresh(image string) bool {
 			b.mu.Unlock()
 		}()
 		log.Printf("refreshing the base template for %s (log: %s)", image, provision.RefreshLogPath())
+		b.event("base-refresh-started", image)
 		start := time.Now()
 		if err := b.start(image); err != nil {
 			log.Printf("base template refresh for %s failed: %v (see %s)", image, err, provision.RefreshLogPath())
+			b.event("base-refresh-failed", image)
 			return
 		}
 		log.Printf("base template refresh for %s done in %s", image, time.Since(start).Round(time.Second))
+		b.event("base-refresh-finished", image)
 	}()
 	return true
 }

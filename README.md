@@ -731,10 +731,13 @@ When silo and the service come from different builds (after an upgrade, or a reb
 | Command                | Description                                         |
 |------------------------|-----------------------------------------------------|
 | `silo service status`  | Show whether the service runs and what it does       |
+| `silo service events`  | Follow the service's events (`--json` for tools)    |
 | `silo service forget`  | Forget all cached 1Password secrets                  |
 | `silo service restart` | Restart the service                                  |
 
 Logs go to the journal: `journalctl --user -u silo`.
+
+Tools can follow what the service sees with `silo service events --json` (or `GET /v1/events` on the socket): one JSON object per line for containers starting and stopping, idle stops, daemons it started, `silo-notify` messages, URLs opened from containers, commit signatures, base template refreshes and forgotten secrets. herdr, a status bar or a script can react to "agent needs input" without polling.
 
 ### Container sockets
 

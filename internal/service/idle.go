@@ -142,6 +142,7 @@ func (s *Server) checkIdle() {
 			log.Printf("%s: stopping: %v", name, err)
 			continue
 		}
+		s.events.publish(Event{Type: "container-idle-stopped", Container: name})
 		go desktopNotify(context.Background(), "silo: "+projectLabel(name),
 			fmt.Sprintf("Stopped after %s without use. silo ra, silo enter or its .localhost URL starts it again.", formatIdle(limit)))
 	}

@@ -103,7 +103,13 @@ func (s *Server) onIncusEvent(e api.Event) {
 		s.hub.reconcile()
 	case "instance-started":
 		s.idle.started(name)
+		s.events.publish(Event{Type: "container-started", Container: name})
 		go s.onStarted(name)
+	case "instance-stopped", "instance-shutdown":
+		s.events.publish(Event{Type: "container-stopped", Container: name})
+	}
+	if lc.Action == "instance-deleted" {
+		s.events.publish(Event{Type: "container-deleted", Container: name})
 	}
 }
 
