@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/gschlager/silo/internal/localca"
+	"github.com/gschlager/silo/internal/provision"
 	"github.com/gschlager/silo/internal/svcapi"
 )
 
@@ -29,9 +31,11 @@ import (
 // loopback address themselves, and so does systemd-resolved, so there's
 // nothing to set up in DNS.
 //
-// It connects to the forward's host port, i.e. the Incus proxy device, which
-// reaches the container's own localhost. Many dev servers only listen there.
-// A request for a stopped container starts it and waits for the port.
+// It connects to a Unix socket per http: forward that an Incus proxy device
+// (added by `silo up`) forwards to the container's own localhost, where many
+// dev servers only listen. The socket path is silo's choice, never a host
+// port from .silo.yml, so a route can't be pointed at another service on the
+// host. A top-level visit to a stopped container starts it and waits.
 
 const (
 	httpPort          = 80
@@ -45,6 +49,7 @@ const (
 
 type proxyRoute struct {
 	container string
+	socket    string
 	config.HTTPRoute
 }
 
@@ -64,17 +69,31 @@ type proxy struct {
 
 	rp *httputil.ReverseProxy
 	ui http.Handler
-	// dial checks whether a host port accepts connections; a stub in tests.
-	dial func(ctx context.Context, addr string) error
+	// dial connects to a route's socket; a stub in tests.
+	dial func(ctx context.Context, socket string) (net.Conn, error)
 }
 
 type targetKey struct{}
 
 func newProxy(s *Server) *proxy {
 	p := &proxy{s: s, routes: map[string]proxyRoute{}, starting: map[string]*sync.Mutex{}}
+	p.dial = func(ctx context.Context, socket string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, "unix", socket)
+	}
 	p.rp = &httputil.ReverseProxy{
+		Transport: &http.Transport{
+			// Connections are pooled per URL host, which is the socket's
+			// name, so they're never mixed up between routes.
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return p.dial(ctx, ctx.Value(targetKey{}).(string))
+			},
+			MaxIdleConnsPerHost: 8,
+			IdleConnTimeout:     90 * time.Second,
+		},
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(&url.URL{Scheme: "http", Host: pr.In.Context().Value(targetKey{}).(string)})
+			sock := pr.In.Context().Value(targetKey{}).(string)
+			pr.SetURL(&url.URL{Scheme: "http", Host: strings.TrimSuffix(filepath.Base(sock), ".sock")})
 			// Keep the .localhost name: dev servers check the Host header,
 			// and Rails, Vite & co. allow .localhost by default.
 			pr.Out.Host = pr.In.Host
@@ -84,14 +103,6 @@ func newProxy(s *Server) *proxy {
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			proxyError(w, http.StatusBadGateway, "Couldn't reach the app", err.Error())
 		},
-	}
-	p.dial = func(ctx context.Context, addr string) error {
-		var d net.Dialer
-		c, err := d.DialContext(ctx, "tcp", addr)
-		if err != nil {
-			return err
-		}
-		return c.Close()
 	}
 	return p
 }
@@ -212,7 +223,10 @@ func (p *proxy) rebuild() {
 	if err != nil {
 		return
 	}
-	routes := map[string]proxyRoute{}
+	// A project's own name (<project>.localhost) wins over a suffixed name
+	// of another project: project foo's forward "bar" must not take
+	// foo-bar.localhost from project foo-bar.
+	var primary, suffixed []proxyRoute
 	for _, inst := range insts {
 		if inst.Config[incus.TmpMarkerKey] == "true" {
 			continue
@@ -221,18 +235,40 @@ func (p *proxy) rebuild() {
 		if err != nil {
 			continue
 		}
-		for _, r := range cfg.HTTPRoutes() {
-			if prev, ok := routes[r.Host]; ok {
-				log.Printf("proxy: %s is claimed by %s and %s, keeping %s", r.Host, prev.container, inst.Name, prev.container)
-				continue
+		for i, r := range cfg.HTTPRoutes() {
+			sock := svcapi.HTTPSocketPath(inst.Name, r.ContainerPort)
+			dev := inst.Devices[provision.HTTPDeviceName(r.ContainerPort)]
+			if dev["type"] != "proxy" || dev["listen"] != "unix:"+sock {
+				continue // silo up hasn't added the socket device yet
 			}
-			routes[r.Host] = proxyRoute{container: inst.Name, HTTPRoute: r}
+			route := proxyRoute{container: inst.Name, socket: sock, HTTPRoute: r}
+			if i == 0 && r.Host == projectLabel(inst.Name)+".localhost" {
+				primary = append(primary, route)
+			} else {
+				suffixed = append(suffixed, route)
+			}
 		}
 	}
+	routes := assignRoutes(primary, suffixed)
 	p.mu.Lock()
 	p.routes = routes
 	p.built = time.Now()
 	p.mu.Unlock()
+}
+
+// assignRoutes maps host names to routes: projects' own names first, then
+// the suffixed ones, first come first served. silo.localhost is the UI's.
+func assignRoutes(primary, suffixed []proxyRoute) map[string]proxyRoute {
+	routes := map[string]proxyRoute{UIHost: {}}
+	for _, r := range append(primary, suffixed...) {
+		if prev, ok := routes[r.Host]; ok {
+			log.Printf("proxy: %s is claimed by %s and %s, keeping %s", r.Host, prev.container, r.container, prev.container)
+			continue
+		}
+		routes[r.Host] = r
+	}
+	delete(routes, UIHost)
+	return routes
 }
 
 // lookup finds the route for a host name, re-reading the configs when the
@@ -257,7 +293,7 @@ func (p *proxy) info() svcapi.ProxyInfo {
 	defer p.mu.RUnlock()
 	info := svcapi.ProxyInfo{HTTPPort: p.httpPort, HTTPSPort: p.httpsPort, Routes: []svcapi.ProxyRoute{}}
 	for _, r := range p.routes {
-		info.Routes = append(info.Routes, svcapi.ProxyRoute{Host: r.Host, Container: r.container, ContainerPort: r.ContainerPort, HostPort: r.HostPort})
+		info.Routes = append(info.Routes, svcapi.ProxyRoute{Host: r.Host, Container: r.container, ContainerPort: r.ContainerPort})
 	}
 	slices.SortFunc(info.Routes, func(a, b svcapi.ProxyRoute) int { return strings.Compare(a.Host, b.Host) })
 	return info
@@ -280,21 +316,38 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	p.s.activity.touch(route.container)
 
-	target := net.JoinHostPort("127.0.0.1", strconv.Itoa(route.HostPort))
-	if err := p.ensureUp(r.Context(), route, target); err != nil {
+	if err := p.ensureUp(r.Context(), route, mayStart(r)); err != nil {
 		proxyError(w, http.StatusBadGateway, "Couldn't reach "+route.Host, err.Error())
 		return
 	}
-	p.rp.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), targetKey{}, target)))
+	p.rp.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), targetKey{}, route.socket)))
 }
 
-// ensureUp makes sure something accepts connections on the route's host
-// port, starting the container when it's stopped.
-func (p *proxy) ensureUp(ctx context.Context, route proxyRoute, target string) error {
-	quick, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
-	err := p.dial(quick, target)
-	cancel()
-	if err == nil {
+// mayStart reports whether a request may start a stopped container: only a
+// top-level visit (or a tool like curl) by this user. Otherwise any web page
+// could wake containers with an image tag, and another user on the machine
+// could do it too.
+func mayStart(r *http.Request) bool {
+	if !peerIsMe(r) {
+		return false
+	}
+	mode := r.Header.Get("Sec-Fetch-Mode")
+	return mode == "" || mode == "navigate"
+}
+
+// ensureUp makes sure something accepts connections on the route's socket,
+// starting the container when it's stopped and start is true.
+func (p *proxy) ensureUp(ctx context.Context, route proxyRoute, start bool) error {
+	try := func(timeout time.Duration) error {
+		c, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		conn, err := p.dial(c, route.socket)
+		if err == nil {
+			conn.Close()
+		}
+		return err
+	}
+	if try(300*time.Millisecond) == nil {
 		return nil
 	}
 
@@ -310,6 +363,9 @@ func (p *proxy) ensureUp(ctx context.Context, route proxyRoute, target string) e
 
 	wait := 15 * time.Second // a daemon that's starting up
 	if srv := p.s.incus(); srv != nil && !incus.IsRunning(srv, route.container) {
+		if !start {
+			return fmt.Errorf("%s is stopped; open %s directly in the browser to start it, or run silo up", route.container, route.Host)
+		}
 		log.Printf("proxy: starting %s for %s", route.container, route.Host)
 		if err := incus.Start(ctx, srv, route.container); err != nil {
 			return fmt.Errorf("starting %s: %w", route.container, err)
@@ -318,10 +374,7 @@ func (p *proxy) ensureUp(ctx context.Context, route proxyRoute, target string) e
 	}
 	deadline := time.Now().Add(wait)
 	for {
-		try, cancel := context.WithTimeout(ctx, time.Second)
-		err := p.dial(try, target)
-		cancel()
-		if err == nil {
+		if try(time.Second) == nil {
 			return nil
 		}
 		if ctx.Err() != nil {

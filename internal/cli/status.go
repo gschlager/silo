@@ -115,7 +115,7 @@ func newStatusCmd() *cobra.Command {
 						suffix = "  (" + label + ")"
 					}
 					if cp, ok := p.ContainerPort(); ok && p.HTTP && proxy != nil {
-						if host, ok := routeHost(cfg, cp); ok {
+						if host, ok := routeHost(cfg, cp, proxy); ok {
 							if u := proxy.URL(host, true); u != "" {
 								suffix += "  " + u
 							} else if u := proxy.URL(host, false); u != "" {

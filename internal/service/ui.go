@@ -432,8 +432,10 @@ func (s *Server) fillContainer(ctx context.Context, srv incuscli.InstanceServer,
 		c.ConfigError = err.Error()
 		return
 	}
-	for _, r := range cfg.HTTPRoutes() {
-		c.URLs = append(c.URLs, uiURL{Host: r.Host, URL: proxy.URL(r.Host, false), HTTPSURL: proxy.URL(r.Host, true), Port: r.ContainerPort})
+	for _, r := range proxy.Routes {
+		if r.Container == c.Name {
+			c.URLs = append(c.URLs, uiURL{Host: r.Host, URL: proxy.URL(r.Host, false), HTTPSURL: proxy.URL(r.Host, true), Port: r.ContainerPort})
+		}
 	}
 	for _, p := range cfg.Ports {
 		cp, ok1 := p.ContainerPort()

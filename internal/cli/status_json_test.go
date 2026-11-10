@@ -62,7 +62,9 @@ func TestStatusJSONWithProxy(t *testing.T) {
 	project := &config.ProjectConfig{Ports: []config.PortForward{{Spec: "3000", HTTP: true}}}
 	cfg := config.Merge(&config.GlobalConfig{Shell: "bash", User: "dev"}, project, "/tmp/myapp")
 	cfg.ContainerName = "silo-myapp"
-	r := buildStatusReport(cfg, true, true, nil, &svcapi.ProxyInfo{HTTPPort: 80, HTTPSPort: 443})
+	r := buildStatusReport(cfg, true, true, nil, &svcapi.ProxyInfo{HTTPPort: 80, HTTPSPort: 443, Routes: []svcapi.ProxyRoute{
+		{Host: "myapp.localhost", Container: "silo-myapp", ContainerPort: 3000},
+	}})
 	if len(r.Ports) != 1 || *r.Ports[0].URL != "http://myapp.localhost/" || *r.Ports[0].HTTPSURL != "https://myapp.localhost/" {
 		t.Errorf("ports = %+v", r.Ports)
 	}

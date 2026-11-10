@@ -35,6 +35,8 @@ const (
 	leafValidity = 30 * 24 * time.Hour
 	// leafRenewBefore is how long before expiry a cached leaf is replaced.
 	leafRenewBefore = 7 * 24 * time.Hour
+	// maxLeaves bounds the certificates kept in memory.
+	maxLeaves = 256
 )
 
 // Dir is where the CA lives: ~/.config/silo/ca.
@@ -170,6 +172,9 @@ func (ca *CA) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, erro
 	c, err := ca.issue(name)
 	if err != nil {
 		return nil, err
+	}
+	if len(ca.leaves) >= maxLeaves {
+		clear(ca.leaves) // any name under .localhost works, so keep this bounded
 	}
 	ca.leaves[name] = c
 	return c, nil

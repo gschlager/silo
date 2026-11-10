@@ -3,10 +3,14 @@ package provision
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	"github.com/gschlager/silo/internal/svcapi"
 	incuscli "github.com/lxc/incus/v7/client"
 )
 
@@ -44,11 +48,29 @@ func addPortDevices(ctx context.Context, server incuscli.InstanceServer, contain
 		if err := incus.AddProxyDevice(ctx, server, container, dev, hostPort, containerPort); err != nil {
 			return nil, err
 		}
+		if port.HTTP {
+			// The .localhost proxy's way in, see svcapi.HTTPSocketPath.
+			sock := svcapi.HTTPSocketPath(container, containerPort)
+			if err := os.MkdirAll(filepath.Dir(sock), 0700); err != nil {
+				return nil, err
+			}
+			dev := HTTPDeviceName(containerPort)
+			want[dev] = true
+			if err := incus.AddUnixProxyDevice(ctx, server, container, dev, sock, containerPort); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return want, nil
 }
 
-// pruneOrphanPorts removes proxy devices named port-* that are no longer wanted,
+// HTTPDeviceName is the name of the proxy device that forwards an http:
+// port to its Unix socket for the .localhost proxy.
+func HTTPDeviceName(containerPort int) string {
+	return "http-" + strconv.Itoa(containerPort)
+}
+
+// pruneOrphanPorts removes proxy devices named port-* (and http-*) that are no longer wanted,
 // so a forward dropped on a branch switch stops listening on the host.
 func pruneOrphanPorts(ctx context.Context, server incuscli.InstanceServer, container string, want map[string]bool) error {
 	inst, _, err := server.GetInstance(container)
@@ -56,7 +78,7 @@ func pruneOrphanPorts(ctx context.Context, server incuscli.InstanceServer, conta
 		return fmt.Errorf("getting container %q: %w", container, err)
 	}
 	for name := range inst.Devices {
-		if !strings.HasPrefix(name, "port-") || want[name] {
+		if !(strings.HasPrefix(name, "port-") || strings.HasPrefix(name, "http-")) || want[name] {
 			continue
 		}
 		if err := incus.RemoveDevice(ctx, server, container, name); err != nil {

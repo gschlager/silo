@@ -3,6 +3,7 @@ package incus
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 
 	incuscli "github.com/lxc/incus/v7/client"
@@ -79,6 +80,33 @@ func AddProxyDevice(ctx context.Context, server incuscli.InstanceServer, contain
 	case err := <-errCh:
 		return err
 	}
+}
+
+// AddUnixProxyDevice adds a device that forwards a Unix socket on the host,
+// owned by this user with mode 0600, to a TCP port on the container's
+// localhost.
+func AddUnixProxyDevice(ctx context.Context, server incuscli.InstanceServer, container, name, socketPath string, containerPort int) error {
+	inst, etag, err := server.GetInstance(container)
+	if err != nil {
+		return fmt.Errorf("getting container %q: %w", container, err)
+	}
+	if inst.Devices == nil {
+		inst.Devices = make(map[string]map[string]string)
+	}
+	inst.Devices[name] = map[string]string{
+		"type":    "proxy",
+		"listen":  "unix:" + socketPath,
+		"connect": "tcp:127.0.0.1:" + strconv.Itoa(containerPort),
+		"bind":    "host",
+		"uid":     strconv.Itoa(os.Getuid()),
+		"gid":     strconv.Itoa(os.Getgid()),
+		"mode":    "0600",
+	}
+	op, err := server.UpdateInstance(container, inst.Writable(), etag)
+	if err != nil {
+		return fmt.Errorf("adding proxy device %q to %q: %w", name, container, err)
+	}
+	return op.Wait()
 }
 
 func proxyListenAddress(port int) string {

@@ -145,8 +145,8 @@ func (s *Server) proxyURLFor(cfg *config.MergedConfig) func(int) string {
 			return ""
 		}
 		info := s.proxy.info()
-		for _, r := range cfg.HTTPRoutes() {
-			if r.ContainerPort == containerPort {
+		for _, r := range info.Routes {
+			if r.Container == cfg.ContainerName && r.ContainerPort == containerPort {
 				return info.URL(r.Host, false)
 			}
 		}

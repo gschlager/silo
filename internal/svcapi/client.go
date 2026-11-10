@@ -254,7 +254,6 @@ type ProxyRoute struct {
 	Host          string `json:"host"`
 	Container     string `json:"container"`
 	ContainerPort int    `json:"container_port"`
-	HostPort      int    `json:"host_port"`
 }
 
 // URL returns the URL for a host name, with the port when it isn't the

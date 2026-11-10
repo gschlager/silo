@@ -8,8 +8,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"strconv"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -19,23 +19,31 @@ import (
 )
 
 // testProxy returns a proxy with one route, myapp.localhost, to an upstream
-// test server, and that server's received Host headers.
+// test server on a Unix socket, and that server's received Host headers.
 func testProxy(t *testing.T) (*proxy, chan string) {
 	t.Helper()
 	hosts := make(chan string, 10)
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	dir, err := os.MkdirTemp("", "silo-proxy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "silo-myapp-3000.sock")
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	up := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hosts <- r.Host + " " + r.Header.Get("X-Forwarded-Host") + " " + r.URL.RequestURI()
 		io.WriteString(w, "hello from the app")
-	}))
-	t.Cleanup(up.Close)
-	u, _ := url.Parse(up.URL)
-	port, _ := strconv.Atoi(u.Port())
+	})}
+	go up.Serve(l)
+	t.Cleanup(func() { up.Close() })
 
-	s := &Server{}
-	p := newProxy(s)
-	s.proxy = p
+	s := newServer(testOptions())
+	p := s.proxy
 	p.routes = map[string]proxyRoute{
-		"myapp.localhost": {container: "silo-myapp", HTTPRoute: config.HTTPRoute{Host: "myapp.localhost", ContainerPort: 3000, HostPort: port}},
+		"myapp.localhost": {container: "silo-myapp", socket: sock, HTTPRoute: config.HTTPRoute{Host: "myapp.localhost", ContainerPort: 3000}},
 	}
 	p.built = time.Now()
 	p.httpPort = 80
@@ -74,7 +82,7 @@ func TestProxyRoutesByHost(t *testing.T) {
 
 func TestProxyAppDown(t *testing.T) {
 	p, _ := testProxy(t)
-	p.dial = func(context.Context, string) error { return &net.OpError{Op: "dial"} }
+	p.dial = func(context.Context, string) (net.Conn, error) { return nil, &net.OpError{Op: "dial"} }
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	w := httptest.NewRecorder()
@@ -129,5 +137,46 @@ func TestProxyInfoURL(t *testing.T) {
 	}
 	if len(info.Routes) != 1 || info.Routes[0].Container != "silo-myapp" {
 		t.Errorf("routes = %+v", info.Routes)
+	}
+}
+
+func TestAssignRoutesPrefersProjectNames(t *testing.T) {
+	route := func(container, host string) proxyRoute {
+		return proxyRoute{container: container, HTTPRoute: config.HTTPRoute{Host: host}}
+	}
+	// Project foo names a forward "bar"; project foo-bar exists too.
+	routes := assignRoutes(
+		[]proxyRoute{route("silo-foo", "foo.localhost"), route("silo-foo-bar", "foo-bar.localhost")},
+		[]proxyRoute{route("silo-foo", "foo-bar.localhost"), route("silo-x", "silo.localhost")},
+	)
+	if routes["foo-bar.localhost"].container != "silo-foo-bar" {
+		t.Errorf("foo-bar.localhost went to %s", routes["foo-bar.localhost"].container)
+	}
+	if _, ok := routes["silo.localhost"]; ok {
+		t.Error("a project took silo.localhost")
+	}
+}
+
+func TestMayStart(t *testing.T) {
+	old := peerIsMe
+	t.Cleanup(func() { peerIsMe = old })
+	me := true
+	peerIsMe = func(*http.Request) bool { return me }
+	req := func(mode string) *http.Request {
+		r := httptest.NewRequest("GET", "http://myapp.localhost/", nil)
+		if mode != "" {
+			r.Header.Set("Sec-Fetch-Mode", mode)
+		}
+		return r
+	}
+	if !mayStart(req("navigate")) || !mayStart(req("")) {
+		t.Error("a top-level visit or curl may start a container")
+	}
+	if mayStart(req("no-cors")) || mayStart(req("cors")) {
+		t.Error("an image tag or fetch from some page may not start a container")
+	}
+	me = false
+	if mayStart(req("navigate")) {
+		t.Error("another user may not start a container")
 	}
 }

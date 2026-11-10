@@ -70,7 +70,7 @@ func buildStatusReport(cfg *config.MergedConfig, exists, running bool, states ma
 		if p.HTTP {
 			pr.URL = optString(fmt.Sprintf("http://localhost:%d/", hp))
 			if proxy != nil {
-				if host, ok := routeHost(cfg, cp); ok {
+				if host, ok := routeHost(cfg, cp, proxy); ok {
 					if u := proxy.URL(host, false); u != "" {
 						pr.URL = optString(u)
 					}
@@ -110,10 +110,10 @@ func writeStatusJSON(w io.Writer, cfg *config.MergedConfig, exists, running bool
 }
 
 // routeHost returns the .localhost name of the http: forward of a container
-// port.
-func routeHost(cfg *config.MergedConfig, containerPort int) (string, bool) {
-	for _, r := range cfg.HTTPRoutes() {
-		if r.ContainerPort == containerPort {
+// port, when the proxy serves it (after `silo up` added its socket device).
+func routeHost(cfg *config.MergedConfig, containerPort int, proxy *svcapi.ProxyInfo) (string, bool) {
+	for _, r := range proxy.Routes {
+		if r.Container == cfg.ContainerName && r.ContainerPort == containerPort {
 			return r.Host, true
 		}
 	}
