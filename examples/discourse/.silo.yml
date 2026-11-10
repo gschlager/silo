@@ -97,15 +97,17 @@ env:
   DISCOURSE_DEV_LOG_LEVEL: warn
   PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: /usr/lib64/chromium-browser/headless_shell
 
+# http: true gives a port a .localhost name. The first one (by daemon name)
+# is discourse.localhost, the others discourse-<daemon>.localhost.
 daemons:
   mailhog:
     cmd: ~/bin/mailhog
-    ports: ["8025"]
+    ports: [{port: "8025", http: true}]   # discourse-mailhog.localhost
   rails:
     cmd: bin/rails server -b 0.0.0.0
     after: mailhog
-    ports: ["3000"]
+    ports: [{port: "3000", http: true}]   # discourse-rails.localhost
   ember:
     cmd: bin/ember-cli
     after: rails
-    ports: ["4200"]
+    ports: [{port: "4200", http: true}]   # discourse.localhost

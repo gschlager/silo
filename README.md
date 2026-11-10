@@ -179,7 +179,9 @@ git:
 daemons:
   rails:
     cmd: bin/rails server -b 0.0.0.0
-    ports: ["3000:13000"]
+    ports:
+      - port: "3000:13000"
+        http: true            # <project>-rails.localhost
   sidekiq:
     cmd: bundle exec sidekiq
     after: rails              # systemd dependency (After + Requires)
