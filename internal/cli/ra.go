@@ -72,8 +72,6 @@ Examples:
 			}
 			writeAgentFunctions(ctx, server, cfg)
 
-			defer startNotifyBridge(cfg)()
-
 			agentName := cfg.ResolveDefaultAgent()
 			var extraArgs []string
 

@@ -272,7 +272,7 @@ user: dev
 # not for getting values to a daemon — daemons never see pass_env (see Daemons).
 pass_env: [TERM, COLORTERM, LANG, LC_ALL]
 
-# Desktop notifications when an agent finishes or needs input (default: off).
+# Desktop notifications from `silo-notify` in the container (default: off).
 # Not used for containers in herdr, which alerts on its own.
 notifications: true
 
@@ -725,6 +725,12 @@ When silo and the service come from different builds (after an upgrade, or a reb
 | `silo service restart` | Restart the service                                  |
 
 Logs go to the journal: `journalctl --user -u silo`.
+
+### Container sockets
+
+Each container gets its own directory from the host, mounted at `/var/lib/silo/host`, where the service listens on the container's sockets. The service knows which container asks by the socket the request comes in on, and a container can only ask for the few things listed here. `silo up` adds the mount to containers created before the service existed.
+
+- **Notifications**: `silo-notify "message"` shows a desktop notification on the host, when `notifications: true` is set in the global config and herdr isn't handling the container. Hook it into your agent, e.g. Claude Code's `Notification` hook. It works for every agent in the container, also those started through herdr or `silo connect`, not only while a `silo ra` runs.
 
 ### Secrets cache
 

@@ -74,6 +74,11 @@ func printServiceStatus(st svcapi.StatusInfo) {
 	fmt.Printf("  PID:      %d, up %s\n", st.PID, time.Since(st.Started).Round(time.Second))
 	fmt.Printf("  Socket:   %s\n", svcapi.SocketPath())
 	fmt.Printf("  Secrets:  %d cached (forgotten on screen lock, suspend and after 12h)\n", st.CachedSecrets)
+	if st.Incus {
+		fmt.Printf("  Incus:    connected, serving %d containers\n", len(st.Containers))
+	} else {
+		fmt.Printf("  Incus:    not connected (see journalctl --user -u silo)\n")
+	}
 }
 
 func newServiceForgetCmd() *cobra.Command {

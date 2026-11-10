@@ -24,7 +24,7 @@ import (
 // Config keys that mark a tmp container and record where it came from, so
 // `silo tmp enter` can rebuild its config.
 const (
-	tmpKey      = "user.silo.tmp"
+	tmpKey      = incus.TmpMarkerKey
 	tmpDirKey   = "user.silo.tmp.dir"
 	tmpCloneKey = "user.silo.tmp.clone"
 	tmpNameKey  = "user.silo.tmp.name"
@@ -245,7 +245,6 @@ func tmpConfig(t tmpTarget, containerName string) (*config.MergedConfig, error) 
 
 func runTmpSession(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig, agentName string, shell bool, agentArgs []string) error {
 	writeAgentFunctions(ctx, server, cfg)
-	defer startNotifyBridge(cfg)()
 	if !shell {
 		return execAgent(ctx, server, cfg, agentName, agentArgs)
 	}

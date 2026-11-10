@@ -62,6 +62,7 @@ Subsequent: start the stopped container (~1 second).`,
 
 			if incus.IsRunning(server, name) {
 				color.Info("Container %s is already running.", name)
+				setupHostSocket(ctx, server, cfg)
 				if err := provision.ApplyGitignore(ctx, server, name, cfg.User); err != nil {
 					color.Warn("could not apply global gitignore: %v", err)
 				}
@@ -100,6 +101,7 @@ Subsequent: start the stopped container (~1 second).`,
 			if err := incus.Start(ctx, server, name); err != nil {
 				return err
 			}
+			setupHostSocket(ctx, server, cfg)
 			if err := provision.ApplyGitignore(ctx, server, name, cfg.User); err != nil {
 				color.Warn("could not apply global gitignore: %v", err)
 			}
@@ -128,4 +130,12 @@ func syncDaemons(ctx context.Context, server incuscli.InstanceServer, cfg *confi
 		return err
 	}
 	return provision.StartConfiguredDaemons(ctx, server, cfg)
+}
+
+// setupHostSocket makes sure the container has its socket to the silo service
+// and current helpers. Containers created before the service get it here.
+func setupHostSocket(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig) {
+	if err := provision.SetupHostSocket(ctx, server, cfg.ContainerName); err != nil {
+		color.Warn("could not connect the silo service: %v", err)
+	}
 }

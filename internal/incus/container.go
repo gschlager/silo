@@ -258,6 +258,9 @@ func WaitForNetwork(ctx context.Context, server incuscli.InstanceServer, name st
 // container. Templates are hidden from ListSiloInstances.
 const BaseMarkerKey = "user.silo.base"
 
+// TmpMarkerKey marks a throwaway container made by `silo tmp`.
+const TmpMarkerKey = "user.silo.tmp"
+
 // ListSiloInstances returns all Incus instances whose name starts with "silo-",
 // except base templates.
 func ListSiloInstances(server incuscli.InstanceServer) ([]api.Instance, error) {

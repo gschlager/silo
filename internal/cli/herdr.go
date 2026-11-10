@@ -11,6 +11,7 @@ import (
 
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
+	"github.com/gschlager/silo/internal/provision"
 )
 
 // herdrTarget is a machine as `hc machine ls --json` lists it.
@@ -26,27 +27,10 @@ func herdrHC(cfg *config.MergedConfig) (string, bool) {
 	if !cfg.Herdr {
 		return "", false
 	}
-	return findHerdrHC()
+	return provision.FindHerdrHC()
 }
 
-func findHerdrHC() (string, bool) {
-	hc, err := exec.LookPath("hc")
-	if err != nil {
-		return "", false
-	}
-	out, err := exec.Command(hc, "--version").Output()
-	if err != nil || !isHerdrVersion(string(out)) {
-		color.Debug("%s is not herdr's hc: %v %q", hc, err, out)
-		return "", false
-	}
-	return hc, true
-}
-
-// isHerdrVersion reports whether out is herdr-core's version line.
-func isHerdrVersion(out string) bool {
-	v, ok := strings.CutPrefix(strings.TrimSpace(out), "hc ")
-	return ok && v != "" && v[0] >= '0' && v[0] <= '9'
-}
+func findHerdrHC() (string, bool) { return provision.FindHerdrHC() }
 
 // ensureHerdrMachine adds the container to herdr (https://herdr.dev) as a
 // machine when the integration is on and herdr is installed, so its agents

@@ -224,13 +224,11 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		}
 	}
 
-	// Step 14: Set up notifications (persistent pieces only — the listener
-	// is started per-session by silo ra / silo enter).
-	if cfg.Notifications {
-		status("Setting up notifications...")
-		if err := SetupNotifications(ctx, server, name); err != nil {
-			color.Warn("could not set up notifications: %v", err)
-		}
+	// Step 14: Mount the host directory with the container's sockets of the
+	// silo service, and install the helpers that use them.
+	status("Connecting the silo service...")
+	if err := SetupHostSocket(ctx, server, name); err != nil {
+		color.Warn("could not connect the silo service: %v", err)
 	}
 
 	// Step 15: Mark as initialized.

@@ -24,12 +24,17 @@ import (
 
 	"github.com/gschlager/silo/internal/provision"
 	"github.com/gschlager/silo/internal/svcapi"
+	incuscli "github.com/lxc/incus/v7/client"
 )
 
 // Server is the running service.
 type Server struct {
-	opts     Options
-	secrets  *secretCache
+	opts    Options
+	secrets *secretCache
+	hub     *hub
+
+	incusMu  sync.RWMutex
+	incusSrv incuscli.InstanceServer
 	started  time.Time
 	mux      *http.ServeMux
 	stop     chan struct{}
@@ -62,9 +67,15 @@ func runWith(ctx context.Context, opts Options) error {
 	s := &Server{opts: opts, secrets: newSecretCache(), started: time.Now(), mux: http.NewServeMux(), stop: make(chan struct{})}
 	var once sync.Once
 	s.stopOnce = func() { once.Do(func() { close(s.stop) }) }
+	s.hub = newHub(s)
+	defer s.hub.closeAll()
 	provision.Secrets = s.secrets
 	s.routes()
 	s.secretRoutes()
+	if !opts.NoIncus {
+		go s.runIncus(ctx)
+		go s.every(ctx, time.Minute, s.hub.reconcile)
+	}
 	if !opts.NoDBus {
 		go watchSession(ctx, func(reason string) { s.secrets.forget(reason) })
 	}
@@ -145,11 +156,27 @@ func (s *Server) routes() {
 	})
 }
 
+// every calls fn every interval until ctx is done.
+func (s *Server) every(ctx context.Context, interval time.Duration, fn func()) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			fn()
+		}
+	}
+}
+
 func (s *Server) status() svcapi.StatusInfo {
 	return svcapi.StatusInfo{
 		Version:       svcapi.Version,
 		PID:           os.Getpid(),
 		Started:       s.started,
 		CachedSecrets: s.secrets.len(),
+		Incus:         s.incus() != nil,
+		Containers:    s.hub.names(),
 	}
 }

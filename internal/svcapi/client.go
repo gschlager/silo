@@ -26,6 +26,10 @@ type StatusInfo struct {
 	Started time.Time `json:"started"`
 	// CachedSecrets is how many 1Password values the service holds.
 	CachedSecrets int `json:"cached_secrets"`
+	// Incus says whether the service is connected to Incus.
+	Incus bool `json:"incus"`
+	// Containers are the containers whose sockets the service serves.
+	Containers []string `json:"containers"`
 }
 
 // Client talks to the silo service over its control socket.

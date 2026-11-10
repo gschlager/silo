@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gschlager/silo/internal/config"
+	"github.com/gschlager/silo/internal/provision"
 )
 
 func TestHerdrTerminalName(t *testing.T) {
@@ -64,7 +65,7 @@ func TestIsHerdrVersion(t *testing.T) {
 		"hc version unknown":  false,
 		"HashiCorp hc v2.0.1": false,
 	} {
-		if got := isHerdrVersion(out); got != want {
+		if got := provision.IsHerdrVersion(out); got != want {
 			t.Errorf("isHerdrVersion(%q) = %v, want %v", out, got, want)
 		}
 	}
