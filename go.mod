@@ -5,6 +5,7 @@ go 1.27.3
 require (
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/godbus/dbus/v5 v5.2.4
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/lxc/incus/v7 v7.6.0
 	github.com/spf13/cobra v1.10.2

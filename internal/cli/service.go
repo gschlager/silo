@@ -26,7 +26,7 @@ base templates.
 
 silo setup installs and starts it. Logs: journalctl --user -u silo`,
 	}
-	cmd.AddCommand(newServiceStatusCmd(), newServiceRestartCmd(), newServiceRunCmd())
+	cmd.AddCommand(newServiceStatusCmd(), newServiceForgetCmd(), newServiceRestartCmd(), newServiceRunCmd())
 	return cmd
 }
 
@@ -73,6 +73,28 @@ func printServiceStatus(st svcapi.StatusInfo) {
 	fmt.Println()
 	fmt.Printf("  PID:      %d, up %s\n", st.PID, time.Since(st.Started).Round(time.Second))
 	fmt.Printf("  Socket:   %s\n", svcapi.SocketPath())
+	fmt.Printf("  Secrets:  %d cached (forgotten on screen lock, suspend and after 12h)\n", st.CachedSecrets)
+}
+
+func newServiceForgetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "forget",
+		Short: "Forget all cached 1Password secrets",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := svcapi.Dial()
+			if err != nil {
+				color.Info("The silo service is not running, so nothing is cached.")
+				return nil
+			}
+			var res svcapi.ForgetResult
+			if err := c.Do(cmd.Context(), "POST", "/v1/secrets/forget", nil, &res); err != nil {
+				return err
+			}
+			color.Success("Forgot %d cached secrets.", res.Count)
+			return nil
+		},
+	}
 }
 
 func newServiceRestartCmd() *cobra.Command {

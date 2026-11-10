@@ -11,6 +11,7 @@ import (
 
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	"github.com/gschlager/silo/internal/svcapi"
 	incuscli "github.com/lxc/incus/v7/client"
 )
 
@@ -186,11 +187,42 @@ var (
 	opValues = map[string]string{}
 )
 
-// readOp reads a 1Password reference with the op CLI, once per process.
+// SecretStore is a cache readOp asks before running op, and fills after.
+type SecretStore interface {
+	Get(ref svcapi.SecretRef) (string, bool)
+	Put(ref svcapi.SecretRef, value string)
+}
+
+// Secrets is the cache of the silo service, reached over its control socket.
+// The service itself replaces it with its in-memory cache.
+var Secrets SecretStore = serviceSecrets{}
+
+type serviceSecrets struct{}
+
+func (serviceSecrets) Get(ref svcapi.SecretRef) (string, bool) {
+	if c := svcapi.Connect(); c != nil {
+		return c.CachedSecret(ref)
+	}
+	return "", false
+}
+
+func (serviceSecrets) Put(ref svcapi.SecretRef, value string) {
+	if c := svcapi.Connect(); c != nil {
+		c.CacheSecret(ref, value)
+	}
+}
+
+// readOp reads a 1Password reference: from this process's memory, then from
+// the silo service's cache, and only then with the op CLI.
 func readOp(ref string) (string, error) {
 	opMu.Lock()
 	defer opMu.Unlock()
 	if v, ok := opValues[ref]; ok {
+		return v, nil
+	}
+	key := svcapi.SecretRef{Ref: ref, Account: os.Getenv("OP_ACCOUNT")}
+	if v, ok := Secrets.Get(key); ok {
+		opValues[ref] = v
 		return v, nil
 	}
 	out, err := exec.Command("op", "read", ref).Output()
@@ -199,6 +231,7 @@ func readOp(ref string) (string, error) {
 	}
 	v := strings.TrimSpace(string(out))
 	opValues[ref] = v
+	Secrets.Put(key, v)
 	return v, nil
 }
 

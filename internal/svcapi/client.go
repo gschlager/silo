@@ -24,6 +24,8 @@ type StatusInfo struct {
 	Version string    `json:"version"`
 	PID     int       `json:"pid"`
 	Started time.Time `json:"started"`
+	// CachedSecrets is how many 1Password values the service holds.
+	CachedSecrets int `json:"cached_secrets"`
 }
 
 // Client talks to the silo service over its control socket.
@@ -160,4 +162,46 @@ func (c *Client) Stream(ctx context.Context, path string) (io.ReadCloser, error)
 		return nil, &RemoteError{Status: resp.StatusCode, Msg: resp.Status}
 	}
 	return resp.Body, nil
+}
+
+// SecretRef names a cached secret: a 1Password reference, read with the given
+// op account (OP_ACCOUNT, may be empty).
+type SecretRef struct {
+	Ref     string `json:"ref"`
+	Account string `json:"account,omitempty"`
+}
+
+// SecretValue answers a cache lookup.
+type SecretValue struct {
+	Value string `json:"value"`
+	Found bool   `json:"found"`
+}
+
+// SecretPut stores a secret in the cache.
+type SecretPut struct {
+	Ref   SecretRef `json:"ref"`
+	Value string    `json:"value"`
+}
+
+// ForgetResult says how many cached secrets were dropped.
+type ForgetResult struct {
+	Count int `json:"count"`
+}
+
+// CachedSecret looks a secret up in the service's cache.
+func (c *Client) CachedSecret(ref SecretRef) (string, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var v SecretValue
+	if err := c.Do(ctx, "POST", "/v1/secrets/get", ref, &v); err != nil {
+		return "", false
+	}
+	return v.Value, v.Found
+}
+
+// CacheSecret stores a secret in the service's cache.
+func (c *Client) CacheSecret(ref SecretRef, value string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	c.Do(ctx, "POST", "/v1/secrets/put", SecretPut{Ref: ref, Value: value}, nil)
 }

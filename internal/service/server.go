@@ -22,12 +22,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gschlager/silo/internal/provision"
 	"github.com/gschlager/silo/internal/svcapi"
 )
 
 // Server is the running service.
 type Server struct {
 	opts     Options
+	secrets  *secretCache
 	started  time.Time
 	mux      *http.ServeMux
 	stop     chan struct{}
@@ -57,10 +59,15 @@ func runWith(ctx context.Context, opts Options) error {
 		return fmt.Errorf("listening on %s: %w", svcapi.SocketPath(), err)
 	}
 
-	s := &Server{opts: opts, started: time.Now(), mux: http.NewServeMux(), stop: make(chan struct{})}
+	s := &Server{opts: opts, secrets: newSecretCache(), started: time.Now(), mux: http.NewServeMux(), stop: make(chan struct{})}
 	var once sync.Once
 	s.stopOnce = func() { once.Do(func() { close(s.stop) }) }
+	provision.Secrets = s.secrets
 	s.routes()
+	s.secretRoutes()
+	if !opts.NoDBus {
+		go watchSession(ctx, func(reason string) { s.secrets.forget(reason) })
+	}
 
 	srv := &http.Server{Handler: s.mux, ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
@@ -73,6 +80,7 @@ func runWith(ctx context.Context, opts Options) error {
 	case err := <-errc:
 		return err
 	}
+	s.secrets.forget("stopping")
 	shutdownCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
 	defer done()
 	srv.Shutdown(shutdownCtx)
@@ -138,5 +146,10 @@ func (s *Server) routes() {
 }
 
 func (s *Server) status() svcapi.StatusInfo {
-	return svcapi.StatusInfo{Version: svcapi.Version, PID: os.Getpid(), Started: s.started}
+	return svcapi.StatusInfo{
+		Version:       svcapi.Version,
+		PID:           os.Getpid(),
+		Started:       s.started,
+		CachedSecrets: s.secrets.len(),
+	}
 }

@@ -403,7 +403,8 @@ converters:
 
 - Each value is a **1Password reference** (`op://vault/item/field`) resolved on the host via the `op` CLI, or a literal. References are just pointers, not secrets, so this file mainly holds `op://` paths.
 - The reserved **`github`** key exports `GITHUB_TOKEN` and `GH_TOKEN` and wires the git credential helper for `github.com`. Every other key becomes a plain environment variable of that name.
-- Secrets are resolved fresh at session and setup time and passed as environment variables — never baked into the container or written to disk. Rotating a PAT in 1Password takes effect on the next session with no reprovision.
+- Secrets are resolved at session and setup time and passed as environment variables — never baked into the container or written to disk.
+- The [silo service](#the-silo-service) keeps the values it got from `op` in memory, so not every silo command (and every herdr reconnect) needs `op` and a 1Password approval again. The cache is cleared when the screen locks, before suspend, after 12 hours at the latest, and with `silo service forget`. Run that after rotating a PAT in 1Password, so the next session picks up the new one. The cache never reaches a container; see [The silo service](#the-silo-service) for why it doesn't weaken anything.
 - A [preset](#presets) can carry its own `secrets:` block, resolved the same way but scoped to the projects that opted into the preset with `use:`. Handy when several projects need the same reference and you'd rather not repeat it here.
 - Secrets reach `silo enter`/`silo run`, project setup, and [daemons](#daemons). Daemons get them because silo injects them into the systemd user manager when it starts the daemon (see Daemons) — still only in memory, never on disk.
 
@@ -720,9 +721,18 @@ When silo and the service come from different builds (after an upgrade, or a reb
 | Command                | Description                                         |
 |------------------------|-----------------------------------------------------|
 | `silo service status`  | Show whether the service runs and what it does       |
+| `silo service forget`  | Forget all cached 1Password secrets                  |
 | `silo service restart` | Restart the service                                  |
 
 Logs go to the journal: `journalctl --user -u silo`.
+
+### Secrets cache
+
+Every `op read` is a separate process, and 1Password asks you to approve the op CLI per terminal session. herdr reconnecting to a container, a `silo ra` in a new tab or a lazy start each asked again. Now the first silo command that reads a secret asks `op` (you approve as before), stores the value in the service's memory, and later commands get it from there.
+
+The cache is cleared when a session locks its screen or the machine suspends (silo watches logind), after 12 hours at the latest (the longest an op authorization lasts), with `silo service forget`, and when the service stops. Nothing is written to disk.
+
+This doesn't weaken anything: containers can't reach the cache, and a process on the host running as you can already read every secret silo has injected into a running container, without any prompt (`incus-admin` is root-equivalent, so it can `incus exec` into any container). The cache doesn't hand anything new to an attacker there.
 
 ## Security model
 
