@@ -79,6 +79,9 @@ func printServiceStatus(st svcapi.StatusInfo) {
 	} else {
 		fmt.Printf("  Incus:    not connected (see journalctl --user -u silo)\n")
 	}
+	for _, img := range st.BaseRefreshes {
+		fmt.Printf("  Rebuilding the base template for %s\n", img)
+	}
 }
 
 func newServiceForgetCmd() *cobra.Command {

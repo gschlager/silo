@@ -69,6 +69,7 @@ func (s *Server) followEvents(ctx context.Context, srv incuscli.InstanceServer) 
 	defer s.setIncus(nil)
 	log.Printf("connected to Incus")
 	s.hub.reconcile()
+	go s.refreshOldBases()
 
 	done := make(chan error, 1)
 	go func() { done <- listener.Wait() }()

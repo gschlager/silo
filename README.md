@@ -77,7 +77,7 @@ New containers are copied from a base template instead of being built from the b
 
 silo builds the template the first time it's needed and rebuilds it when one of those inputs changes (image, `default_setup`, user, shell, or an agent's `deps`/`install`). Agents a project enables on top of the global ones are installed per container. Templates don't show up in `silo list`; use `silo base` to see them.
 
-To keep it fresh, a template older than a week is still used, but silo rebuilds it in the background for the next container (log: `~/.config/silo/base-refresh.log`). A rebuild starts from the current upstream image and installs the latest agents, so there's nothing to update in place. `silo up --fresh` rebuilds it first and waits, for when you need the latest right now.
+To keep it fresh, a template older than a week is still used, but silo rebuilds it in the background for the next container (log: `~/.config/silo/base-refresh.log`). The [silo service](#the-silo-service) runs these rebuilds (one per image at a time, shown in `silo service status`) and also checks every few hours for templates that got old while no `silo up` ran. Without the service, `silo up` starts the rebuild as a detached process. A rebuild starts from the current upstream image and installs the latest agents, so there's nothing to update in place. `silo up --fresh` rebuilds it first and waits, for when you need the latest right now.
 
 ### Throwaway containers
 

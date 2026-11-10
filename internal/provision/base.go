@@ -17,6 +17,7 @@ import (
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	"github.com/gschlager/silo/internal/svcapi"
 	incuscli "github.com/lxc/incus/v7/client"
 	"golang.org/x/sys/unix"
 )
@@ -318,37 +319,66 @@ func RefreshBase(ctx context.Context, server incuscli.InstanceServer, spec BaseS
 	return nil
 }
 
-// startBackgroundRefresh starts a detached `silo base refresh` for the image,
-// unless a recent background refresh failed. Output goes to a log file.
+// startBackgroundRefresh has the silo service rebuild the template for the
+// image, or starts a detached `silo base refresh` when the service doesn't
+// run, unless a recent background refresh failed. Output goes to a log file.
 func startBackgroundRefresh(image, tmpl string, age time.Duration) {
-	failed := refreshFailedPath(tmpl)
-	if fi, err := os.Stat(failed); err == nil && time.Since(fi.ModTime()) < baseRetryAfter {
+	if RefreshRecentlyFailed(tmpl) {
 		color.Warn("The last background rebuild of base template %s failed; see %s or run `silo base rebuild`.", tmpl, RefreshLogPath())
 		return
 	}
-
-	exe, err := os.Executable()
-	if err != nil {
+	if c := svcapi.Connect(); c != nil {
+		if err := c.RefreshBase(image); err == nil {
+			status("Base template %s is %d days old; the silo service rebuilds it in the background for the next container.", tmpl, int(age.Hours()/24))
+			return
+		}
+	}
+	if err := StartRefreshProcess(image, false); err != nil {
 		color.Warn("could not start the base template refresh: %v", err)
 		return
+	}
+	status("Base template %s is %d days old; rebuilding it in the background for the next container.", tmpl, int(age.Hours()/24))
+}
+
+// RefreshRecentlyFailed reports whether the last background refresh of the
+// template failed less than a day ago, so it isn't retried right away.
+func RefreshRecentlyFailed(tmpl string) bool {
+	fi, err := os.Stat(refreshFailedPath(tmpl))
+	return err == nil && time.Since(fi.ModTime()) < baseRetryAfter
+}
+
+// BaseMaxAge is the age after which a template is rebuilt in the background.
+const BaseMaxAge = baseMaxAge
+
+// StartRefreshProcess runs `silo base refresh --image <image>`, writing to
+// the refresh log. Detached, it starts the process in its own session so it
+// outlives the terminal, and returns right away; otherwise (the silo service)
+// it waits for the process.
+func StartRefreshProcess(image string, wait bool) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
 	}
 	log, err := os.OpenFile(RefreshLogPath(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
-		color.Warn("could not start the base template refresh: %v", err)
-		return
+		return err
 	}
-	defer log.Close()
-
 	cmd := exec.Command(exe, "base", "refresh", "--image", image)
 	cmd.Stdout = log
 	cmd.Stderr = log
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // survive the terminal closing
-	if err := cmd.Start(); err != nil {
-		color.Warn("could not start the base template refresh: %v", err)
-		return
+	if !wait {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	}
+	err = cmd.Start()
+	log.Close() // the child has its own copy
+	if err != nil {
+		return err
+	}
+	if wait {
+		return cmd.Wait()
 	}
 	cmd.Process.Release()
-	status("Base template %s is %d days old; rebuilding it in the background for the next container.", tmpl, int(age.Hours()/24))
+	return nil
 }
 
 // RefreshLogPath is where the background template refresh writes its output.

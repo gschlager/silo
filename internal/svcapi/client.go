@@ -30,6 +30,8 @@ type StatusInfo struct {
 	Incus bool `json:"incus"`
 	// Containers are the containers whose sockets the service serves.
 	Containers []string `json:"containers"`
+	// BaseRefreshes are the images whose base template is being rebuilt.
+	BaseRefreshes []string `json:"base_refreshes"`
 }
 
 // Client talks to the silo service over its control socket.
@@ -208,4 +210,17 @@ func (c *Client) CacheSecret(ref SecretRef, value string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	c.Do(ctx, "POST", "/v1/secrets/put", SecretPut{Ref: ref, Value: value}, nil)
+}
+
+// BaseRefresh asks the service to refresh the base template of an image.
+type BaseRefresh struct {
+	Image string `json:"image"`
+}
+
+// RefreshBase has the service rebuild the base template for an image in the
+// background (if it's old enough; `silo base refresh` decides).
+func (c *Client) RefreshBase(image string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return c.Do(ctx, "POST", "/v1/base/refresh", BaseRefresh{Image: image}, nil)
 }

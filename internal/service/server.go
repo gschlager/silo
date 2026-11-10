@@ -34,6 +34,7 @@ type Server struct {
 	secrets *secretCache
 	hub     *hub
 	opening openPending
+	base    *baseJobs
 	// containerConfig loads a container's project config; configFor, or a
 	// stub in tests.
 	containerConfig func(name string) (*config.MergedConfig, error)
@@ -74,13 +75,16 @@ func runWith(ctx context.Context, opts Options) error {
 	s.stopOnce = func() { once.Do(func() { close(s.stop) }) }
 	s.containerConfig = s.configFor
 	s.hub = newHub(s)
+	s.base = newBaseJobs()
 	defer s.hub.closeAll()
 	provision.Secrets = s.secrets
 	s.routes()
 	s.secretRoutes()
+	s.baseRoutes()
 	if !opts.NoIncus {
 		go s.runIncus(ctx)
 		go s.every(ctx, time.Minute, s.hub.reconcile)
+		go s.every(ctx, 6*time.Hour, s.refreshOldBases)
 	}
 	if !opts.NoDBus {
 		go watchSession(ctx, func(reason string) { s.secrets.forget(reason) })
@@ -190,5 +194,6 @@ func (s *Server) status() svcapi.StatusInfo {
 		CachedSecrets: s.secrets.len(),
 		Incus:         s.incus() != nil,
 		Containers:    s.hub.names(),
+		BaseRefreshes: s.base.images(),
 	}
 }
