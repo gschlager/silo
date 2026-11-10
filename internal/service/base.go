@@ -71,7 +71,7 @@ func (b *baseJobs) refresh(image string) bool {
 func (b *baseJobs) images() []string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	var out []string
+	out := []string{}
 	for img := range b.running {
 		out = append(out, img)
 	}

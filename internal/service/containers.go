@@ -84,7 +84,11 @@ func (h *hub) reconcile() {
 func (h *hub) names() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return slices.Sorted(maps.Keys(h.open))
+	names := slices.Sorted(maps.Keys(h.open))
+	if names == nil {
+		names = []string{}
+	}
+	return names
 }
 
 func (h *hub) closeAll() {
