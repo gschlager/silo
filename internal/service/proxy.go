@@ -63,6 +63,7 @@ type proxy struct {
 	starting map[string]*sync.Mutex
 
 	rp *httputil.ReverseProxy
+	ui http.Handler
 	// dial checks whether a host port accepts connections; a stub in tests.
 	dial func(ctx context.Context, addr string) error
 }
@@ -101,7 +102,7 @@ func newProxy(s *Server) *proxy {
 func (p *proxy) listen(ctx context.Context) {
 	handler := http.Handler(p)
 	if hl, port := listenLoopback(httpPort, fallbackHTTPPort); hl != nil {
-		srv := &http.Server{Handler: handler, ReadHeaderTimeout: 30 * time.Second}
+		srv := &http.Server{Handler: handler, ReadHeaderTimeout: 30 * time.Second, ConnContext: connContext}
 		go srv.Serve(hl)
 		go func() { <-ctx.Done(); srv.Close() }()
 		p.mu.Lock()
@@ -118,6 +119,7 @@ func (p *proxy) listen(ctx context.Context) {
 		srv := &http.Server{
 			Handler:           handler,
 			ReadHeaderTimeout: 30 * time.Second,
+			ConnContext:       connContext,
 			TLSConfig:         &tls.Config{GetCertificate: ca.GetCertificate, MinVersion: tls.VersionTLS12},
 		}
 		go srv.ServeTLS(tl, "", "")
@@ -267,6 +269,10 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		host = h
 	}
 	host = strings.TrimSuffix(host, ".")
+	if host == UIHost && p.ui != nil {
+		p.ui.ServeHTTP(w, r)
+		return
+	}
 	route, ok := p.lookup(host)
 	if !ok {
 		p.notFound(w, host)
@@ -331,6 +337,7 @@ func (p *proxy) ensureUp(ctx context.Context, route proxyRoute, target string) e
 func (p *proxy) notFound(w http.ResponseWriter, host string) {
 	info := p.info()
 	var b strings.Builder
+	fmt.Fprintf(&b, `<p>All containers: <a href="%s">%s</a></p>`, html.EscapeString(info.URL(UIHost, false)), UIHost)
 	if len(info.Routes) == 0 {
 		b.WriteString("<p>No project has an <code>http: true</code> port forward yet.</p>")
 	} else {

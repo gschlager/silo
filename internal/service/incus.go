@@ -101,7 +101,7 @@ func (s *Server) onIncusEvent(e api.Event) {
 	switch lc.Action {
 	case "instance-created", "instance-deleted", "instance-renamed", "instance-updated":
 		s.hub.reconcile()
-	case "instance-started":
+	case "instance-started", "instance-restarted":
 		s.idle.started(name)
 		s.events.publish(Event{Type: "container-started", Container: name})
 		go s.onStarted(name)

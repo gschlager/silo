@@ -443,7 +443,7 @@ type HTTPRoute struct {
 // The first one is <project>.localhost; the others get the forward's name
 // (or container port) appended: <project>-<name>.localhost. The names have a
 // single label in front of the domain, so they also work with one wildcard
-// certificate.
+// certificate. silo.localhost itself is the silo service's web UI.
 func (m *MergedConfig) HTTPRoutes() []HTTPRoute {
 	label := strings.ToLower(strings.TrimPrefix(m.ContainerName, "silo-"))
 	var routes []HTTPRoute
@@ -457,7 +457,9 @@ func (m *MergedConfig) HTTPRoutes() []HTTPRoute {
 			continue
 		}
 		host := label
-		if len(routes) > 0 {
+		// silo.localhost is the web UI, so a project called silo starts
+		// with the suffixed names.
+		if len(routes) > 0 || label == "silo" {
 			suffix := sanitizeDeviceSuffix(p.Name)
 			if suffix == "" {
 				suffix = strconv.Itoa(cp)

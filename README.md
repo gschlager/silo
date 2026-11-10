@@ -730,7 +730,7 @@ When silo and the service come from different builds (after an upgrade, or a reb
 
 | Command                | Description                                         |
 |------------------------|-----------------------------------------------------|
-| `silo service status`  | Show whether the service runs and what it does       |
+| `silo service status`  | Show whether the service runs and what it does, and the web UI's URL |
 | `silo service events`  | Follow the service's events (`--json` for tools)    |
 | `silo service forget`  | Forget all cached 1Password secrets                  |
 | `silo service restart` | Restart the service                                  |
@@ -784,6 +784,12 @@ A request for a stopped container starts it (with its autostart daemons) and wai
 **HTTPS**: no public CA issues certificates for `.localhost`, so silo has its own local CA. `silo setup` creates it and adds it to the system trust store and to Chrome's and Firefox's NSS databases (with `certutil` from `nss-tools`). The CA is name-constrained: it can only issue certificates for `localhost` and names under it, only for TLS servers, and browsers enforce that. Even if its key (`~/.config/silo/ca`, readable only by you) leaked, it couldn't be used to fake any other site. Plain `http://<project>.localhost` already counts as a secure context in browsers, so service workers, `crypto.subtle` and secure cookies work there too.
 
 **Ports**: the proxy listens on 80 and 443 on loopback only. The service runs as your user, so the silo binary has `cap_net_bind_service` for that (set by the RPM, and by `silo setup` for other installs; a rebuilt binary loses it). Without it, the proxy uses 7080 and 7443 and the URLs include the port.
+
+### Web UI
+
+`https://silo.localhost` (or `http://`) shows all silo containers: their state, memory, `.localhost` URLs, port forwards and daemons, with live updates from the event stream. From there you can start, stop and restart containers and daemons, read a daemon's recent logs, take and restore snapshots, rebuild base templates and forget the cached secrets. A project called `silo` gets `silo-<name>.localhost` names instead, since `silo.localhost` is the UI.
+
+It only answers processes running as you: the proxy ports are on loopback, where other users of the machine could reach them too, so the service looks up the owner of every client socket in `/proc/net/tcp`. Other web pages can't use it either: API requests must come from the UI's own origin, changes also need a header that other origins can't send, and the apps in your containers (`<project>.localhost`) count as other origins. The UI can't be framed, and everything that comes from a container is shown as text.
 
 ### Idle stop
 

@@ -83,6 +83,13 @@ func (t *idleTracker) idleSince(name string, active bool, now time.Time) time.Ti
 	return last
 }
 
+// lastActiveAt returns when the container was last seen in use.
+func (t *idleTracker) lastActiveAt(name string) time.Time {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.lastActive[name]
+}
+
 func (t *idleTracker) forget(keep map[string]bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()

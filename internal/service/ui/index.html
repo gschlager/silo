@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>silo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='2' y='3' width='12' height='10' rx='2' fill='%2316a34a'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>silo</h1>
+  <div id="service" class="chips"></div>
+</header>
+<main>
+  <section id="containers" aria-live="polite"><p class="muted">Loading…</p></section>
+  <aside>
+    <section>
+      <h2>Base templates</h2>
+      <div id="bases"></div>
+    </section>
+    <section>
+      <h2>Events</h2>
+      <ol id="events" class="events"><li class="muted">Nothing yet.</li></ol>
+    </section>
+  </aside>
+</main>
+<dialog id="dialog">
+  <header>
+    <h2 id="dialog-title"></h2>
+    <div>
+      <button id="dialog-refresh" type="button">Refresh</button>
+      <button id="dialog-close" type="button">Close</button>
+    </div>
+  </header>
+  <div id="dialog-body"></div>
+</dialog>
+<div id="toast" role="status"></div>
+</body>
+</html>

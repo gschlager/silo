@@ -493,6 +493,11 @@ func TestHTTPRoutes(t *testing.T) {
 			{Spec: "4000", HTTP: true},
 		},
 	}
+	silo := &MergedConfig{ContainerName: "silo-silo", Ports: []PortForward{{Spec: "3000", HTTP: true, Name: "web"}}}
+	if r := silo.HTTPRoutes(); len(r) != 1 || r[0].Host != "silo-web.localhost" {
+		t.Errorf("a project called silo got %+v, but silo.localhost is the web UI", r)
+	}
+
 	got := m.HTTPRoutes()
 	want := []HTTPRoute{
 		{Host: "myapp.localhost", Name: "web", ContainerPort: 3000, HostPort: 3000},

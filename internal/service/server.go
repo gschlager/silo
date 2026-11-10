@@ -75,22 +75,9 @@ func runWith(ctx context.Context, opts Options) error {
 		return fmt.Errorf("listening on %s: %w", svcapi.SocketPath(), err)
 	}
 
-	s := &Server{opts: opts, secrets: newSecretCache(), started: time.Now(), mux: http.NewServeMux(), stop: make(chan struct{})}
-	var once sync.Once
-	s.stopOnce = func() { once.Do(func() { close(s.stop) }) }
-	s.containerConfig = s.configFor
-	s.hub = newHub(s)
-	s.base = newBaseJobs()
-	s.proxy = newProxy(s)
-	s.idle = newIdleTracker()
-	s.events = newEventBus()
-	s.base.report = s.publish
+	s := newServer(opts)
 	defer s.hub.closeAll()
 	provision.Secrets = s.secrets
-	s.routes()
-	s.secretRoutes()
-	s.baseRoutes()
-	s.lifecycleRoutes()
 	if !opts.NoIncus {
 		go s.runIncus(ctx)
 		go s.every(ctx, time.Minute, func() {
@@ -200,6 +187,26 @@ func (s *Server) publish(e Event) {
 	if s.events != nil {
 		s.events.publish(e)
 	}
+}
+
+// newServer sets up a Server without starting anything.
+func newServer(opts Options) *Server {
+	s := &Server{opts: opts, secrets: newSecretCache(), started: time.Now(), mux: http.NewServeMux(), stop: make(chan struct{})}
+	var once sync.Once
+	s.stopOnce = func() { once.Do(func() { close(s.stop) }) }
+	s.containerConfig = s.configFor
+	s.hub = newHub(s)
+	s.base = newBaseJobs()
+	s.idle = newIdleTracker()
+	s.events = newEventBus()
+	s.base.report = s.publish
+	s.proxy = newProxy(s)
+	s.proxy.ui = s.uiHandler()
+	s.routes()
+	s.secretRoutes()
+	s.baseRoutes()
+	s.lifecycleRoutes()
+	return s
 }
 
 // every calls fn every interval until ctx is done.

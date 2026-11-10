@@ -337,3 +337,46 @@ func daemonEnvPreamble(name string, env map[string]string) string {
 func systemdEscape(cmd string) string {
 	return strings.ReplaceAll(cmd, "$", "$$")
 }
+
+// DaemonStates asks systemd for the state of the given daemons in a single exec
+// and maps each name to "running", "failed" or "stopped". The container must be
+// running; on an exec error every daemon is reported as "stopped".
+func DaemonStates(ctx context.Context, server incuscli.InstanceServer, container, user string, names []string) map[string]string {
+	states := make(map[string]string, len(names))
+	for _, name := range names {
+		states[name] = "stopped"
+	}
+	if len(names) == 0 {
+		return states
+	}
+	units := make([]string, len(names))
+	for i, name := range names {
+		units[i] = "silo-" + name
+	}
+	// is-active prints one line per unit, in argument order.
+	out, err := incus.Exec(ctx, server, container, incus.ExecOpts{},
+		incus.SuUserManager(user,
+			"systemctl --user is-active "+strings.Join(units, " ")+" 2>/dev/null || true"))
+	if err != nil {
+		return states
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	for i, name := range names {
+		if i >= len(lines) {
+			break
+		}
+		switch strings.TrimSpace(lines[i]) {
+		case "active":
+			states[name] = "running"
+		case "failed":
+			states[name] = "failed"
+		}
+	}
+	return states
+}
+
+// DaemonLogs returns the last lines of a daemon's journal.
+func DaemonLogs(ctx context.Context, server incuscli.InstanceServer, container, user, daemon string, lines int) (string, error) {
+	return incus.Exec(ctx, server, container, incus.ExecOpts{},
+		incus.SuUserManager(user, fmt.Sprintf("journalctl --user -u silo-%s -n %d --no-pager -o short-iso 2>&1 || true", shellEscape(daemon), lines)))
+}
