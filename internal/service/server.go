@@ -175,6 +175,9 @@ func (s *Server) routes() {
 	})
 	s.mux.HandleFunc("GET /v1/events", s.handleEvents)
 	handle(s.mux, "POST /v1/shutdown", func(r *http.Request, _ *none) (none, error) {
+		if r.URL.Query().Get("if_idle") != "" && len(s.base.images()) > 0 {
+			return none{}, errStatus(http.StatusConflict, "busy rebuilding a base template")
+		}
 		log.Printf("asked to stop")
 		// Answer first, then stop.
 		time.AfterFunc(50*time.Millisecond, s.stopOnce)
@@ -226,6 +229,7 @@ func (s *Server) every(ctx context.Context, interval time.Duration, fn func()) {
 func (s *Server) status() svcapi.StatusInfo {
 	return svcapi.StatusInfo{
 		Version:       svcapi.Version,
+		Executable:    svcapi.OwnExecutable(),
 		PID:           os.Getpid(),
 		Started:       s.started,
 		CachedSecrets: s.secrets.len(),

@@ -368,6 +368,8 @@ func StartRefreshProcess(image string, wait bool) error {
 	cmd.Stderr = log
 	if !wait {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	} else {
+		cmd.Env = append(os.Environ(), svcapi.ChildEnv+"=1")
 	}
 	err = cmd.Start()
 	log.Close() // the child has its own copy

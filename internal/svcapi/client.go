@@ -11,6 +11,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -21,9 +23,11 @@ var Version = "dev"
 
 // StatusInfo is what `silo service status` shows.
 type StatusInfo struct {
-	Version string    `json:"version"`
-	PID     int       `json:"pid"`
-	Started time.Time `json:"started"`
+	Version string `json:"version"`
+	// Executable is the binary the service runs.
+	Executable string    `json:"executable"`
+	PID        int       `json:"pid"`
+	Started    time.Time `json:"started"`
 	// CachedSecrets is how many 1Password values the service holds.
 	CachedSecrets int `json:"cached_secrets"`
 	// Incus says whether the service is connected to Incus.
@@ -38,7 +42,8 @@ type StatusInfo struct {
 type Client struct {
 	http *http.Client
 	// Version of the service this client is connected to.
-	Version string
+	Version    string
+	executable string
 }
 
 // ErrUnavailable means the service isn't running (or isn't installed).
@@ -66,8 +71,28 @@ func dialPath(path string) (*Client, error) {
 		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 	c.Version = st.Version
+	c.executable = st.Executable
 	return c, nil
 }
+
+// ChildEnv is set for processes the service starts, so they never ask the
+// service to stop.
+const ChildEnv = "SILO_SERVICE_CHILD"
+
+// ownExecutable is this binary's path with symlinks resolved.
+func ownExecutable() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if r, err := filepath.EvalSymlinks(exe); err == nil {
+		return r
+	}
+	return exe
+}
+
+// OwnExecutable is ownExecutable for the service's status.
+func OwnExecutable() string { return ownExecutable() }
 
 var (
 	sharedOnce   sync.Once
@@ -78,21 +103,25 @@ var (
 // callers can fall back to doing the work themselves. The connection is made
 // once per process.
 //
-// A service from another silo build (the RPM was upgraded, or you rebuilt
-// silo) is asked to stop first. systemd starts the new binary on the next
-// connection through silo.socket. If the version still differs afterwards,
-// the service runs another binary than this one (e.g. a dev build next to the
-// RPM), and it's used as is.
+// When the service runs an older build of this same binary file (the RPM
+// was upgraded, or silo was rebuilt in place), it's asked to stop, and
+// systemd starts the new binary on the next connection through silo.socket.
+// It isn't restarted for another binary (a dev build next to the RPM), from
+// one of the service's own child processes, or while it runs a job.
 func Connect() *Client {
 	sharedOnce.Do(func() {
 		c, err := Dial()
 		if err != nil {
 			return
 		}
-		if c.Version != Version {
+		if c.Version != Version && os.Getenv(ChildEnv) == "" && c.executable == ownExecutable() {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			c.Do(ctx, "POST", "/v1/shutdown", nil, nil)
+			err := c.Do(ctx, "POST", "/v1/shutdown?if_idle=1", nil, nil)
 			cancel()
+			if err != nil {
+				sharedClient = c
+				return
+			}
 			for range 20 {
 				time.Sleep(100 * time.Millisecond)
 				if nc, err := Dial(); err == nil {
