@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -137,9 +138,6 @@ env:
 agents:
   claude:
     mode: console
-tools:
-  gh:
-    credential: {}
 daemons:
   redis: redis-server
   pg:
@@ -162,9 +160,6 @@ env:
 agents:
   codex:
     mode: console
-tools:
-  npm:
-    credential: {}
 daemons:
   pg: pg_ctl start
   mailhog: mailhog
@@ -207,18 +202,12 @@ daemons:
 		t.Errorf("Env = %v", cfg.Env)
 	}
 
-	// agents/tools: extended.
+	// agents: extended.
 	if _, ok := cfg.Agents["claude"]; !ok {
 		t.Error("Agents lost claude from base")
 	}
 	if _, ok := cfg.Agents["codex"]; !ok {
 		t.Error("Agents missing codex from local")
-	}
-	if _, ok := cfg.Tools["gh"]; !ok {
-		t.Error("Tools lost gh from base")
-	}
-	if _, ok := cfg.Tools["npm"]; !ok {
-		t.Error("Tools missing npm from local")
 	}
 
 	// daemons: redis kept, pg replaced by local, mailhog added.
@@ -416,5 +405,18 @@ func writeYAML(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLoadProjectConfig_RefusesCredentials(t *testing.T) {
+	for _, y := range []string{
+		"git:\n  credential:\n    source: 1password\n    ref: op://a/b/c\n",
+		"tools:\n  npm:\n    credential:\n      source: token\n      value: x\n",
+	} {
+		dir := t.TempDir()
+		writeYAML(t, dir, ".silo.yml", y)
+		if _, err := LoadProjectConfig(dir); err == nil || !strings.Contains(err.Error(), "silo config update") {
+			t.Errorf("%q: err = %v, want a pointer to silo config update", y, err)
+		}
 	}
 }

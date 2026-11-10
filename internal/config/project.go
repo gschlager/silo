@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -73,18 +75,11 @@ func (u UseList) MarshalYAML() (any, error) {
 	return node, nil
 }
 
-// GitConfig holds git settings and optional credential configuration.
+// GitConfig holds git settings. Credential is only read to point at silo
+// config update: credentials belong in secrets.yml.
 type GitConfig struct {
 	Settings   map[string]string `yaml:",inline"`
-	Credential *CredentialConfig `yaml:"credential"`
-}
-
-// CredentialConfig describes how to resolve a credential.
-type CredentialConfig struct {
-	Source string `yaml:"source"` // "1password", "token"
-	Ref    string `yaml:"ref"`    // op:// reference for 1password
-	Value  string `yaml:"value"`  // literal token value
-	Env    string `yaml:"env"`    // environment variable name
+	Credential *yaml.Node        `yaml:"credential,omitempty"`
 }
 
 // AgentProjectConfig holds per-project agent settings.
@@ -94,9 +89,10 @@ type AgentProjectConfig struct {
 	Env     map[string]string `yaml:"env"`
 }
 
-// ToolConfig holds configuration for a tool like gh.
+// ToolConfig is a tools.<name> entry. Its credential moved to secrets.yml;
+// it's only read to point at silo config update.
 type ToolConfig struct {
-	Credential *CredentialConfig `yaml:"credential"`
+	Credential *yaml.Node `yaml:"credential,omitempty"`
 }
 
 // DaemonConfig holds daemon configuration, supporting both string and object forms.
@@ -219,6 +215,21 @@ func sanitizeDeviceSuffix(s string) string {
 	return b.String()
 }
 
+// projectCredential returns the first credential a project file still
+// declares (git.credential, tools.<name>.credential), or "".
+func projectCredential(cfg ProjectConfig) string {
+	declared := func(n *yaml.Node) bool { return n != nil && n.Tag != "!!null" }
+	if declared(cfg.Git.Credential) {
+		return "git.credential"
+	}
+	for _, name := range slices.Sorted(maps.Keys(cfg.Tools)) {
+		if declared(cfg.Tools[name].Credential) {
+			return "tools." + name + ".credential"
+		}
+	}
+	return ""
+}
+
 // UnmarshalYAML implements custom unmarshaling for DaemonConfig.
 // Supports both "rails: bin/rails server" (string) and object form with cmd/autostart/after/ports.
 func (d *DaemonConfig) UnmarshalYAML(value *yaml.Node) error {
@@ -305,6 +316,9 @@ func loadProjectFile(dir string, names ...string) *projectFileResult {
 		if len(cfg.Mounts) > 0 {
 			return &projectFileResult{err: fmt.Errorf("parsing %s: project files cannot declare host mounts; move mounts to %s (silo config update does that)", path, GlobalConfigPath())}
 		}
+		if where := projectCredential(cfg); where != "" {
+			return &projectFileResult{err: fmt.Errorf("parsing %s: %s belongs in %s now (silo config update moves it)", path, where, SecretsPath())}
+		}
 		for agent, agentCfg := range cfg.Agents {
 			if agentCfg.Mode != "" {
 				if err := ValidateAgentModePath(agent, agentCfg.Mode); err != nil {
@@ -346,14 +360,13 @@ func mergeProjectConfigs(base, local *ProjectConfig) *ProjectConfig {
 	}
 	m.Ports = mergePortLists(base.Ports, local.Ports)
 	m.Env = mergeMaps(base.Env, local.Env)
-	if local.Git.Settings != nil || local.Git.Credential != nil {
+	if local.Git.Settings != nil {
 		m.Git = local.Git
 	}
 	m.Agents = mergeMaps(base.Agents, local.Agents)
 	if local.Mounts != nil {
 		m.Mounts = local.Mounts
 	}
-	m.Tools = mergeMaps(base.Tools, local.Tools)
 	m.Daemons = mergeMaps(base.Daemons, local.Daemons)
 	if local.Nesting {
 		m.Nesting = local.Nesting

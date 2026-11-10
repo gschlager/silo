@@ -147,14 +147,12 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		color.Warn("could not apply global gitignore: %v", err)
 	}
 
-	// Step 6: Install the GitHub credential helper when a github token source is
-	// configured — either a project git.credential or a central secrets 'github'
-	// key. The helper reads $GITHUB_TOKEN at runtime, so nothing is baked in.
-	needHelper := cfg.GitCredential != nil
-	if !needHelper {
-		if secrets, err := config.SecretsForProjects(cfg.ProjectName(), cfg.PathScopedProjectName()); err == nil {
-			_, needHelper = secrets["github"]
-		}
+	// Step 6: Install the GitHub credential helper when the project's entry in
+	// secrets.yml has a github key. The helper reads $GITHUB_TOKEN at runtime,
+	// so nothing is baked in.
+	needHelper := false
+	if secrets, err := config.SecretsForProjects(cfg.ProjectName(), cfg.PathScopedProjectName()); err == nil {
+		_, needHelper = secrets["github"]
 	}
 	if needHelper {
 		status("Setting up git credentials...")
@@ -349,32 +347,6 @@ func runCommands(ctx context.Context, server incuscli.InstanceServer, container 
 		}
 	}
 	return nil
-}
-
-// ResolveToolEnv resolves tool credentials into environment variables.
-// Runs on the host — suitable for passing as env to exec sessions.
-// Returns an error on the first credential that fails to resolve, so callers
-// don't launch sessions (especially agents) with silently missing tokens.
-func ResolveToolEnv(container string, tools map[string]config.ToolConfig) (map[string]string, error) {
-	env := make(map[string]string)
-	for name, tool := range tools {
-		if tool.Credential == nil {
-			continue
-		}
-
-		token, err := resolveCredential(container, tool.Credential)
-		if err != nil {
-			return nil, fmt.Errorf("resolving credential for tool %q: %w", name, err)
-		}
-
-		switch name {
-		case "gh":
-			env["GH_TOKEN"] = token
-		default:
-			env[strings.ToUpper(name)+"_TOKEN"] = token
-		}
-	}
-	return env, nil
 }
 
 func configureTimezoneAndLocale(ctx context.Context, server incuscli.InstanceServer, container string) error {

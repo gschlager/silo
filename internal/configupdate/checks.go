@@ -288,6 +288,7 @@ func (c *checker) credentials() ([]Suggestion, error) {
 		for _, f := range entries(e.val) {
 			fields[f.key.Value] = f.val.Value
 		}
+		where := strings.Join(cr.path, ".")
 		var value, extra string
 		switch {
 		case fields["source"] == "1password" && fields["ref"] != "":
@@ -295,13 +296,21 @@ func (c *checker) credentials() ([]Suggestion, error) {
 		case fields["source"] == "token" && fields["value"] != "":
 			value = fields["value"]
 			extra = " The token is in this file as plain text, so it's probably in the repo's history too: rotate it."
-		default:
-			continue // an env: source can't be expressed in secrets.yml
 		}
-		if c.projectKey == "" {
+		if value == "" || c.projectKey == "" {
+			// secrets.yml takes a value or an op:// reference; this one
+			// (e.g. an env: source) has to be moved by hand.
+			s, err := c.suggestion("credential-"+where, "Remove "+where,
+				fmt.Sprintf("silo doesn't read credentials from project files anymore and refuses to start with one. Put the token in %s as %s yourself, then remove this.",
+					config.SecretsPath(), cr.secret),
+				func(d *doc) error { return d.remove(cr.path...) })
+			if err != nil {
+				return nil, err
+			}
+			s.Careful = true
+			out = append(out, s)
 			continue
 		}
-		where := strings.Join(cr.path, ".")
 		s, err := c.suggestion("credential-"+where,
 			"Move "+where+" to secrets.yml",
 			fmt.Sprintf("secrets.yml isn't part of the repo and can't be changed from inside the container. It becomes %s in the %s entry, as %s.%s",

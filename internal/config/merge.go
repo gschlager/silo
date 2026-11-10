@@ -32,8 +32,7 @@ type MergedConfig struct {
 	Mounts []string
 
 	// Git configuration.
-	Git           map[string]string
-	GitCredential *CredentialConfig
+	Git map[string]string
 
 	// Agent configuration (merged: project replaces global per agent).
 	Agents     map[string]MergedAgentConfig
@@ -41,9 +40,6 @@ type MergedConfig struct {
 	// BaseAgents are the agents enabled in the global config. They're installed
 	// into the shared base template, so they don't depend on the project.
 	BaseAgents []string
-
-	// Tools.
-	Tools map[string]ToolConfig
 
 	// Daemons.
 	Daemons map[string]DaemonConfig
@@ -282,7 +278,6 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 			}
 			m.Git[k] = v
 		}
-		m.GitCredential = project.Git.Credential
 	}
 
 	// Agents: build from global (preserving order), project overrides per agent.
@@ -333,11 +328,6 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 			}
 			m.Agents[name] = merged
 		}
-	}
-
-	// Tools: project-level only.
-	if project != nil {
-		m.Tools = project.Tools
 	}
 
 	// Daemons: user presets named in `use:` contribute a base, project daemons:

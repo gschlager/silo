@@ -445,7 +445,7 @@ async function showConfigUpdates(c) {
     openDialog("Config updates · " + c.label, c.project_dir, apply ? [apply] : [], el("div.diffs", {}, ups.map((u) => el("section.suggestion", {},
       el("h3", {}, u.title),
       u.detail ? el("p", {}, u.detail) : null,
-      u.careful ? el("p.careful", {}, "This removes something silo can't interpret, so the web UI leaves it alone. Run silo config update in the project to review it.") : null,
+      u.careful ? el("p.careful", {}, "This one needs your decision, so the web UI leaves it alone. Run silo config update in the project to review it.") : null,
       u.files.map(diffView)))));
   } catch (e) {
     $("#dialog-body").replaceChildren(el("p.warn-line", {}, e.message));

@@ -171,20 +171,8 @@ git:
   user.name: Dev
   user.email: dev@example.com
 
-# GitHub PATs and other per-project secrets are best managed centrally in
-# ~/.config/silo/secrets.yml (see "Secrets" below) rather than here. The
-# git.credential and tools.<name>.credential blocks below still work and
-# override the central file for a given project if you need them.
-#
-# git:
-#   credential:                 # credential helper for https:// pushes
-#     source: 1password
-#     ref: op://Private/github-token/token
-# tools:
-#   gh:                         # sets GH_TOKEN inside the container
-#     credential:
-#       source: 1password
-#       ref: op://Private/github-cli/token
+# GitHub PATs and other per-project secrets go in
+# ~/.config/silo/secrets.yml (see "Secrets" below), not here.
 
 # Long-running processes (managed as systemd user services).
 # Daemons always run in the project root (/workspace/<project>).
@@ -227,7 +215,7 @@ All fields are optional. Setup commands run as the `dev` user with a login shell
 
 - an older release of the default image (`fedora/44` while the default is `fedora/45`)
 - `mounts:`, which project files can't declare anymore: they move to `project_mounts` in the global config
-- `git.credential` and `tools.<name>.credential`: they move to [secrets.yml](#secrets) as the same environment variables, which keeps them out of the repo and out of the agent's reach
+- `git.credential` and `tools.<name>.credential`: they move to [secrets.yml](#secrets) as the same environment variables, which keeps them out of the repo and out of the agent's reach. silo refuses to start a project that still has them, like it does for `mounts:`
 - port forwards on a usual web server port (3000, 4200, 5173, 8080, ...) without `http: true`, so they get a [`.localhost` name](#the-silo-service)
 - keys silo doesn't know (anymore): `docker: true` becomes `nesting: true`, a typo like `deamons:` becomes `daemons:`, and anything else is offered for removal (default no)
 
@@ -426,7 +414,7 @@ converters:
 - Each value is a **1Password reference** (`op://vault/item/field`) resolved on the host via the `op` CLI, or a literal. References are just pointers, not secrets, so this file mainly holds `op://` paths.
 - The reserved **`github`** key exports `GITHUB_TOKEN` and `GH_TOKEN` and wires the git credential helper for `github.com`. Every other key becomes a plain environment variable of that name.
 - Secrets are resolved at session and setup time and passed as environment variables — never baked into the container or written to disk.
-- The [silo service](#the-silo-service) keeps the values it got from `op` in memory, so not every silo command (and every herdr reconnect) needs `op` and a 1Password approval again. The cache is cleared when the screen locks, before suspend, after 12 hours at the latest, and with `silo service forget`. Run that after rotating a PAT in 1Password, so the next session picks up the new one. The cache never reaches a container; see [The silo service](#the-silo-service) for why it doesn't weaken anything. Values for `op://` references in a project's `.silo.yml` (tool credentials, per-daemon `env:`, a project's agent `env:`) are cached for that project only, so a project can't pick up a value another project caused to be cached.
+- The [silo service](#the-silo-service) keeps the values it got from `op` in memory, so not every silo command (and every herdr reconnect) needs `op` and a 1Password approval again. The cache is cleared when the screen locks, before suspend, after 12 hours at the latest, and with `silo service forget`. Run that after rotating a PAT in 1Password, so the next session picks up the new one. The cache never reaches a container; see [The silo service](#the-silo-service) for why it doesn't weaken anything. Values for `op://` references in a project's `.silo.yml` (per-daemon `env:`, a project's agent `env:`) are cached for that project only, so a project can't pick up a value another project caused to be cached.
 - A [preset](#presets) can carry its own `secrets:` block, resolved the same way but scoped to the projects that opted into the preset with `use:`. Handy when several projects need the same reference and you'd rather not repeat it here.
 - Secrets reach `silo enter`/`silo run`, project setup, and [daemons](#daemons). Daemons get them because silo injects them into the systemd user manager when it starts the daemon (see Daemons) — still only in memory, never on disk.
 

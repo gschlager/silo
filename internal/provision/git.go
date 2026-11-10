@@ -98,22 +98,6 @@ func ResolveSessionEnv(cfg *config.MergedConfig) (map[string]string, error) {
 		return nil, err
 	}
 
-	tools, err := ResolveToolEnv(cfg.ContainerName, cfg.Tools)
-	if err != nil {
-		return nil, err
-	}
-	for k, v := range tools {
-		env[k] = v
-	}
-
-	if cfg.GitCredential != nil {
-		val, err := resolveCredential(cfg.ContainerName, cfg.GitCredential)
-		if err != nil {
-			return nil, fmt.Errorf("resolving git credential: %w", err)
-		}
-		env["GITHUB_TOKEN"] = val
-	}
-
 	return env, nil
 }
 
@@ -252,33 +236,4 @@ func readOp(scope, ref string) (string, error) {
 	v := strings.TrimSpace(string(out))
 	Secrets.Put(key, v)
 	return v, nil
-}
-
-// resolveCredential resolves a credential from its configured source.
-// This runs on the HOST, not inside the container. Credentials are set in the
-// project's .silo.yml, so they're cached per container.
-func resolveCredential(container string, cred *config.CredentialConfig) (string, error) {
-	switch cred.Source {
-	case "1password":
-		if cred.Ref == "" {
-			return "", fmt.Errorf("1password credential requires 'ref' field")
-		}
-		return readOp(container, cred.Ref)
-
-	case "token":
-		if cred.Value != "" {
-			return cred.Value, nil
-		}
-		if cred.Env != "" {
-			val := os.Getenv(cred.Env)
-			if val == "" {
-				return "", fmt.Errorf("environment variable %q is not set", cred.Env)
-			}
-			return val, nil
-		}
-		return "", fmt.Errorf("token credential requires 'value' or 'env' field")
-
-	default:
-		return "", fmt.Errorf("unknown credential source: %q", cred.Source)
-	}
 }
