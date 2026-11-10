@@ -12,11 +12,13 @@ import (
 // MergedConfig is the fully resolved configuration used by all commands.
 type MergedConfig struct {
 	// Container settings.
-	Image          string
-	ContainerName  string
-	ProjectDir     string
-	ProjectKey     string
-	PathProjectKey string
+	Image         string
+	ContainerName string
+	ProjectDir    string
+	ProjectKey    string
+	// SecretsFallback is the secrets.yml entry used when ProjectKey has none
+	// (silo tmp sets it to tmp).
+	SecretsFallback string
 
 	// Command lists.
 	DefaultSetup []string
@@ -145,13 +147,9 @@ func PathScopedProjectName(projectDir string) string {
 	return base + "-" + projectIdentitySuffix(projectDir)
 }
 
-// PathScopedProjectName returns the previous hash-suffixed secrets key. It is
-// retained as a read fallback and migration source.
-func (m *MergedConfig) PathScopedProjectName() string {
-	if m.PathProjectKey != "" {
-		return m.PathProjectKey
-	}
-	return PathScopedProjectName(m.ProjectDir)
+// Secrets returns the project's entry in secrets.yml.
+func (m *MergedConfig) Secrets() (map[string]string, error) {
+	return SecretsForProjects(m.ProjectName(), m.SecretsFallback)
 }
 
 // LegacyProjectName returns the traditional basename-only project key.
@@ -193,17 +191,16 @@ func (m *MergedConfig) WorkspacePath() string {
 func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *MergedConfig {
 	projectDir = canonicalProjectPath(projectDir)
 	m := &MergedConfig{
-		ContainerName:  ContainerName(projectDir),
-		ProjectDir:     projectDir,
-		ProjectKey:     LegacyProjectName(projectDir),
-		PathProjectKey: PathScopedProjectName(projectDir),
-		Shell:          global.Shell,
-		User:           global.User,
-		DefaultAgent:   global.DefaultAgent,
-		PassEnv:        global.PassEnv,
-		Notifications:  global.Notifications,
-		Herdr:          global.Herdr == nil || *global.Herdr,
-		Presets:        global.Presets,
+		ContainerName: ContainerName(projectDir),
+		ProjectDir:    projectDir,
+		ProjectKey:    LegacyProjectName(projectDir),
+		Shell:         global.Shell,
+		User:          global.User,
+		DefaultAgent:  global.DefaultAgent,
+		PassEnv:       global.PassEnv,
+		Notifications: global.Notifications,
+		Herdr:         global.Herdr == nil || *global.Herdr,
+		Presets:       global.Presets,
 	}
 
 	// Image: project overrides global default.
@@ -264,7 +261,7 @@ func Merge(global *GlobalConfig, project *ProjectConfig, projectDir string) *Mer
 	// the container, so accepting mounts from .silo.yml would let a compromised
 	// repository expose arbitrary host paths on the next provision.
 	m.Mounts = append(m.Mounts, global.Mounts...)
-	m.Mounts = append(m.Mounts, global.ProjectMounts[m.PathScopedProjectName()]...)
+	m.Mounts = append(m.Mounts, global.ProjectMounts[PathScopedProjectName(m.ProjectDir)]...)
 
 	// Git: global base, project overrides individual keys.
 	m.Git = maps.Clone(global.Git)

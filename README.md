@@ -213,6 +213,7 @@ All fields are optional. Setup commands run as the `dev` user with a login shell
 
 `silo config update` looks for things in `.silo.yml` and `.silo.local.yml` that are out of date with your silo version, shows each change as a diff and applies it when you agree:
 
+- a `secrets.yml` entry named `<project>-<hash>`, which a short-lived silo version used: it's renamed to the project's name
 - an older release of the default image (`fedora/44` while the default is `fedora/45`)
 - `mounts:`, which project files can't declare anymore: they move to `project_mounts` in the global config
 - `git.credential` and `tools.<name>.credential`: they move to [secrets.yml](#secrets) as the same environment variables, which keeps them out of the repo and out of the agent's reach. silo refuses to start a project that still has them, like it does for `mounts:`
@@ -418,13 +419,7 @@ converters:
 - A [preset](#presets) can carry its own `secrets:` block, resolved the same way but scoped to the projects that opted into the preset with `use:`. Handy when several projects need the same reference and you'd rather not repeat it here.
 - Secrets reach `silo enter`/`silo run`, project setup, and [daemons](#daemons). Daemons get them because silo injects them into the systemd user manager when it starts the daemon (see Daemons) — still only in memory, never on disk.
 
-If you used the short-lived silo version that exposed path hashes in secrets,
-run `silo config migrate-secrets` once from each affected project. It atomically
-renames the hash-suffixed key back to the registry-assigned readable key,
-preserving comments and refusing to overwrite a key that already exists. The
-hash-suffixed key remains a read fallback until it is migrated, so upgrading
-does not interrupt existing credentials. A same-basename project that receives
-a suffixed registry name uses that distinct name for its secrets too.
+A project's entry is named like its container without `silo-`. A same-basename project that gets a suffixed container name uses that name for its secrets too.
 
 #### Sharing secrets between projects
 
@@ -436,11 +431,11 @@ projects point at the same 1Password items:
 .shared: &shared
   AWS_BEARER_TOKEN_BEDROCK: op://Employee/bedrock/key
 
-discourse-a1b2c3d4e5f6a7b8:
+discourse:
   <<: *shared
   github: op://Employee/discourse-pat/token
 
-converters-f6e7d8c9b0a1b2c3:
+converters:
   <<: *shared
 ```
 
@@ -621,7 +616,6 @@ Note that this scopes *naming*, not *access*: the manager environment is shared,
 | `silo config edit`             | Open global config in `$EDITOR`                          |
 | `silo config path`             | Print config file path                                   |
 | `silo config update`           | Update `.silo.yml` to the current silo, change by change (see [Keeping .silo.yml up to date](#keeping-siloyml-up-to-date)) |
-| `silo config migrate-secrets`  | Rename this project's legacy secrets key once            |
 | `silo completion install`      | Auto-install shell completions                           |
 
 ## Agent credentials

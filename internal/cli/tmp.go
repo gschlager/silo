@@ -229,7 +229,7 @@ func tmpConfig(t tmpTarget, containerName string) (*config.MergedConfig, error) 
 	cfg.Herdr = false // herdr reconnects by project dir, which tmp containers don't own
 	if t.Dir == "" {
 		cfg.ProjectKey = t.Name
-		cfg.PathProjectKey = tmpSecretsKey
+		cfg.SecretsFallback = tmpSecretsKey
 	}
 	if shell := config.LoadContainerShell(containerName); shell != "" {
 		cfg.Shell = shell

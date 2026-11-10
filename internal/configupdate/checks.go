@@ -30,9 +30,11 @@ type Suggestion struct {
 	// Others are other files it changes (secrets.yml, the global config),
 	// with their new content.
 	Others []FileChange
-	// Careful is set for changes that drop something silo can't interpret,
-	// so the default answer should be no.
+	// Careful is set for changes that need a decision (they drop something,
+	// or silo can't tell what's right), so the default answer is no.
 	Careful bool
+	// Mode is the permission for a new File; 0 means 0644.
+	Mode os.FileMode
 }
 
 // FileChange is a file and its new content.
@@ -48,7 +50,11 @@ func (s Suggestion) Apply() error {
 			return err
 		}
 	}
-	return writeAtomic(s.File, s.After, 0644)
+	mode := s.Mode
+	if mode == 0 {
+		mode = 0644
+	}
+	return writeAtomic(s.File, s.After, mode)
 }
 
 // projectFiles are the files checked, the shared one first.
@@ -83,6 +89,7 @@ func Check(dir, projectKey string) ([]Suggestion, error) {
 			}
 			c.doc = d
 			for _, rule := range []func(*checker) ([]Suggestion, error){
+				(*checker).secretsKey,
 				(*checker).image,
 				(*checker).mounts,
 				(*checker).credentials,
@@ -332,6 +339,58 @@ func (c *checker) credentials() ([]Suggestion, error) {
 		out = append(out, s)
 	}
 	return out, nil
+}
+
+// secretsKey: a short-lived silo version named the project's entry in
+// secrets.yml <project>-<hash>. silo only reads the readable name now.
+func (c *checker) secretsKey() ([]Suggestion, error) {
+	if strings.HasPrefix(c.name, ".silo.local") {
+		return nil, nil // once per project, with the shared file
+	}
+	old, cur := config.PathScopedProjectName(c.dir), c.projectKey
+	if cur == "" || old == cur {
+		return nil, nil
+	}
+	path := config.SecretsPath()
+	src, err := readOptional(path)
+	if err != nil || strings.TrimSpace(src) == "" {
+		return nil, err
+	}
+	d, err := parseDoc(src)
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	oe, ok := d.get(old)
+	if !ok {
+		return nil, nil
+	}
+	empty := func(n *yaml.Node) bool {
+		return (n.Kind == yaml.ScalarNode && n.Tag == "!!null") || (n.Kind == yaml.MappingNode && len(n.Content) == 0)
+	}
+	ce, hasCur := d.get(cur)
+	s := Suggestion{ID: "secrets-key:" + path, File: path, Mode: 0600, Before: src}
+	switch {
+	case empty(oe.val):
+		s.Title = "Remove the empty " + old + " entry from secrets.yml"
+		s.Detail = "silo named the project's secrets entry " + old + " for a short while. It reads " + cur + " now."
+		err = d.remove(old)
+	case !hasCur || empty(ce.val):
+		s.Title = "Rename " + old + " to " + cur + " in secrets.yml"
+		s.Detail = "silo named the project's secrets entry " + old + " for a short while. It only reads " + cur + " now, so these secrets aren't used until the entry is renamed."
+		if err = d.replaceToken(oe.key, cur); err == nil && hasCur {
+			err = d.remove(cur) // the stub silo up added
+		}
+	default:
+		s.Title = "Remove the old " + old + " entry from secrets.yml"
+		s.Detail = "silo only reads " + cur + ", which has secrets too. Copy anything you still need from " + old + " to " + cur + " first."
+		s.Careful = true
+		err = d.remove(old)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	s.After = d.text()
+	return []Suggestion{s}, nil
 }
 
 // webPorts are container ports that dev web servers usually listen on: Rails,

@@ -23,6 +23,8 @@ func newConfigUpdateCmd() *cobra.Command {
 		Long: `Find things in .silo.yml and .silo.local.yml that are out of date with
 this silo version, show each change as a diff and apply it when you agree:
 
+  - a secrets.yml entry named <project>-<hash> (from a short-lived silo
+    version), which is renamed to the project's name
   - an older release of the default image (fedora/44 while it's fedora/45)
   - mounts:, which project files can't declare anymore; they move to
     project_mounts in the global config

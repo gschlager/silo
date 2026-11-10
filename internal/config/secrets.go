@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,16 +18,6 @@ func SecretsPath() string {
 // "github" wires the git credential helper and exports GH_TOKEN in addition to
 // GITHUB_TOKEN; any other name becomes a plain environment variable.
 type Secrets map[string]map[string]string
-
-// SecretsMigrationResult describes the outcome of a one-time project key
-// migration without treating an already-migrated or absent key as an error.
-type SecretsMigrationResult int
-
-const (
-	SecretsLegacyMissing SecretsMigrationResult = iota
-	SecretsAlreadyCurrent
-	SecretsMigrated
-)
 
 // LoadSecrets reads the central secrets file, returning an empty set if it does
 // not exist.
@@ -56,9 +45,8 @@ func SecretsForProject(project string) (map[string]string, error) {
 	return SecretsForProjects(project)
 }
 
-// SecretsForProjects returns the first configured entry from a list of aliases.
-// This keeps hash-suffixed entries readable until migrate-secrets moves them
-// back to the registry-assigned readable name.
+// SecretsForProjects returns the entry of the first of projects that has one
+// (silo tmp falls back to the tmp entry).
 func SecretsForProjects(projects ...string) (map[string]string, error) {
 	s, err := LoadSecrets()
 	if err != nil {
@@ -72,89 +60,6 @@ func SecretsForProjects(projects ...string) (map[string]string, error) {
 		}
 	}
 	return map[string]string{}, nil
-}
-
-// MigrateSecretsProjectKey atomically renames one top-level project key while
-// preserving YAML comments and ordering. It never merges or overwrites entries:
-// if both keys exist, the user must resolve the conflict explicitly.
-func MigrateSecretsProjectKey(legacyKey, currentKey string) (SecretsMigrationResult, error) {
-	if legacyKey == currentKey {
-		return SecretsAlreadyCurrent, nil
-	}
-
-	path := SecretsPath()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return SecretsLegacyMissing, nil
-		}
-		return SecretsLegacyMissing, fmt.Errorf("reading %s: %w", path, err)
-	}
-
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return SecretsLegacyMissing, fmt.Errorf("parsing %s: %w", path, err)
-	}
-	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
-		return SecretsLegacyMissing, fmt.Errorf("parsing %s: expected a top-level mapping", path)
-	}
-
-	root := doc.Content[0]
-	var legacyNode *yaml.Node
-	legacyIndex := -1
-	currentExists := false
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		key := root.Content[i]
-		switch key.Value {
-		case legacyKey:
-			legacyNode = key
-			legacyIndex = i
-		case currentKey:
-			currentExists = true
-		}
-	}
-
-	if currentExists {
-		if legacyNode != nil {
-			value := root.Content[legacyIndex+1]
-			if (value.Kind == yaml.ScalarNode && value.Tag == "!!null") ||
-				(value.Kind == yaml.MappingNode && len(value.Content) == 0) {
-				root.Content = append(root.Content[:legacyIndex], root.Content[legacyIndex+2:]...)
-				if err := writeSecretsDocument(path, &doc); err != nil {
-					return SecretsAlreadyCurrent, err
-				}
-				return SecretsMigrated, nil
-			}
-			return SecretsAlreadyCurrent, fmt.Errorf("both legacy key %q and current key %q exist in %s; merge them manually", legacyKey, currentKey, path)
-		}
-		return SecretsAlreadyCurrent, nil
-	}
-	if legacyNode == nil {
-		return SecretsLegacyMissing, nil
-	}
-
-	legacyNode.Value = currentKey
-	legacyNode.Tag = "!!str"
-	if err := writeSecretsDocument(path, &doc); err != nil {
-		return SecretsLegacyMissing, err
-	}
-	return SecretsMigrated, nil
-}
-
-func writeSecretsDocument(path string, doc *yaml.Node) error {
-	var output bytes.Buffer
-	enc := yaml.NewEncoder(&output)
-	enc.SetIndent(2)
-	if err := enc.Encode(doc); err != nil {
-		return fmt.Errorf("encoding %s: %w", path, err)
-	}
-	if err := enc.Close(); err != nil {
-		return fmt.Errorf("encoding %s: %w", path, err)
-	}
-	if err := writeFileAtomic(path, output.Bytes(), 0600); err != nil {
-		return err
-	}
-	return nil
 }
 
 func writeFileAtomic(path string, data []byte, mode os.FileMode) (err error) {
@@ -197,21 +102,6 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) (err error) {
 // value) are left untouched so user edits and comments are preserved. Returns
 // true when a stub was added.
 func EnsureSecretsStub(project string) (bool, error) {
-	return EnsureSecretsStubForProject(project)
-}
-
-// EnsureSecretsStubForProject adds a stub for project only when none of its
-// previous aliases already exists.
-func EnsureSecretsStubForProject(project string, aliases ...string) (bool, error) {
-	s, err := LoadSecrets()
-	if err != nil {
-		return false, err
-	}
-	for _, key := range append([]string{project}, aliases...) {
-		if _, ok := s[key]; ok {
-			return false, nil
-		}
-	}
 	stub := fmt.Sprintf("%s:\n  # github: op://vault/item/field   # GitHub PAT (wires git + gh)\n\n", project)
 	return appendProjectBlock(project, stub)
 }

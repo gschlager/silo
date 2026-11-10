@@ -136,7 +136,7 @@ func (s *Server) uiHandler() http.Handler {
 		if err != nil {
 			return nil, err
 		}
-		ss, err := configupdate.Check(dir, config.LegacyProjectName(dir))
+		ss, err := configupdate.Check(dir, projectLabel(r.PathValue("name")))
 		out := []uiConfigUpdateDetail{}
 		for _, sg := range ss {
 			d := uiConfigUpdateDetail{uiConfigUpdate: uiConfigUpdate{Title: sg.Title, Careful: sg.Careful}, Detail: sg.Detail,
@@ -295,7 +295,7 @@ var configUpdateMu sync.Mutex
 func (s *Server) uiApplyConfigUpdates(name, dir string) (uiApplied, error) {
 	configUpdateMu.Lock()
 	defer configUpdateMu.Unlock()
-	n, left, err := configupdate.ApplyAll(dir, config.LegacyProjectName(dir))
+	n, left, err := configupdate.ApplyAll(dir, projectLabel(name))
 	if n > 0 {
 		log.Printf("%s: applied %d config updates (web UI)", name, n)
 		s.publish(Event{Type: "config-updated", Container: name, Message: fmt.Sprintf("%d changes", n)})
@@ -572,7 +572,7 @@ func (s *Server) fillContainer(ctx context.Context, srv incuscli.InstanceServer,
 	}
 
 	if !c.Tmp && c.ProjectDir != "" {
-		if ss, err := configupdate.Check(c.ProjectDir, config.LegacyProjectName(c.ProjectDir)); err == nil {
+		if ss, err := configupdate.Check(c.ProjectDir, c.Label); err == nil {
 			for _, sg := range ss {
 				c.ConfigUpdates = append(c.ConfigUpdates, uiConfigUpdate{Title: sg.Title, Careful: sg.Careful})
 			}

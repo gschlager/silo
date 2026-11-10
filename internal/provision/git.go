@@ -90,7 +90,7 @@ func ResolveSessionEnv(cfg *config.MergedConfig) (map[string]string, error) {
 		return nil, err
 	}
 
-	secrets, err := config.SecretsForProjects(cfg.ProjectName(), cfg.PathScopedProjectName())
+	secrets, err := cfg.Secrets()
 	if err != nil {
 		return nil, err
 	}

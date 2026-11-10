@@ -151,7 +151,7 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	// secrets.yml has a github key. The helper reads $GITHUB_TOKEN at runtime,
 	// so nothing is baked in.
 	needHelper := false
-	if secrets, err := config.SecretsForProjects(cfg.ProjectName(), cfg.PathScopedProjectName()); err == nil {
+	if secrets, err := cfg.Secrets(); err == nil {
 		_, needHelper = secrets["github"]
 	}
 	if needHelper {

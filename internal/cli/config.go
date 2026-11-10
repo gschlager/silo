@@ -24,45 +24,8 @@ func newConfigCmd() *cobra.Command {
 		newConfigShowCmd(),
 		newConfigPathCmd(),
 		newConfigUpdateCmd(),
-		newConfigMigrateSecretsCmd(),
 	)
 	return cmd
-}
-
-func newConfigMigrateSecretsCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "migrate-secrets",
-		Short: "Restore this project's readable secrets key",
-		Long: `Rename the current project's temporary hash-suffixed key in secrets.yml
-to its registry-assigned readable key. The migration is atomic and idempotent.
-If both keys contain values, no changes are made so they can be merged manually.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getting working directory: %w", err)
-			}
-			containerName, err := config.AssignContainerName(cwd)
-			if err != nil {
-				return err
-			}
-			currentKey := strings.TrimPrefix(containerName, "silo-")
-			pathKey := config.PathScopedProjectName(cwd)
-			result, err := config.MigrateSecretsProjectKey(pathKey, currentKey)
-			if err != nil {
-				return err
-			}
-			switch result {
-			case config.SecretsMigrated:
-				fmt.Printf("Migrated secrets key %q to %q in %s\n", pathKey, currentKey, config.SecretsPath())
-			case config.SecretsAlreadyCurrent:
-				fmt.Printf("Secrets already use %q; nothing to migrate.\n", currentKey)
-			case config.SecretsLegacyMissing:
-				fmt.Printf("No path-scoped secrets key %q found in %s; nothing to migrate.\n", pathKey, config.SecretsPath())
-			}
-			return nil
-		},
-	}
 }
 
 func newConfigEditCmd() *cobra.Command {
@@ -169,7 +132,7 @@ apply (by reference only — tokens are never resolved or printed).`,
 				}
 				view.Secrets[k] = maskSecret(v)
 			}
-			if secrets, err := config.SecretsForProjects(cfg.ProjectName(), cfg.PathScopedProjectName()); err == nil && len(secrets) > 0 {
+			if secrets, err := cfg.Secrets(); err == nil && len(secrets) > 0 {
 				if view.Secrets == nil {
 					view.Secrets = make(map[string]string, len(secrets))
 				}

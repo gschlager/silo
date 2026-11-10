@@ -297,3 +297,55 @@ daemons:
 		t.Errorf("%d top-level http ports, want 2", n)
 	}
 }
+
+func TestSecretsKey(t *testing.T) {
+	tests := []struct {
+		name, secrets string
+		careful       bool
+		want          []string // in secrets.yml after applying
+		gone          []string
+	}{
+		{"rename", "# keep this\n.shared: &shared\n  AWS_REGION: x\n\nOLD:\n  <<: *shared\n  github: op://a/b/c # keep too\n",
+			false, []string{"# keep this", "myapp:\n  <<: *shared\n  github: op://a/b/c # keep too"}, []string{"OLD"}},
+		{"replace a stub", "myapp:\n  # github: op://vault/item/field\n\nOLD:\n  github: op://a/b/c\n",
+			false, []string{"myapp:\n  github: op://a/b/c"}, []string{"OLD", "# github: op://vault"}},
+		{"empty old entry", "myapp:\n  github: mine\nOLD:\n  # stub\n",
+			false, []string{"myapp:\n  github: mine"}, []string{"OLD"}},
+		{"both have secrets", "myapp:\n  github: mine\nOLD:\n  github: theirs\n",
+			true, []string{"myapp:\n  github: mine"}, []string{"OLD"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := setup(t, "image: fedora/45\n")
+			old := config.PathScopedProjectName(dir)
+			spath := config.SecretsPath()
+			os.WriteFile(spath, []byte(strings.ReplaceAll(tt.secrets, "OLD", old)), 0600)
+			ss, err := Check(dir, "myapp")
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := byID(t, ss, "secrets-key")
+			if s.Careful != tt.careful {
+				t.Errorf("careful = %v", s.Careful)
+			}
+			if err := s.Apply(); err != nil {
+				t.Fatal(err)
+			}
+			data, _ := os.ReadFile(spath)
+			got := string(data)
+			for _, w := range tt.want {
+				if !strings.Contains(got, strings.ReplaceAll(w, "OLD", old)) {
+					t.Errorf("missing %q in:\n%s", w, got)
+				}
+			}
+			for _, g := range tt.gone {
+				if strings.Contains(got, strings.ReplaceAll(g, "OLD", old)) {
+					t.Errorf("still has %q:\n%s", g, got)
+				}
+			}
+			if fi, _ := os.Stat(spath); fi.Mode().Perm() != 0600 {
+				t.Errorf("mode = %v", fi.Mode().Perm())
+			}
+		})
+	}
+}

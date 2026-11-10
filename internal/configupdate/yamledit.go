@@ -99,6 +99,11 @@ func (d *doc) span(e entry) (int, int) {
 	for ; end < len(d.lines); end++ {
 		line := d.lines[end]
 		if blankOrComment(line) {
+			// A comment indented under the key is part of the entry
+			// (the body of a stub like "project:\n  # github: ...").
+			if strings.TrimSpace(line) != "" && indentOf(line) > keyIndent {
+				last = end + 1
+			}
 			continue
 		}
 		ind := indentOf(line)
