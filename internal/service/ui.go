@@ -11,12 +11,15 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gschlager/silo/internal/config"
+	"github.com/gschlager/silo/internal/configupdate"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/gschlager/silo/internal/provision"
 	"github.com/gschlager/silo/internal/svcapi"
@@ -128,6 +131,57 @@ func (s *Server) uiHandler() http.Handler {
 		log.Printf("%s: restoring snapshot %s (web UI)", r.PathValue("name"), r.PathValue("snap"))
 		return nil, incus.RestoreSnapshot(r.Context(), srv, r.PathValue("name"), r.PathValue("snap"))
 	})
+	api("GET /api/containers/{name}/config-updates", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		dir, err := s.uiProjectDir(r.PathValue("name"))
+		if err != nil {
+			return nil, err
+		}
+		ss, err := configupdate.Check(dir, config.LegacyProjectName(dir))
+		out := []uiConfigUpdateDetail{}
+		for _, sg := range ss {
+			d := uiConfigUpdateDetail{uiConfigUpdate: uiConfigUpdate{Title: sg.Title, Careful: sg.Careful}, Detail: sg.Detail,
+				Files: []uiFileDiff{{Path: relTo(dir, sg.File), Lines: diffLines(sg.Before, sg.After)}}}
+			for _, o := range sg.Others {
+				d.Files = append(d.Files, uiFileDiff{Path: o.Path, Lines: diffLines(o.Before, o.After)})
+			}
+			out = append(out, d)
+		}
+		return out, err
+	})
+	api("POST /api/containers/{name}/config-updates", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		dir, err := s.uiProjectDir(r.PathValue("name"))
+		if err != nil {
+			return nil, err
+		}
+		return s.uiApplyConfigUpdates(r.PathValue("name"), dir)
+	})
+	api("POST /api/config-updates", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		srv := s.incus()
+		if srv == nil {
+			return nil, errStatus(http.StatusServiceUnavailable, "not connected to Incus")
+		}
+		insts, err := incus.ListSiloInstances(srv)
+		if err != nil {
+			return nil, err
+		}
+		var total uiApplied
+		for _, inst := range insts {
+			dir := inst.Devices["workspace"]["source"]
+			if inst.Config[incus.TmpMarkerKey] == "true" || dir == "" {
+				continue
+			}
+			res, err := s.uiApplyConfigUpdates(inst.Name, dir)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", projectLabel(inst.Name), err)
+			}
+			total.Applied += res.Applied
+			total.Left += res.Left
+			if res.Applied > 0 {
+				total.Projects++
+			}
+		}
+		return total, nil
+	})
 	api("POST /api/secrets/forget", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		n := s.secrets.forget("asked to in the web UI")
 		s.publish(Event{Type: "secrets-forgotten", Message: "web UI"})
@@ -208,6 +262,64 @@ func (s *Server) uiContainer(name string) (incuscli.InstanceServer, error) {
 		}
 	}
 	return nil, errStatus(http.StatusNotFound, "no silo container %q", name)
+}
+
+// uiProjectDir returns the project directory of a silo container (not a tmp
+// one: its directory belongs to another project, or it has none).
+func (s *Server) uiProjectDir(name string) (string, error) {
+	srv, err := s.uiContainer(name)
+	if err != nil {
+		return "", err
+	}
+	inst, _, err := srv.GetInstance(name)
+	if err != nil {
+		return "", err
+	}
+	dir := inst.Devices["workspace"]["source"]
+	if inst.Config[incus.TmpMarkerKey] == "true" || dir == "" {
+		return "", errStatus(http.StatusNotFound, "%s has no project config", projectLabel(name))
+	}
+	return dir, nil
+}
+
+// uiApplied is what applying config updates did.
+type uiApplied struct {
+	Applied  int `json:"applied"`
+	Left     int `json:"left"` // careful ones, for the terminal
+	Projects int `json:"projects,omitempty"`
+}
+
+// configUpdateMu keeps two applies from editing the same files at once.
+var configUpdateMu sync.Mutex
+
+func (s *Server) uiApplyConfigUpdates(name, dir string) (uiApplied, error) {
+	configUpdateMu.Lock()
+	defer configUpdateMu.Unlock()
+	n, left, err := configupdate.ApplyAll(dir, config.LegacyProjectName(dir))
+	if n > 0 {
+		log.Printf("%s: applied %d config updates (web UI)", name, n)
+		s.publish(Event{Type: "config-updated", Container: name, Message: fmt.Sprintf("%d changes", n)})
+	}
+	return uiApplied{Applied: n, Left: len(left)}, err
+}
+
+func diffLines(before, after string) []uiDiffLine {
+	out := []uiDiffLine{}
+	for _, l := range configupdate.Diff(before, after, 2) {
+		op := string(l.Op)
+		if l.Op == 0 {
+			op = ""
+		}
+		out = append(out, uiDiffLine{Op: op, Text: l.Text})
+	}
+	return out
+}
+
+func relTo(dir, path string) string {
+	if r, err := filepath.Rel(dir, path); err == nil {
+		return r
+	}
+	return path
 }
 
 func (s *Server) uiContainerAction(ctx context.Context, name, action string) error {
@@ -321,6 +433,34 @@ type uiContainer struct {
 	Daemons     []uiDaemon `json:"daemons"`
 	Snapshots   int        `json:"snapshots"`
 	ConfigError string     `json:"config_error,omitempty"`
+	// ConfigUpdates are what silo config update suggests for the project.
+	ConfigUpdates []uiConfigUpdate `json:"config_updates"`
+	// Outdated is set when an older silo built the container (or one from
+	// before silo recorded it): rebuilding it gets the current provisioning.
+	Outdated bool   `json:"outdated"`
+	BuiltBy  string `json:"built_by"` // silo release, if recorded
+}
+
+type uiConfigUpdate struct {
+	Title   string `json:"title"`
+	Careful bool   `json:"careful"` // not applied from the UI
+}
+
+type uiConfigUpdateDetail struct {
+	uiConfigUpdate
+	Detail string       `json:"detail"`
+	Files  []uiFileDiff `json:"files"`
+}
+
+type uiFileDiff struct {
+	Path  string       `json:"path"`
+	Lines []uiDiffLine `json:"lines"`
+}
+
+// uiDiffLine is a diff line; Op is " ", "-", "+", or "" for skipped lines.
+type uiDiffLine struct {
+	Op   string `json:"op"`
+	Text string `json:"text"`
 }
 
 type uiURL struct {
@@ -384,6 +524,10 @@ func (s *Server) uiOverview(ctx context.Context) uiOverview {
 			URLs:       []uiURL{},
 			Ports:      []uiPort{},
 			Daemons:    []uiDaemon{},
+			Outdated:   inst.Config[incus.ProvisionKey] != strconv.Itoa(provision.ContainerVersion),
+			BuiltBy:    inst.Config[incus.ProvisionByKey],
+
+			ConfigUpdates: []uiConfigUpdate{},
 		}
 		if c.ProjectDir == "" {
 			c.ProjectDir = inst.Config["user.silo.tmp.dir"]
@@ -423,6 +567,14 @@ func (s *Server) fillContainer(ctx context.Context, srv incuscli.InstanceServer,
 				if a.Family == "inet" {
 					c.IPv4 = a.Address
 				}
+			}
+		}
+	}
+
+	if !c.Tmp && c.ProjectDir != "" {
+		if ss, err := configupdate.Check(c.ProjectDir, config.LegacyProjectName(c.ProjectDir)); err == nil {
+			for _, sg := range ss {
+				c.ConfigUpdates = append(c.ConfigUpdates, uiConfigUpdate{Title: sg.Title, Careful: sg.Careful})
 			}
 		}
 	}

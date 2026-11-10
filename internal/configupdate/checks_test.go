@@ -201,3 +201,33 @@ func TestDiff(t *testing.T) {
 		t.Errorf("diff = %v", s)
 	}
 }
+
+func TestApplyAllLeavesCarefulOnes(t *testing.T) {
+	dir := setup(t, projectYAML)
+	applied, left, err := ApplyAll(dir, "myapp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied == 0 {
+		t.Fatal("applied nothing")
+	}
+	for _, s := range left {
+		if !s.Careful {
+			t.Errorf("left a suggestion it should have applied: %s", s.Title)
+		}
+	}
+	if len(left) == 0 {
+		t.Error("expected the unknown key wat to be left for the terminal")
+	}
+	ss, err := Check(dir, "myapp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ss) != len(left) {
+		t.Errorf("after ApplyAll: %v, want only the careful ones", ids(ss))
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, ".silo.yml"))
+	if !strings.Contains(string(data), "fedora/45") || !strings.Contains(string(data), "nesting: true") {
+		t.Errorf(".silo.yml after ApplyAll:\n%s", data)
+	}
+}

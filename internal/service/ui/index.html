@@ -34,18 +34,15 @@
     </section>
   </aside>
 </main>
-<dialog id="dialog" class="logs" aria-labelledby="dialog-title">
-  <header class="logs-head">
-    <div class="logs-title">
+<dialog id="dialog" class="sheet" aria-labelledby="dialog-title">
+  <header class="sheet-head">
+    <div class="sheet-title">
       <h2 id="dialog-title"></h2>
-      <p id="dialog-sub" class="logs-sub"></p>
+      <p id="dialog-sub" class="sheet-sub"></p>
     </div>
-    <div class="btns">
-      <button id="dialog-refresh" type="button">Refresh</button>
-      <button id="dialog-close" type="button">Close</button>
-    </div>
+    <div id="dialog-actions" class="btns"></div>
   </header>
-  <div id="dialog-body" class="logs-body"></div>
+  <div id="dialog-body" class="sheet-body"></div>
 </dialog>
 <div id="toast" role="status"></div>
 </body>

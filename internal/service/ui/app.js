@@ -93,6 +93,7 @@ function bytes(n) {
 }
 
 const short = (name) => name.replace(/^silo-/, "");
+const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
 
 function copyButton(label, text, title) {
   return el("button.link", {
@@ -123,6 +124,21 @@ function renderHeader(o) {
   if (o.proxy.http_port && o.proxy.http_port !== 80) {
     notices.push(el("p.notice", {}, el("strong", {}, "The proxy runs on ports " + o.proxy.http_port + " and " + o.proxy.https_port + ". "),
       "Run ", el("code", {}, "silo setup"), " so silo may use ports 80 and 443 and the URLs work without a port."));
+  }
+  const withUpdates = cs.filter((c) => c.config_updates.some((u) => !u.careful));
+  const outdated = cs.filter((c) => c.outdated && !c.tmp);
+  if (withUpdates.length || outdated.length) {
+    const parts = [];
+    if (withUpdates.length) parts.push(plural(withUpdates.length, "project has config updates", "projects have config updates"));
+    if (outdated.length) parts.push(plural(outdated.length, "container was built by an older silo", "containers were built by an older silo"));
+    notices.push(el("div.notice.info", {},
+      el("p", {}, el("strong", {}, "Updates: "), parts.join(" · ") + "."),
+      withUpdates.length ? action("Apply all config updates", "/api/config-updates", {
+        cls: "small",
+        title: "applies what silo config update --yes would in " + withUpdates.map((c) => c.label).join(", "),
+        done: (r) => "Applied " + plural(r.applied, "change", "changes") + " in " + plural(r.projects, "project", "projects") +
+          (r.left ? "; " + r.left + " need silo config update in the terminal" : ""),
+      }) : null));
   }
   $("#notices").replaceChildren(...notices);
 }
@@ -250,6 +266,38 @@ function drawSnapshots(c, list, snaps) {
   )))));
 }
 
+// updatesBlock shows the config updates for a container's project, and
+// whether an older silo built the container.
+function updatesBlock(c) {
+  const rows = [];
+  const ups = c.config_updates;
+  if (ups.length) {
+    const auto = ups.filter((u) => !u.careful);
+    rows.push(el("div.update", {},
+      el("div.update-text", {},
+        el("strong", {}, plural(ups.length, "config update", "config updates")), " ",
+        el("span.what", {}, ups.map((u) => u.title).join(" · "))),
+      el("div.btns", {},
+        el("button.small", { type: "button", onclick: () => showConfigUpdates(c) }, "Show changes"),
+        auto.length ? action(auto.length === ups.length ? "Apply" : "Apply " + auto.length, "/api/containers/" + enc(c.name) + "/config-updates", {
+          cls: "small",
+          done: (r) => "Applied " + plural(r.applied, "change", "changes") + " to " + c.label +
+            (r.left ? "; " + r.left + " need silo config update in the terminal" : ""),
+        }) : null)));
+  }
+  if (c.outdated && !c.tmp && c.project_dir) {
+    rows.push(el("div.update", {},
+      el("div.update-text", {},
+        el("strong", {}, "Built by an older silo"), " ",
+        el("span.what", {}, (c.built_by ? "(" + c.built_by + "). " : "(before silo recorded it). ") +
+          "Rebuild it to get the current setup. That removes everything in the container outside the project directory.")),
+      el("div.btns", {},
+        copyButton("Copy rebuild command", "cd " + JSON.stringify(c.project_dir) + " && silo rm && silo up",
+          "silo rm asks before it removes the container"))));
+  }
+  return rows.length ? el("div.updates", {}, rows) : null;
+}
+
 function renderContainer(c) {
   const path = "/api/containers/" + enc(c.name) + "/";
   const running = c.state === "running";
@@ -292,7 +340,7 @@ function renderContainer(c) {
   }
 
   return el("article.box." + (running ? "running" : "stopped"), { "aria-label": c.label },
-    el("div.box-top", {}, head, where, problem), body, snapshotsFoot(c));
+    el("div.box-top", {}, head, where, problem), updatesBlock(c), body, snapshotsFoot(c));
 }
 
 function renderContainers(o) {
@@ -327,32 +375,83 @@ async function refresh() {
   }
 }
 
-// Logs dialog.
-let logTarget;
-async function showLogs(container, daemon) {
-  logTarget = [container, daemon];
-  $("#dialog-title").textContent = daemon.name + " · " + short(container);
-  $("#dialog-sub").textContent = daemon.cmd;
-  $("#dialog-sub").title = daemon.cmd;
-  if (!$("#dialog-body").firstChild) $("#dialog-body").replaceChildren(el("p.hint", {}, "Loading…"));
+// Dialog: daemon logs, or a project's config updates.
+
+function openDialog(title, sub, actions, body) {
+  $("#dialog-title").textContent = title;
+  $("#dialog-sub").textContent = sub;
+  $("#dialog-sub").title = sub;
+  $("#dialog-actions").replaceChildren(...actions,
+    el("button", { type: "button", onclick: () => $("#dialog").close() }, "Close"));
+  if (body) $("#dialog-body").replaceChildren(body);
   if (!$("#dialog").open) $("#dialog").showModal();
-  const refreshBtn = $("#dialog-refresh");
-  refreshBtn.disabled = true;
-  refreshBtn.setAttribute("aria-busy", "true");
+}
+
+function showLogs(container, daemon) {
+  const refreshBtn = el("button", { type: "button", onclick: load }, "Refresh");
+  openDialog(daemon.name + " · " + short(container), daemon.cmd, [refreshBtn], el("p.hint", {}, "Loading…"));
+  async function load() {
+    refreshBtn.disabled = true;
+    refreshBtn.setAttribute("aria-busy", "true");
+    try {
+      const r = await api("GET", "/api/containers/" + enc(container) + "/daemons/" + enc(daemon.name) + "/logs");
+      const pre = el("pre", { tabindex: "0" }, r.text || "(no output yet)");
+      $("#dialog-body").replaceChildren(pre);
+      pre.scrollTop = pre.scrollHeight;
+    } catch (e) {
+      $("#dialog-body").replaceChildren(el("p.warn-line", {}, e.message));
+    } finally {
+      refreshBtn.disabled = false;
+      refreshBtn.removeAttribute("aria-busy");
+    }
+  }
+  load();
+}
+
+function diffView(f) {
+  return el("div.diff", {},
+    el("div.diff-path", {}, f.path),
+    el("pre", {}, f.lines.map((l) => l.op === ""
+      ? el("span.gap", {}, "  …")
+      : el("span" + (l.op === "+" ? ".add" : l.op === "-" ? ".del" : ""), {}, l.op + " " + l.text))));
+}
+
+async function showConfigUpdates(c) {
+  const path = "/api/containers/" + enc(c.name) + "/config-updates";
+  openDialog("Config updates · " + c.label, c.project_dir, [], el("p.hint", {}, "Loading…"));
   try {
-    const r = await api("GET", "/api/containers/" + enc(container) + "/daemons/" + enc(daemon.name) + "/logs");
-    const pre = el("pre", { tabindex: "0" }, r.text || "(no output yet)");
-    $("#dialog-body").replaceChildren(pre);
-    pre.scrollTop = pre.scrollHeight;
+    const ups = await api("GET", path);
+    if (!ups.length) return $("#dialog-body").replaceChildren(el("p.hint", {}, "The config is up to date."));
+    const auto = ups.filter((u) => !u.careful).length;
+    const apply = auto ? el("button.primary", {
+      type: "button",
+      onclick: async (ev) => {
+        const b = ev.currentTarget;
+        b.disabled = true;
+        b.setAttribute("aria-busy", "true");
+        try {
+          const r = await api("POST", path);
+          toast("Applied " + plural(r.applied, "change", "changes") + " to " + c.label +
+            (r.left ? "; " + r.left + " need silo config update in the terminal" : ""));
+          $("#dialog").close();
+        } catch (e) {
+          toast(e.message, true);
+          b.disabled = false;
+          b.removeAttribute("aria-busy");
+        }
+        refresh();
+      },
+    }, auto === ups.length ? "Apply all" : "Apply " + auto) : null;
+    openDialog("Config updates · " + c.label, c.project_dir, apply ? [apply] : [], el("div.diffs", {}, ups.map((u) => el("section.suggestion", {},
+      el("h3", {}, u.title),
+      u.detail ? el("p", {}, u.detail) : null,
+      u.careful ? el("p.careful", {}, "This removes something silo can't interpret, so the web UI leaves it alone. Run silo config update in the project to review it.") : null,
+      u.files.map(diffView)))));
   } catch (e) {
     $("#dialog-body").replaceChildren(el("p.warn-line", {}, e.message));
-  } finally {
-    refreshBtn.disabled = false;
-    refreshBtn.removeAttribute("aria-busy");
   }
 }
-$("#dialog-close").addEventListener("click", () => $("#dialog").close());
-$("#dialog-refresh").addEventListener("click", () => logTarget && showLogs(...logTarget));
+
 $("#dialog").addEventListener("close", () => $("#dialog-body").replaceChildren());
 $("#dialog").addEventListener("click", (e) => { if (e.target === $("#dialog")) $("#dialog").close(); });
 
@@ -373,6 +472,7 @@ function describe(e) {
     case "commit-signed": return ["Signed a commit in " + c];
     case "signing-refused": return ["Refused to sign in " + c, true];
     case "secrets-forgotten": return ["Forgot the cached secrets"];
+    case "config-updated": return ["Updated the config of " + c];
     case "notification": return [c ? "Notification from " + c : "Notification"];
   }
   return [e.type.replaceAll("-", " ") + (c ? " · " + c : "")];

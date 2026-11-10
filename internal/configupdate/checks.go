@@ -100,6 +100,37 @@ func Check(dir, projectKey string) ([]Suggestion, error) {
 	return out, nil
 }
 
+// ApplyAll applies the suggestions for the project in dir, except the careful
+// ones, checking again after each change. It returns how many it applied and
+// the suggestions it left alone.
+func ApplyAll(dir, projectKey string) (applied int, left []Suggestion, err error) {
+	done := map[string]bool{}
+	for {
+		all, err := Check(dir, projectKey)
+		if err != nil {
+			return applied, nil, err
+		}
+		left = nil
+		var next *Suggestion
+		for _, s := range all {
+			switch {
+			case s.Careful || done[s.ID]:
+				left = append(left, s)
+			case next == nil:
+				next = &s
+			}
+		}
+		if next == nil {
+			return applied, left, nil
+		}
+		if err := next.Apply(); err != nil {
+			return applied, nil, fmt.Errorf("%s: %w", next.Title, err)
+		}
+		done[next.ID] = true
+		applied++
+	}
+}
+
 type checker struct {
 	dir, path, name, src string
 	doc                  *doc
