@@ -320,7 +320,7 @@ async function refresh() {
     renderContainers(o);
     if (focused) {
       const again = document.querySelector('[data-key="' + CSS.escape(focused) + '"]');
-      if (again) again.focus();
+      if (again) again.focus({ preventScroll: true });
     }
   } catch (e) {
     toast("Can't load the overview: " + e.message, true);
