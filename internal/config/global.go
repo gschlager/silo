@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -33,7 +34,11 @@ type GlobalConfig struct {
 	Notifications bool     `yaml:"notifications,omitempty"`
 	// Herdr adds containers to herdr (https://herdr.dev) when its hc is
 	// installed. On by default; `herdr: false` turns the integration off.
-	Herdr         *bool               `yaml:"herdr,omitempty"`
+	Herdr *bool `yaml:"herdr,omitempty"`
+	// IdleStop is how long a container may sit idle (no terminal session,
+	// barely any CPU, no requests through the .localhost proxy) before the
+	// silo service stops it, e.g. "4h". "0" turns it off. Default 4h.
+	IdleStop      string              `yaml:"idle_stop,omitempty"`
 	Mounts        []string            `yaml:"mounts,omitempty"`
 	ProjectMounts map[string][]string `yaml:"project_mounts,omitempty"`
 	Git           map[string]string   `yaml:"git,omitempty"`
@@ -168,6 +173,12 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 	}
 	if userCfg.Herdr != nil {
 		cfg.Herdr = userCfg.Herdr
+	}
+	if userCfg.IdleStop != "" {
+		if _, err := parseIdleStop(userCfg.IdleStop); err != nil {
+			return nil, fmt.Errorf("%s: idle_stop: %w", path, err)
+		}
+		cfg.IdleStop = userCfg.IdleStop
 	}
 	if len(userCfg.Mounts) > 0 {
 		cfg.Mounts = userCfg.Mounts
@@ -394,4 +405,37 @@ func (g *GlobalConfig) SigningKey() string {
 		return "" // a path to a key file, which doesn't exist in the container
 	}
 	return key
+}
+
+// DefaultIdleStop is how long a container may be idle before it's stopped,
+// when the global config doesn't say.
+const DefaultIdleStop = 4 * time.Hour
+
+// IdleStopAfter returns how long a container may be idle before the silo
+// service stops it; 0 means never.
+func (g *GlobalConfig) IdleStopAfter() time.Duration {
+	if g == nil || g.IdleStop == "" {
+		return DefaultIdleStop
+	}
+	d, err := parseIdleStop(g.IdleStop)
+	if err != nil {
+		return DefaultIdleStop
+	}
+	return d
+}
+
+func parseIdleStop(s string) (time.Duration, error) {
+	s = strings.TrimSpace(s)
+	switch s {
+	case "0", "off", "false", "never":
+		return 0, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a duration like 4h or 90m (0 turns it off)", s)
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("%q is negative", s)
+	}
+	return d, nil
 }

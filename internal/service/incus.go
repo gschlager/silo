@@ -102,6 +102,7 @@ func (s *Server) onIncusEvent(e api.Event) {
 	case "instance-created", "instance-deleted", "instance-renamed", "instance-updated":
 		s.hub.reconcile()
 	case "instance-started":
+		s.idle.started(name)
 		go s.onStarted(name)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // A user config that adds a modes block to the built-in claude agent must parse
@@ -95,5 +96,22 @@ func TestSigningKey(t *testing.T) {
 		if got := g.SigningKey(); got != tt.want {
 			t.Errorf("SigningKey(%v) = %q, want %q", tt.git, got, tt.want)
 		}
+	}
+}
+
+func TestIdleStopAfter(t *testing.T) {
+	for in, want := range map[string]time.Duration{
+		"":    DefaultIdleStop,
+		"0":   0,
+		"off": 0,
+		"90m": 90 * time.Minute,
+		"8h":  8 * time.Hour,
+	} {
+		if got := (&GlobalConfig{IdleStop: in}).IdleStopAfter(); got != want {
+			t.Errorf("IdleStopAfter(%q) = %v, want %v", in, got, want)
+		}
+	}
+	if _, err := parseIdleStop("four hours"); err == nil {
+		t.Error("parseIdleStop accepted nonsense")
 	}
 }

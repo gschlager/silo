@@ -38,6 +38,7 @@ type Server struct {
 	starts   startMarks
 	proxy    *proxy
 	activity activity
+	idle     *idleTracker
 	// containerConfig loads a container's project config; configFor, or a
 	// stub in tests.
 	containerConfig func(name string) (*config.MergedConfig, error)
@@ -80,6 +81,7 @@ func runWith(ctx context.Context, opts Options) error {
 	s.hub = newHub(s)
 	s.base = newBaseJobs()
 	s.proxy = newProxy(s)
+	s.idle = newIdleTracker()
 	defer s.hub.closeAll()
 	provision.Secrets = s.secrets
 	s.routes()
@@ -93,6 +95,7 @@ func runWith(ctx context.Context, opts Options) error {
 			s.proxy.rebuild()
 		})
 		go s.every(ctx, 6*time.Hour, s.refreshOldBases)
+		go s.every(ctx, idleCheckInterval, s.checkIdle)
 	}
 	if !opts.NoProxy {
 		go s.proxy.listen(ctx)

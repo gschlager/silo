@@ -280,6 +280,10 @@ notifications: true
 # Add containers to herdr when its hc is installed (default: on, see "herdr")
 herdr: false
 
+# Stop containers nobody used for this long (default: 4h, 0 turns it off).
+# See "Idle stop".
+idle_stop: 8h
+
 # Host bind mounts (host:container[:ro]). Mounts are host-owned security policy,
 # so they are accepted only here, never from a repository's .silo*.yml files.
 mounts:
@@ -777,6 +781,10 @@ A request for a stopped container starts it (with its autostart daemons) and wai
 **HTTPS**: no public CA issues certificates for `.localhost`, so silo has its own local CA. `silo setup` creates it and adds it to the system trust store and to Chrome's and Firefox's NSS databases (with `certutil` from `nss-tools`). The CA is name-constrained: it can only issue certificates for `localhost` and names under it, only for TLS servers, and browsers enforce that. Even if its key (`~/.config/silo/ca`, readable only by you) leaked, it couldn't be used to fake any other site. Plain `http://<project>.localhost` already counts as a secure context in browsers, so service workers, `crypto.subtle` and secure cookies work there too.
 
 **Ports**: the proxy listens on 80 and 443 on loopback only. The service runs as your user, so the silo binary has `cap_net_bind_service` for that (set by the RPM, and by `silo setup` for other installs; a rebuilt binary loses it). Without it, the proxy uses 7080 and 7443 and the URLs include the port.
+
+### Idle stop
+
+A running container holds memory under the shared cap even when nobody uses it. The service stops containers that have been idle for 4 hours (`idle_stop:` in the global config, `0` turns it off) and shows a notification. A container counts as used while it has a terminal (any open pty: `silo ra` and `silo enter` sessions, herdr's shells and agents, tmux), while it uses more than 5% of a CPU core, and for a while after a request through the proxy. A stopped container comes back on `silo ra`, `silo enter`, `silo up` or its `.localhost` URL, with its autostart daemons.
 
 ### Secrets cache
 
