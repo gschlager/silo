@@ -80,17 +80,14 @@ func addHerdrMachine(hc string, cfg *config.MergedConfig) error {
 	name := herdrMachineName(cfg.ContainerName)
 	known := false
 	for _, m := range list.Machines {
-		// Machines added before the prefix was dropped are still named like
-		// the container; replace those too.
-		if m.Name != name && m.Name != cfg.ContainerName {
+		if m.Name != name {
 			continue
 		}
-		if m.Name == name && m.Target == via {
+		if m.Target == via {
 			return nil
 		}
-		// Reached another way (the project moved, or another silo binary) or
-		// under its old name: forget it and add it again. Its terminals keep
-		// running.
+		// Reached another way (the project moved, or another silo binary):
+		// forget it and add it again. Its terminals keep running.
 		color.Debug("herdr reaches %s with %s, replacing it", m.Name, m.Target)
 		if out, err := exec.Command(hc, "machine", "rm", m.Name).CombinedOutput(); err != nil {
 			return fmt.Errorf("hc machine rm: %w: %s", err, out)
@@ -132,12 +129,9 @@ func removeHerdrMachine(container string) {
 	if !ok {
 		return
 	}
-	// Also the container's own name, which machines were added under before
-	// the prefix was dropped.
-	for _, name := range []string{herdrMachineName(container), container} {
-		if out, err := exec.Command(hc, "machine", "rm", name).CombinedOutput(); err != nil {
-			color.Debug("hc machine rm %s: %v: %s", name, err, out)
-		}
+	name := herdrMachineName(container)
+	if out, err := exec.Command(hc, "machine", "rm", name).CombinedOutput(); err != nil {
+		color.Debug("hc machine rm %s: %v: %s", name, err, out)
 	}
 }
 
