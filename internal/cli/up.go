@@ -2,9 +2,11 @@ package cli
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
+	"github.com/gschlager/silo/internal/configupdate"
 	"github.com/gschlager/silo/internal/incus"
 	"github.com/gschlager/silo/internal/provision"
 	incuscli "github.com/lxc/incus/v7/client"
@@ -27,6 +29,7 @@ Subsequent: start the stopped container (~1 second).`,
 			if err != nil {
 				return err
 			}
+			hintConfigUpdate(cfg)
 
 			server, err := incus.Connect()
 			if err != nil {
@@ -144,4 +147,18 @@ func setupHostSocket(ctx context.Context, server incuscli.InstanceServer, cfg *c
 	if err := provision.SetupSigning(ctx, server, cfg.ContainerName, cfg.User); err != nil {
 		color.Warn("could not set up commit signing: %v", err)
 	}
+}
+
+// hintConfigUpdate mentions `silo config update` when it has suggestions
+// for the project's config.
+func hintConfigUpdate(cfg *config.MergedConfig) {
+	ss, err := configupdate.Check(cfg.ProjectDir, cfg.ProjectName())
+	if err != nil || len(ss) == 0 {
+		return
+	}
+	what := ss[0].Title
+	if len(ss) > 1 {
+		what = fmt.Sprintf("%s, and %d more", what, len(ss)-1)
+	}
+	color.Info("silo config update has suggestions for this project: %s.", what)
 }

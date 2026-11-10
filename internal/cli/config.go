@@ -23,6 +23,7 @@ func newConfigCmd() *cobra.Command {
 		newConfigEditCmd(),
 		newConfigShowCmd(),
 		newConfigPathCmd(),
+		newConfigUpdateCmd(),
 		newConfigMigrateSecretsCmd(),
 	)
 	return cmd

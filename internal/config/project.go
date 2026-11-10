@@ -303,7 +303,7 @@ func loadProjectFile(dir string, names ...string) *projectFileResult {
 			return &projectFileResult{err: fmt.Errorf("parsing %s: %w", path, err)}
 		}
 		if len(cfg.Mounts) > 0 {
-			return &projectFileResult{err: fmt.Errorf("parsing %s: project files cannot declare host mounts; move mounts to %s", path, GlobalConfigPath())}
+			return &projectFileResult{err: fmt.Errorf("parsing %s: project files cannot declare host mounts; move mounts to %s (silo config update does that)", path, GlobalConfigPath())}
 		}
 		for agent, agentCfg := range cfg.Agents {
 			if agentCfg.Mode != "" {

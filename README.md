@@ -221,6 +221,17 @@ nesting: false
 
 All fields are optional. Setup commands run as the `dev` user with a login shell — use `sudo` for commands that need root (dnf, systemctl, etc.).
 
+### Keeping .silo.yml up to date
+
+`silo config update` looks for things in `.silo.yml` and `.silo.local.yml` that are out of date with your silo version, shows each change as a diff and applies it when you agree:
+
+- an older release of the default image (`fedora/44` while the default is `fedora/45`)
+- `mounts:`, which project files can't declare anymore: they move to `project_mounts` in the global config
+- `git.credential` and `tools.<name>.credential`: they move to [secrets.yml](#secrets) as the same environment variables, which keeps them out of the repo and out of the agent's reach
+- keys silo doesn't know (anymore): `docker: true` becomes `nesting: true`, a typo like `deamons:` becomes `daemons:`, and anything else is offered for removal (default no)
+
+Comments and formatting stay as they are; only the affected lines change. `--dry-run` only shows the suggestions, `--yes` applies them without asking (except removing unknown keys). `silo up` prints one line when there's something to update.
+
 ### Local overrides
 
 Create a `.silo.local.yml` alongside `.silo.yml` to adjust settings per machine without modifying the shared config. Add `.silo.local.yml` to your project's `.gitignore`.
@@ -620,6 +631,7 @@ Note that this scopes *naming*, not *access*: the manager environment is shared,
 | `silo config show`             | Show the resolved config for the current project (presets expanded) |
 | `silo config edit`             | Open global config in `$EDITOR`                          |
 | `silo config path`             | Print config file path                                   |
+| `silo config update`           | Update `.silo.yml` to the current silo, change by change (see [Keeping .silo.yml up to date](#keeping-siloyml-up-to-date)) |
 | `silo config migrate-secrets`  | Rename this project's legacy secrets key once            |
 | `silo completion install`      | Auto-install shell completions                           |
 
