@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/gschlager/silo/internal/svcapi"
 	"golang.org/x/sys/unix"
@@ -46,17 +47,43 @@ func activationListener() (net.Listener, error) {
 	return l, nil
 }
 
+// acceptRetry reports whether an Accept error is worth retrying (out of file
+// descriptors, an aborted connection), and waits a moment if so. A closed
+// listener isn't.
+func acceptRetry(err error) bool {
+	if errors.Is(err, net.ErrClosed) {
+		return false
+	}
+	time.Sleep(50 * time.Millisecond)
+	return true
+}
+
+// maxSocketPath is the longest path a Unix socket address can hold.
+const maxSocketPath = len(unix.RawSockaddrUnix{}.Path) - 1
+
 // listenUnix creates a Unix socket at path with the given mode, in a directory
 // only this user can enter. A stale socket from a crashed run is replaced.
 func listenUnix(path string, mode os.FileMode) (net.Listener, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
+	addr := path
+	if len(path) > maxSocketPath {
+		// Too long for a socket address (long container names): bind
+		// through /proc/self/fd/<dir> instead, which names the same file.
+		d, err := os.Open(dir)
+		if err != nil {
+			return nil, err
+		}
+		defer d.Close()
+		addr = fmt.Sprintf("/proc/self/fd/%d/%s", d.Fd(), filepath.Base(path))
+	}
 	old := unix.Umask(0177)
-	l, err := net.Listen("unix", path)
+	l, err := net.Listen("unix", addr)
 	unix.Umask(old)
 	if err != nil {
 		return nil, err

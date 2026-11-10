@@ -791,6 +791,8 @@ Visiting a stopped container's URL starts it (with its autostart daemons) and wa
 
 It only answers processes running as you: the proxy ports are on loopback, where other users of the machine could reach them too, so the service looks up the owner of every client socket in `/proc/net/tcp`. Other web pages can't use it either: API requests must come from the UI's own origin, changes also need a header that other origins can't send, and the apps in your containers (`<project>.localhost`) count as other origins. The UI can't be framed, and everything that comes from a container is shown as text.
 
+On a machine with other users: loopback ports are shared, so another user could take ports 80/443 (or 7080/7443) while your service isn't running and pretend to be silo. Plain HTTP can't tell. HTTPS can, because only your service has the key of your local CA, so use `https://silo.localhost` there.
+
 ### Idle stop
 
 A running container holds memory under the shared cap even when nobody uses it. The service stops containers that have been idle for 4 hours (`idle_stop:` in the global config, `0` turns it off) and shows a notification. A container counts as used while it has a terminal (any open pty: `silo ra` and `silo enter` sessions, herdr's shells and agents, tmux), while it uses more than 5% of a CPU core, and for a while after a request through the proxy. A stopped container comes back on `silo ra`, `silo enter`, `silo up` or its `.localhost` URL, with its autostart daemons.

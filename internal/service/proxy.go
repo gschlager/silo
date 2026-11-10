@@ -197,7 +197,10 @@ func listenLoopback(port, fallback int) (net.Listener, int) {
 				for {
 					c, err := x.Accept()
 					if err != nil {
-						return
+						if !acceptRetry(err) {
+							return
+						}
+						continue
 					}
 					select {
 					case ll.conns <- c:

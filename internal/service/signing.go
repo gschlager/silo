@@ -203,7 +203,10 @@ func serveSigningAgent(l net.Listener, a *signingAgent) {
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			return
+			if !acceptRetry(err) {
+				return
+			}
+			continue
 		}
 		go func() {
 			defer conn.Close()

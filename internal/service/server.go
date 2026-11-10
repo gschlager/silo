@@ -40,6 +40,11 @@ type Server struct {
 	activity activity
 	idle     *idleTracker
 	events   *eventBus
+
+	notifyLimit  notifyLimiter
+	herdrMu      sync.Mutex
+	herdrChecked time.Time
+	herdrFound   bool
 	// containerConfig loads a container's project config; configFor, or a
 	// stub in tests.
 	containerConfig func(name string) (*config.MergedConfig, error)

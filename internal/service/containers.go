@@ -21,9 +21,13 @@ import (
 // provision.HostDir). The container is known by the socket a request comes
 // in on, so nothing a container sends can claim to be another container.
 type hub struct {
-	s    *Server
-	mu   sync.Mutex
-	open map[string]*containerSockets
+	s *Server
+	// reconcileMu serializes reconcile: Incus runs event handlers
+	// concurrently, and a slow run must not reopen the sockets of a
+	// container a newer run already closed.
+	reconcileMu sync.Mutex
+	mu          sync.Mutex
+	open        map[string]*containerSockets
 }
 
 type containerSockets struct {
@@ -43,6 +47,8 @@ func newHub(s *Server) *hub {
 // reconcile opens the sockets of every silo container that has the host
 // device and closes those of containers that are gone.
 func (h *hub) reconcile() {
+	h.reconcileMu.Lock()
+	defer h.reconcileMu.Unlock()
 	srv := h.s.incus()
 	if srv == nil {
 		return
@@ -175,12 +181,47 @@ func (s *Server) notify(container, msg string) {
 	if err != nil || !g.Notifications {
 		return
 	}
-	if g.Herdr == nil || *g.Herdr {
-		if _, ok := provision.FindHerdrHC(); ok {
-			return
-		}
+	if (g.Herdr == nil || *g.Herdr) && s.herdrInstalled() {
+		return
+	}
+	if !s.notifyLimit.allow(container) {
+		return
 	}
 	go desktopNotify(context.Background(), "silo: "+projectLabel(container), msg)
+}
+
+// notifyLimiter lets a container show one notification per interval, so it
+// can't make the host start notify-send in a loop.
+type notifyLimiter struct {
+	mu   sync.Mutex
+	last map[string]time.Time
+}
+
+const notifyInterval = 2 * time.Second
+
+func (l *notifyLimiter) allow(container string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.last == nil {
+		l.last = map[string]time.Time{}
+	}
+	if time.Since(l.last[container]) < notifyInterval {
+		return false
+	}
+	l.last[container] = time.Now()
+	return true
+}
+
+// herdrInstalled reports whether herdr's hc is on the host, checked at most
+// once a minute (it runs hc --version).
+func (s *Server) herdrInstalled() bool {
+	s.herdrMu.Lock()
+	defer s.herdrMu.Unlock()
+	if time.Since(s.herdrChecked) > time.Minute {
+		_, s.herdrFound = provision.FindHerdrHC()
+		s.herdrChecked = time.Now()
+	}
+	return s.herdrFound
 }
 
 // projectLabel is the container name without the "silo-" prefix.
