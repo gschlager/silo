@@ -289,7 +289,7 @@ function updatesBlock(c) {
     rows.push(el("div.update", {},
       el("div.update-text", {},
         el("strong", {}, "Built by an older silo"), " ",
-        el("span.what", {}, (c.built_by ? "(" + c.built_by + "). " : "(before silo recorded it). ") +
+        el("span.what", {}, (c.built_by ? "(" + c.built_by + "). " : "") +
           "Rebuild it to get the current setup. That removes everything in the container outside the project directory.")),
       el("div.btns", {},
         copyButton("Copy rebuild command", "cd " + JSON.stringify(c.project_dir) + " && silo rm && silo up",

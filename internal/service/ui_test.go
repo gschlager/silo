@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/gschlager/silo/internal/provision"
 )
 
 func uiRequest(t *testing.T, h http.Handler, method, path string, headers map[string]string) *httptest.ResponseRecorder {
@@ -83,5 +86,15 @@ func TestProxyServesUIAtSiloLocalhost(t *testing.T) {
 	s.proxy.ServeHTTP(w, httptest.NewRequest("GET", "http://silo.localhost/app.js", nil))
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "textContent") {
 		t.Errorf("app.js: %d", w.Code)
+	}
+}
+
+func TestOutdated(t *testing.T) {
+	cur := strconv.Itoa(provision.ContainerVersion)
+	old := strconv.Itoa(provision.ContainerVersion - 1)
+	for stamp, want := range map[string]bool{"": false, cur: false, old: true, "junk": false} {
+		if got := outdated(stamp); got != want {
+			t.Errorf("outdated(%q) = %v, want %v", stamp, got, want)
+		}
 	}
 }

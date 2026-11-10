@@ -30,7 +30,8 @@ type Options struct {
 // Provision runs the full first-run provisioning flow for a container.
 // ContainerVersion is stored on every container silo provisions. Bump it when
 // provisioning or the base template steps change in a way that existing
-// containers don't pick up, so the web UI suggests rebuilding them.
+// containers don't pick up (silo up can't fix it), so the web UI suggests
+// rebuilding the older ones. Containers without it count as current.
 const ContainerVersion = 1
 
 func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig, opts Options) error {

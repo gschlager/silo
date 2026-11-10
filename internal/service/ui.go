@@ -454,8 +454,8 @@ type uiContainer struct {
 	ConfigError string     `json:"config_error,omitempty"`
 	// ConfigUpdates are what silo config update suggests for the project.
 	ConfigUpdates []uiConfigUpdate `json:"config_updates"`
-	// Outdated is set when an older silo built the container (or one from
-	// before silo recorded it): rebuilding it gets the current provisioning.
+	// Outdated is set when an older silo built the container: rebuilding
+	// it gets the current provisioning.
 	Outdated bool   `json:"outdated"`
 	BuiltBy  string `json:"built_by"` // silo release, if recorded
 }
@@ -543,7 +543,7 @@ func (s *Server) uiOverview(ctx context.Context) uiOverview {
 			URLs:       []uiURL{},
 			Ports:      []uiPort{},
 			Daemons:    []uiDaemon{},
-			Outdated:   inst.Config[incus.ProvisionKey] != strconv.Itoa(provision.ContainerVersion),
+			Outdated:   outdated(inst.Config[incus.ProvisionKey]),
 			BuiltBy:    inst.Config[incus.ProvisionByKey],
 
 			ConfigUpdates: []uiConfigUpdate{},
@@ -568,6 +568,17 @@ func (s *Server) uiOverview(ctx context.Context) uiOverview {
 		}
 	}
 	return o
+}
+
+// outdated reports whether a container's recorded provisioning version is
+// older than this silo's. Containers from before silo recorded it (0.6 and
+// earlier) count as up to date: silo up brings them to 0.7's setup.
+func outdated(stamp string) bool {
+	if stamp == "" {
+		return false
+	}
+	v, err := strconv.Atoi(stamp)
+	return err == nil && v < provision.ContainerVersion
 }
 
 // fillContainer adds what needs the config or an exec to a container.
