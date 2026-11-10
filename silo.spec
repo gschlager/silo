@@ -26,16 +26,15 @@ for AI agents using Incus containers.
 %setup -q -n %{name}-%{version}
 
 %build
-go build -mod=vendor -ldflags="-s -w -X github.com/gschlager/silo/internal/cli.Version=%{version}" -o %{name} ./cmd/silo
+# Static: the binary gets a file capability (see %files), and a dynamically
+# linked one would run in glibc's secure mode, which drops TMPDIR and more.
+CGO_ENABLED=0 go build -mod=vendor -ldflags="-s -w -X github.com/gschlager/silo/internal/cli.Version=%{version}" -o %{name} ./cmd/silo
 
 %install
 install -Dpm 0755 %{name} %{buildroot}%{_bindir}/%{name}
 install -Dpm 0644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 install -Dpm 0644 packaging/silo-incus-docker-fix.service %{buildroot}%{_unitdir}/silo-incus-docker-fix.service
 install -Dpm 0644 packaging/80-silo.preset %{buildroot}%{_presetdir}/80-silo.preset
-%{_userunitdir}/silo.socket
-%{_userunitdir}/silo.service
-%{_userpresetdir}/80-silo.preset
 install -Dpm 0644 packaging/silo.socket %{buildroot}%{_userunitdir}/silo.socket
 install -Dpm 0644 packaging/silo.service %{buildroot}%{_userunitdir}/silo.service
 install -Dpm 0644 packaging/80-silo-user.preset %{buildroot}%{_userpresetdir}/80-silo.preset
