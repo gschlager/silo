@@ -3,6 +3,7 @@
 "use strict";
 
 const $ = (sel) => document.querySelector(sel);
+const enc = encodeURIComponent;
 
 // el("tag.class", {attr: value}, ...children): children are nodes or text.
 function el(spec, attrs, ...children) {
@@ -43,23 +44,35 @@ function toast(msg, error) {
   toastTimer = setTimeout(() => (t.className = ""), error ? 6000 : 2500);
 }
 
-// action runs a POST from a button, disabling it meanwhile.
+// Actions still running, by path, so a button stays busy when the page is
+// redrawn underneath it.
+const pending = new Set();
+
+// action is a button that POSTs to path. opts: cls, title, body, confirm,
+// done (toast text from the result).
 function action(label, path, opts = {}) {
+  const key = path + (opts.body ? JSON.stringify(opts.body) : "");
+  const busy = pending.has(key);
   return el("button" + (opts.cls ? "." + opts.cls : ""), {
     type: "button",
     title: opts.title,
+    "data-key": key,
+    disabled: busy,
+    "aria-busy": busy ? "true" : null,
     onclick: async (ev) => {
       if (opts.confirm && !confirm(opts.confirm)) return;
       const b = ev.currentTarget;
+      pending.add(key);
       b.disabled = true;
+      b.setAttribute("aria-busy", "true");
       try {
         const res = await api("POST", path, opts.body);
         toast(opts.done ? opts.done(res) : label + ": done");
-        refresh();
       } catch (e) {
         toast(e.message, true);
       } finally {
-        b.disabled = false;
+        pending.delete(key);
+        refresh();
       }
     },
   }, label);
@@ -79,132 +92,238 @@ function bytes(n) {
   return gib >= 1 ? gib.toFixed(1) + " GiB" : Math.round(n / 1024 ** 2) + " MiB";
 }
 
-const enc = encodeURIComponent;
+const short = (name) => name.replace(/^silo-/, "");
+
+function copyButton(label, text, title) {
+  return el("button.link", {
+    type: "button",
+    title,
+    onclick: () => navigator.clipboard.writeText(text)
+      .then(() => toast("Copied: " + text), () => toast("Couldn't copy to the clipboard", true)),
+  }, label);
+}
+
+// Top bar, notices and the service panel.
+
+function renderHeader(o) {
+  const cs = o.containers;
+  const running = cs.filter((c) => c.state === "running").length;
+  $("#summary").replaceChildren(...(cs.length
+    ? [el("b", {}, running), " running · ", el("b", {}, cs.length - running), " stopped"]
+    : []));
+  const ok = o.service.incus;
+  $("#health").className = "health" + (ok ? "" : " bad");
+  $("#health").replaceChildren(el("span.dot." + (ok ? "running" : "failed")), ok ? "Incus connected" : "Incus not connected");
+
+  const notices = [];
+  if (!ok) {
+    notices.push(el("p.notice", {}, el("strong", {}, "The silo service can't reach Incus. "),
+      "Check that Incus is running, then look at ", el("code", {}, "silo service status"), "."));
+  }
+  if (o.proxy.http_port && o.proxy.http_port !== 80) {
+    notices.push(el("p.notice", {}, el("strong", {}, "The proxy runs on ports " + o.proxy.http_port + " and " + o.proxy.https_port + ". "),
+      "Run ", el("code", {}, "silo setup"), " so silo may use ports 80 and 443 and the URLs work without a port."));
+  }
+  $("#notices").replaceChildren(...notices);
+}
 
 function renderService(o) {
   const s = o.service;
-  const chips = [
-    el("span.chip", {}, "v" + s.version.replace(/^v/, "")),
-    el("span.chip", {}, s.incus ? "Incus connected" : "Incus not connected"),
-    el("span.chip", {}, s.cached_secrets + " secrets cached ",
-      action("forget", "/api/secrets/forget", { cls: "link", done: (r) => "Forgot " + r.count + " secrets" })),
-    el("span.chip", {}, o.idle_stop ? "idle stop after " + o.idle_stop : "idle stop off"),
-    el("span.chip", { title: "the key containers sign commits with" },
-      o.signing ? "signing " + o.signing.slice(0, 18) + "…" : "commit signing off"),
-  ];
-  if (o.proxy.http_port && o.proxy.http_port !== 80) {
-    chips.push(el("span.chip.warn", { title: "run silo setup so silo may use ports 80 and 443" },
-      "proxy on ports " + o.proxy.http_port + "/" + o.proxy.https_port));
-  }
-  $("#service").replaceChildren(...chips);
+  const row = (term, ...value) => [el("dt", {}, term), el("dd", {}, ...value)];
+  const proxy = o.proxy.http_port
+    ? el("span" + (o.proxy.http_port !== 80 ? ".warn" : ""), {}, "ports " + o.proxy.http_port + " / " + o.proxy.https_port)
+    : el("span.off", {}, "not listening");
+  $("#service").replaceChildren(
+    ...row("Version", el("span.mono", {}, "v" + s.version.replace(/^v/, ""))),
+    ...row("Proxy", proxy),
+    ...row("Idle stop", o.idle_stop ? "after " + o.idle_stop : el("span.off", {}, "off")),
+    ...row("Commit signing", o.signing
+      ? el("span.mono", { title: "the key containers sign commits with: " + o.signing }, o.signing)
+      : el("span.off", {}, "off")),
+    ...row("Secrets", s.cached_secrets ? s.cached_secrets + " cached" : el("span.off", {}, "none cached"),
+      s.cached_secrets ? action("Forget", "/api/secrets/forget", {
+        cls: "small", title: "drop the cached 1Password values; silo asks again when it needs them",
+        done: (r) => "Forgot " + r.count + " secrets",
+      }) : null),
+  );
 }
 
-function urlLinks(c) {
-  if (!c.urls.length) return null;
-  return el("div.row.urls", {}, c.urls.map((u) => {
-    const href = u.https_url || u.url;
-    return el("a", { href, target: "_blank", rel: "noopener" }, href.replace(/\/$/, ""));
-  }));
-}
-
-function daemonTable(c) {
-  if (!c.daemons.length) return null;
-  const running = c.state === "running";
-  const base = "/api/containers/" + enc(c.name) + "/daemons/";
-  return el("table", {}, el("tbody", {}, c.daemons.map((d) => el("tr", {},
-    el("td", {}, el("span.dot." + d.state, { title: d.state }), " ", el("strong", {}, d.name),
-      d.autostart ? el("span.muted", {}, " autostart") : null),
-    el("td.cmd.mono", { title: d.cmd }, d.cmd),
-    el("td.actions", {},
-      running && d.state !== "running" ? action("start", base + enc(d.name) + "/start") : null,
-      running && d.state === "running" ? action("restart", base + enc(d.name) + "/restart") : null,
-      running && d.state === "running" ? action("stop", base + enc(d.name) + "/stop") : null,
-      el("button", { type: "button", onclick: () => showLogs(c.name, d.name) }, "logs")),
+function renderBases(o) {
+  if (!o.bases.length) return $("#bases").replaceChildren(el("p.hint", {}, "No base templates yet. The first silo up builds one."));
+  $("#bases").replaceChildren(el("ul.bases", {}, o.bases.map((b) => el("li", {},
+    el("div", {},
+      el("div.mono", {}, b.image.replace(/^images:/, "")),
+      b.refreshing ? el("div.when.busy", {}, "Rebuilding…") : el("div.when", { title: b.built_at }, "built " + ago(b.built_at))),
+    b.refreshing ? null : action("Rebuild", "/api/bases/refresh", {
+      cls: "small", body: { image: b.image }, done: (r) => (r.started ? "Rebuilding " : "Already rebuilding ") + b.image,
+    }),
   ))));
 }
 
-function snapshotsBlock(c) {
-  const list = el("div.snapshots");
-  const toggle = el("button.link", {
-    type: "button",
-    onclick: async () => {
-      if (list.classList.toggle("open")) await loadSnapshots(c, list);
-    },
-  }, c.snapshots + " snapshots");
-  return [el("div.row", {}, toggle,
-    action("take snapshot", "/api/containers/" + enc(c.name) + "/snapshots", { cls: "link", done: (r) => "Took " + r.name })), list];
+// Containers.
+
+function urlLinks(c) {
+  return el("div.links", {}, c.urls.map((u) => {
+    const href = u.https_url || u.url;
+    return el("a", { href, target: "_blank", rel: "noopener", title: "port " + u.container_port + " in the container" },
+      href.replace(/^https?:\/\//, "").replace(/\/$/, ""));
+  }));
+}
+
+function portList(c) {
+  return el("ul.ports", {}, c.ports.map((p) => el("li", { title: "port " + p.container + " in the container" },
+    el("b", {}, "localhost:" + p.host), " → " + p.container, p.name ? "  " + p.name : "")));
+}
+
+function daemonList(c) {
+  const base = "/api/containers/" + enc(c.name) + "/daemons/";
+  return el("ul.daemons", {}, c.daemons.map((d) => {
+    const path = base + enc(d.name) + "/";
+    const up = d.state === "running";
+    return el("li.daemon." + d.state, {},
+      el("div.daemon-name", {}, el("span.dot." + d.state, { title: d.state }), d.name,
+        d.state === "failed" ? el("span.state.failed", {}, "failed") : null,
+        d.autostart ? el("span.auto", { title: "starts with the container" }, "auto") : null),
+      el("code.cmd", { title: d.cmd }, d.cmd),
+      el("div.seg", {},
+        up ? action("Restart", path + "restart", { cls: "small" }) : action("Start", path + "start", { cls: "small" }),
+        up ? action("Stop", path + "stop", { cls: "small" }) : null,
+        el("button.small", { type: "button", onclick: () => showLogs(c.name, d) }, "Logs")),
+    );
+  }));
+}
+
+// Open snapshot lists, by container: the snapshots last loaded and the count
+// they were loaded at, so a refresh keeps the list open without reloading it.
+const openSnaps = new Map();
+
+function snapshotsFoot(c) {
+  const open = openSnaps.get(c.name);
+  const list = el("div.snap-list", { hidden: !open });
+  const n = c.snapshots;
+  const label = n === 0 ? "No snapshots" : n === 1 ? "1 snapshot" : n + " snapshots";
+  const toggle = n
+    ? el("button.link", {
+        type: "button",
+        "aria-expanded": open ? "true" : "false",
+        "data-key": "snaps:" + c.name,
+        onclick: (ev) => {
+          if (openSnaps.has(c.name)) openSnaps.delete(c.name);
+          else openSnaps.set(c.name, { count: -1, snaps: null });
+          list.hidden = !openSnaps.has(c.name);
+          ev.currentTarget.setAttribute("aria-expanded", String(!list.hidden));
+          if (!list.hidden) loadSnapshots(c, list);
+        },
+      }, label + (open ? " ▴" : " ▾"))
+    : el("span", {}, label);
+  if (open) {
+    if (open.snaps && open.count === n) drawSnapshots(c, list, open.snaps);
+    else loadSnapshots(c, list);
+  }
+  return el("div.box-foot", {}, toggle,
+    action("Take snapshot", "/api/containers/" + enc(c.name) + "/snapshots", { cls: "small", done: (r) => "Took snapshot " + r.name }),
+    list);
 }
 
 async function loadSnapshots(c, list) {
-  list.replaceChildren(el("p.muted", {}, "Loading…"));
+  if (!list.firstChild) list.append(el("p.hint", {}, "Loading…"));
   try {
     const snaps = await api("GET", "/api/containers/" + enc(c.name) + "/snapshots");
-    if (!snaps.length) return list.replaceChildren(el("p.muted", {}, "No snapshots."));
-    list.replaceChildren(el("table", {}, el("tbody", {}, snaps.slice().reverse().map((s) => el("tr", {},
-      el("td.mono", {}, s.Name),
-      el("td.muted", {}, s.CreatedAt),
-      el("td.actions", {}, action("restore", "/api/containers/" + enc(c.name) + "/snapshots/" + enc(s.Name) + "/restore", {
-        cls: "danger",
-        confirm: "Restore " + c.label + " to " + s.Name + "? Changes in the container since then are lost (the mounted project directory isn't affected).",
-      })),
-    )))));
+    const open = openSnaps.get(c.name);
+    if (open) Object.assign(open, { count: c.snapshots, snaps });
+    drawSnapshots(c, list, snaps);
   } catch (e) {
-    list.replaceChildren(el("p.warn", {}, e.message));
+    list.replaceChildren(el("p.warn-line", {}, e.message));
   }
+}
+
+function drawSnapshots(c, list, snaps) {
+  if (!snaps.length) return list.replaceChildren(el("p.hint", {}, "No snapshots."));
+  list.replaceChildren(el("table", {}, el("tbody", {}, snaps.slice().reverse().map((s) => el("tr", {},
+    el("td.mono", {}, s.Name),
+    el("td.when", {}, s.CreatedAt),
+    el("td.act", {}, action("Restore", "/api/containers/" + enc(c.name) + "/snapshots/" + enc(s.Name) + "/restore", {
+      cls: "small.danger",
+      confirm: "Restore " + c.label + " to " + s.Name + "? Changes in the container since then are lost (the mounted project directory isn't affected).",
+      done: () => "Restored " + c.label + " to " + s.Name,
+    })),
+  )))));
 }
 
 function renderContainer(c) {
   const path = "/api/containers/" + enc(c.name) + "/";
   const running = c.state === "running";
-  const meta = [
-    c.project_dir ? el("code", { title: "project directory" }, c.project_dir) : null,
-    c.project_dir ? el("button.link", {
-      type: "button",
-      title: "copy a command that runs the default agent",
-      onclick: () => navigator.clipboard.writeText("cd " + JSON.stringify(c.project_dir) + " && silo ra")
-        .then(() => toast("Copied")),
-    }, "copy cd && silo ra") : null,
-    running && c.memory_bytes ? el("span.muted", {}, bytes(c.memory_bytes)) : null,
-    running && c.ipv4 ? el("span.muted.mono", {}, c.ipv4) : null,
-    running && c.last_active ? el("span.muted", {}, "used " + ago(c.last_active)) : null,
-  ];
-  return el("article.card." + (running ? "running" : "stopped"), {},
-    el("div.row.spread", {},
-      el("div.row", {}, el("h3", {}, c.label), el("span.pill." + c.state, {}, c.state), c.tmp ? el("span.chip", {}, "tmp") : null),
-      el("div.row", {},
-        !running ? action("start", path + "start", { cls: "primary" }) : null,
-        running ? action("restart", path + "restart") : null,
-        running ? action("stop", path + "stop", { cls: "danger" }) : null)),
-    el("div.row", {}, meta),
-    c.config_error ? el("p.warn", {}, c.config_error) : null,
-    urlLinks(c),
-    daemonTable(c),
-    c.ports.length ? el("div.chips", {}, c.ports.map((p) =>
-      el("span.chip.mono", { title: p.name || "" }, p.container + " → localhost:" + p.host + (p.name ? " " + p.name : "")))) : null,
-    ...snapshotsBlock(c),
-  );
+  const stats = running
+    ? [bytes(c.memory_bytes), c.ipv4, c.last_active ? "active " + ago(c.last_active) : ""]
+    : [c.last_active ? "last used " + ago(c.last_active) : ""];
+
+  const head = el("div.box-head", {},
+    el("div.ident", {},
+      el("span.dot." + c.state, { title: c.state }),
+      el("h3", {}, c.label),
+      c.tmp ? el("span.tag", { title: "a throwaway container from silo tmp" }, "tmp") : null,
+      running || c.state === "stopped" ? null : el("span.state." + c.state, {}, c.state)),
+    el("div.stats", {}, stats.filter(Boolean).map((s) => el("span", {}, s))),
+    el("div.btns", {},
+      running ? action("Restart", path + "restart", { done: () => "Restarted " + c.label }) : null,
+      running ? action("Stop", path + "stop", { cls: "danger", done: () => "Stopped " + c.label }) : null,
+      running ? null : action("Start", path + "start", { cls: "primary", done: () => "Started " + c.label })));
+
+  const where = c.project_dir ? el("div.path", {},
+    el("code", { title: "project directory" }, c.project_dir),
+    copyButton("Copy silo ra command", "cd " + JSON.stringify(c.project_dir) + " && silo ra",
+      "copies a command that runs the default agent in this container")) : null;
+  const problem = c.config_error ? el("p.warn-line", {}, c.config_error) : null;
+
+  let body;
+  if (running) {
+    const reach = c.urls.length || c.ports.length ? el("section", {},
+      c.urls.length ? [el("h4", {}, "Open"), urlLinks(c)] : null,
+      c.ports.length ? [el("h4", {}, "Ports"), portList(c)] : null) : null;
+    const daemons = c.daemons.length ? el("section", {}, el("h4", {}, "Daemons"), daemonList(c)) : null;
+    if (reach || daemons) body = el("div.box-body" + (reach && daemons ? "" : ".single"), {}, reach, daemons);
+  } else {
+    const bits = [
+      c.urls.length ? urlLinks(c) : null,
+      c.urls.length ? el("span.hint", {}, "opening a URL starts it") : null,
+      c.daemons.length ? el("span", {}, "daemons: " + c.daemons.map((d) => d.name).join(", ")) : null,
+    ].filter(Boolean);
+    if (bits.length) body = el("div.quiet", {}, bits);
+  }
+
+  return el("article.box." + (running ? "running" : "stopped"), { "aria-label": c.label },
+    el("div.box-top", {}, head, where, problem), body, snapshotsFoot(c));
 }
 
-function renderBases(o) {
-  if (!o.bases.length) return $("#bases").replaceChildren(el("p.muted", {}, "No base templates yet."));
-  $("#bases").replaceChildren(el("table", {}, el("tbody", {}, o.bases.map((b) => el("tr", {},
-    el("td", {}, el("strong.mono", {}, b.image), el("div.muted", {}, b.refreshing ? "rebuilding…" : "built " + ago(b.built_at))),
-    el("td.actions", {}, action("rebuild", "/api/bases/refresh", { body: { image: b.image }, done: (r) => r.started ? "Rebuilding" : "Already rebuilding" })),
-  )))));
+function renderContainers(o) {
+  if (!o.containers.length) {
+    return $("#containers").replaceChildren(el("p.empty", {}, o.service.incus
+      ? ["No silo containers yet. Run ", el("code", {}, "silo up"), " in a project."]
+      : "The silo service can't reach Incus, so there are no containers to show."));
+  }
+  const running = o.containers.filter((c) => c.state === "running");
+  const other = o.containers.filter((c) => c.state !== "running");
+  const group = (title, cs) => cs.length
+    ? [el("h2.group-title", {}, title, el("span.n", {}, cs.length)), ...cs.map(renderContainer)]
+    : [];
+  $("#containers").replaceChildren(...group("Running", running), ...group("Stopped", other));
 }
 
-let current;
 async function refresh() {
   try {
     const o = await api("GET", "/api/overview");
-    current = o;
+    // Keep keyboard focus on the same control across the redraw.
+    const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.key : null;
+    renderHeader(o);
     renderService(o);
     renderBases(o);
-    $("#containers").replaceChildren(...(o.containers.length
-      ? o.containers.map(renderContainer)
-      : [el("p.muted", {}, o.service.incus ? "No silo containers. Run silo up in a project." : "The silo service can't reach Incus.")]));
+    renderContainers(o);
+    if (focused) {
+      const again = document.querySelector('[data-key="' + CSS.escape(focused) + '"]');
+      if (again) again.focus();
+    }
   } catch (e) {
-    toast("Can't load: " + e.message, true);
+    toast("Can't load the overview: " + e.message, true);
   }
 }
 
@@ -212,32 +331,63 @@ async function refresh() {
 let logTarget;
 async function showLogs(container, daemon) {
   logTarget = [container, daemon];
-  $("#dialog-title").textContent = daemon + " in " + container.replace(/^silo-/, "");
-  $("#dialog-body").replaceChildren(el("p.muted", {}, "Loading…"));
+  $("#dialog-title").textContent = daemon.name + " · " + short(container);
+  $("#dialog-sub").textContent = daemon.cmd;
+  $("#dialog-sub").title = daemon.cmd;
+  if (!$("#dialog-body").firstChild) $("#dialog-body").replaceChildren(el("p.hint", {}, "Loading…"));
   if (!$("#dialog").open) $("#dialog").showModal();
+  const refreshBtn = $("#dialog-refresh");
+  refreshBtn.disabled = true;
+  refreshBtn.setAttribute("aria-busy", "true");
   try {
-    const r = await api("GET", "/api/containers/" + enc(container) + "/daemons/" + enc(daemon) + "/logs");
-    const pre = el("pre", {}, r.text || "(no output)");
+    const r = await api("GET", "/api/containers/" + enc(container) + "/daemons/" + enc(daemon.name) + "/logs");
+    const pre = el("pre", { tabindex: "0" }, r.text || "(no output yet)");
     $("#dialog-body").replaceChildren(pre);
-    $("#dialog").scrollTop = $("#dialog").scrollHeight;
+    pre.scrollTop = pre.scrollHeight;
   } catch (e) {
-    $("#dialog-body").replaceChildren(el("p.warn", {}, e.message));
+    $("#dialog-body").replaceChildren(el("p.warn-line", {}, e.message));
+  } finally {
+    refreshBtn.disabled = false;
+    refreshBtn.removeAttribute("aria-busy");
   }
 }
 $("#dialog-close").addEventListener("click", () => $("#dialog").close());
 $("#dialog-refresh").addEventListener("click", () => logTarget && showLogs(...logTarget));
+$("#dialog").addEventListener("close", () => $("#dialog-body").replaceChildren());
+$("#dialog").addEventListener("click", (e) => { if (e.target === $("#dialog")) $("#dialog").close(); });
 
-// Events: shown in the list, and they trigger a refresh.
+// Activity: events are shown in the list, and they trigger a refresh.
+
+// describe turns an event into [text, bad?].
+function describe(e) {
+  const c = e.container ? short(e.container) : "";
+  switch (e.type) {
+    case "container-started": return [c + " started"];
+    case "container-stopped": return [c + " stopped"];
+    case "container-idle-stopped": return [c + " stopped after being idle"];
+    case "container-deleted": return [c + " was deleted"];
+    case "daemons-started": return ["Daemons started in " + c];
+    case "daemons-failed": return ["Daemons failed in " + c, true];
+    case "open-requested": return [c + " asked to open a URL"];
+    case "opened": return ["Opened a URL from " + c];
+    case "commit-signed": return ["Signed a commit in " + c];
+    case "signing-refused": return ["Refused to sign in " + c, true];
+    case "secrets-forgotten": return ["Forgot the cached secrets"];
+    case "notification": return [c ? "Notification from " + c : "Notification"];
+  }
+  return [e.type.replaceAll("-", " ") + (c ? " · " + c : "")];
+}
+
 let refreshTimer;
 function onEvent(e) {
   const list = $("#events");
-  if (list.firstElementChild && list.firstElementChild.classList.contains("muted")) list.replaceChildren();
+  if (list.querySelector(".none")) list.replaceChildren();
   const t = new Date(e.time);
-  list.prepend(el("li", {},
-    el("time", { datetime: e.time }, t.toLocaleTimeString()),
-    e.type.replaceAll("-", " "),
-    e.container ? el("strong", {}, " " + e.container.replace(/^silo-/, "")) : null,
-    e.message ? el("div.muted", {}, e.message) : null));
+  const [what, bad] = describe(e);
+  list.prepend(el("li" + (bad ? ".bad" : ""), {},
+    el("time", { datetime: e.time, title: t.toLocaleString() }, t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })),
+    el("span.what", {}, what),
+    e.message ? el("span.msg", {}, e.message) : null));
   while (list.children.length > 60) list.lastElementChild.remove();
   clearTimeout(refreshTimer);
   refreshTimer = setTimeout(refresh, 400);

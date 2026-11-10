@@ -9,32 +9,43 @@
 <script src="app.js" defer></script>
 </head>
 <body>
-<header>
-  <h1>silo</h1>
-  <div id="service" class="chips"></div>
+<header class="top">
+  <div class="top-inner">
+    <h1 class="brand">silo</h1>
+    <p id="summary" class="summary"></p>
+    <span id="health" class="health"></span>
+  </div>
 </header>
-<main>
-  <section id="containers" aria-live="polite"><p class="muted">Loading…</p></section>
-  <aside>
-    <section>
+<div id="notices" class="notices"></div>
+<main class="layout">
+  <div id="containers" class="containers" aria-live="polite"><p class="empty">Loading…</p></div>
+  <aside class="side">
+    <section class="panel">
+      <h2>Service</h2>
+      <dl id="service" class="facts-list"></dl>
+    </section>
+    <section class="panel">
       <h2>Base templates</h2>
       <div id="bases"></div>
     </section>
-    <section>
-      <h2>Events</h2>
-      <ol id="events" class="events"><li class="muted">Nothing yet.</li></ol>
+    <section class="panel">
+      <h2>Activity</h2>
+      <ol id="events" class="events"><li class="none">Nothing has happened since this page opened.</li></ol>
     </section>
   </aside>
 </main>
-<dialog id="dialog">
-  <header>
-    <h2 id="dialog-title"></h2>
-    <div>
+<dialog id="dialog" class="logs" aria-labelledby="dialog-title">
+  <header class="logs-head">
+    <div class="logs-title">
+      <h2 id="dialog-title"></h2>
+      <p id="dialog-sub" class="logs-sub"></p>
+    </div>
+    <div class="btns">
       <button id="dialog-refresh" type="button">Refresh</button>
       <button id="dialog-close" type="button">Close</button>
     </div>
   </header>
-  <div id="dialog-body"></div>
+  <div id="dialog-body" class="logs-body"></div>
 </dialog>
 <div id="toast" role="status"></div>
 </body>
