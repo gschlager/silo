@@ -11,6 +11,7 @@ import (
 	"github.com/gschlager/silo/internal/color"
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	"github.com/gschlager/silo/internal/svcapi"
 	incuscli "github.com/lxc/incus/v7/client"
 )
 
@@ -27,6 +28,11 @@ type Options struct {
 }
 
 // Provision runs the full first-run provisioning flow for a container.
+// ContainerVersion is stored on every container silo provisions. Bump it when
+// provisioning or the base template steps change in a way that existing
+// containers don't pick up, so the web UI suggests rebuilding them.
+const ContainerVersion = 1
+
 func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig, opts Options) error {
 	keepOnFailure := opts.Keep
 	name := cfg.ContainerName
@@ -239,6 +245,12 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 		"sh", "-c", fmt.Sprintf("touch /home/%s/.silo-initialized", cfg.User),
 	}); err != nil {
 		return fmt.Errorf("creating init marker: %w", err)
+	}
+	if err := incus.UpdateConfig(ctx, server, name, map[string]string{
+		incus.ProvisionKey:   strconv.Itoa(ContainerVersion),
+		incus.ProvisionByKey: svcapi.Version,
+	}); err != nil {
+		color.Warn("could not record the silo version: %v", err)
 	}
 
 	// Step 16: Take initial snapshot.
