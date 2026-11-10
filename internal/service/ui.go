@@ -153,7 +153,7 @@ func (s *Server) uiHandler() http.Handler {
 		if err != nil {
 			return nil, err
 		}
-		return s.uiApplyConfigUpdates(r.PathValue("name"), dir)
+		return s.uiApplyConfigUpdates(r.Context(), r.PathValue("name"), dir)
 	})
 	api("POST /api/config-updates", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		srv := s.incus()
@@ -170,7 +170,7 @@ func (s *Server) uiHandler() http.Handler {
 			if inst.Config[incus.TmpMarkerKey] == "true" || dir == "" {
 				continue
 			}
-			res, err := s.uiApplyConfigUpdates(inst.Name, dir)
+			res, err := s.uiApplyConfigUpdates(r.Context(), inst.Name, dir)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", projectLabel(inst.Name), err)
 			}
@@ -292,15 +292,32 @@ type uiApplied struct {
 // configUpdateMu keeps two applies from editing the same files at once.
 var configUpdateMu sync.Mutex
 
-func (s *Server) uiApplyConfigUpdates(name, dir string) (uiApplied, error) {
+func (s *Server) uiApplyConfigUpdates(ctx context.Context, name, dir string) (uiApplied, error) {
 	configUpdateMu.Lock()
 	defer configUpdateMu.Unlock()
 	n, left, err := configupdate.ApplyAll(dir, projectLabel(name))
 	if n > 0 {
 		log.Printf("%s: applied %d config updates (web UI)", name, n)
 		s.publish(Event{Type: "config-updated", Container: name, Message: fmt.Sprintf("%d changes", n)})
+		s.uiSyncPorts(ctx, name)
 	}
 	return uiApplied{Applied: n, Left: len(left)}, err
+}
+
+// uiSyncPorts gives the container the port devices its config asks for, like
+// silo up does, so an http: port marked a moment ago gets its .localhost
+// name (the proxy only serves ports with a socket device).
+func (s *Server) uiSyncPorts(ctx context.Context, name string) {
+	srv := s.incus()
+	cfg, err := s.containerConfig(name)
+	if srv == nil || err != nil {
+		return
+	}
+	if err := provision.ReconcilePorts(ctx, srv, name, cfg.Ports); err != nil {
+		log.Printf("%s: syncing port forwards: %v", name, err)
+		return
+	}
+	s.proxy.rebuild()
 }
 
 func diffLines(before, after string) []uiDiffLine {
@@ -330,6 +347,8 @@ func (s *Server) uiContainerAction(ctx context.Context, name, action string) err
 	log.Printf("%s: %s (web UI)", name, action)
 	switch action {
 	case "start":
+		// Like silo up: port devices added while it's stopped bind cleanly.
+		s.uiSyncPorts(ctx, name)
 		return incus.Start(ctx, srv, name)
 	case "stop":
 		return incus.Stop(ctx, srv, name)
