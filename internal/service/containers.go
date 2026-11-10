@@ -113,6 +113,14 @@ func (s *Server) openContainerSockets(name string) (*containerSockets, error) {
 	}
 	go srv.Serve(l)
 	socks.closers = append(socks.closers, srv)
+
+	al, err := listenUnix(provision.HostAgentSocket(name), 0600)
+	if err != nil {
+		socks.close()
+		return nil, err
+	}
+	go serveSigningAgent(al, &signingAgent{container: name, signingKey: configuredSigningKey, upstream: dialHostAgent})
+	socks.closers = append(socks.closers, al)
 	return socks, nil
 }
 

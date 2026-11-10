@@ -229,6 +229,8 @@ func Provision(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	status("Connecting the silo service...")
 	if err := SetupHostSocket(ctx, server, name); err != nil {
 		color.Warn("could not connect the silo service: %v", err)
+	} else if err := SetupSigning(ctx, server, name, cfg.User); err != nil {
+		color.Warn("could not set up commit signing: %v", err)
 	}
 
 	// Step 15: Mark as initialized.

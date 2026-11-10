@@ -132,10 +132,15 @@ func syncDaemons(ctx context.Context, server incuscli.InstanceServer, cfg *confi
 	return provision.StartConfiguredDaemons(ctx, server, cfg)
 }
 
-// setupHostSocket makes sure the container has its socket to the silo service
-// and current helpers. Containers created before the service get it here.
+// setupHostSocket makes sure the container has its socket to the silo service,
+// current helpers and the commit signing settings. Containers created before
+// the service get it here.
 func setupHostSocket(ctx context.Context, server incuscli.InstanceServer, cfg *config.MergedConfig) {
 	if err := provision.SetupHostSocket(ctx, server, cfg.ContainerName); err != nil {
 		color.Warn("could not connect the silo service: %v", err)
+		return
+	}
+	if err := provision.SetupSigning(ctx, server, cfg.ContainerName, cfg.User); err != nil {
+		color.Warn("could not set up commit signing: %v", err)
 	}
 }

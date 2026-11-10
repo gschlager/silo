@@ -378,3 +378,20 @@ func firstSecretRef(env map[string]string) (string, bool) {
 	}
 	return "", false
 }
+
+// SigningKey returns the SSH public key containers sign commits with, or ""
+// when signing isn't set up. It's set up with the usual git settings in the
+// global config's git: block, gpg.format: ssh and user.signingkey as the
+// public key itself (with or without git's "key::" prefix). Only the global
+// config counts: the key is host policy, and a project's .silo.yml can be
+// written from inside its container.
+func (g *GlobalConfig) SigningKey() string {
+	if g == nil || g.Git["gpg.format"] != "ssh" {
+		return ""
+	}
+	key := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(g.Git["user.signingkey"]), "key::"))
+	if !strings.HasPrefix(key, "ssh-") && !strings.HasPrefix(key, "ecdsa-") && !strings.HasPrefix(key, "sk-") {
+		return "" // a path to a key file, which doesn't exist in the container
+	}
+	return key
+}

@@ -77,3 +77,23 @@ func TestLoadGlobalConfig_Herdr(t *testing.T) {
 		}
 	}
 }
+
+func TestSigningKey(t *testing.T) {
+	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample me@example.com"
+	tests := []struct {
+		git  map[string]string
+		want string
+	}{
+		{map[string]string{"gpg.format": "ssh", "user.signingkey": key}, key},
+		{map[string]string{"gpg.format": "ssh", "user.signingkey": "key::" + key}, key},
+		{map[string]string{"user.signingkey": key}, ""},                                  // gpg, not ssh
+		{map[string]string{"gpg.format": "ssh", "user.signingkey": "~/.ssh/id.pub"}, ""}, // a path
+		{map[string]string{"gpg.format": "ssh"}, ""},
+	}
+	for _, tt := range tests {
+		g := &GlobalConfig{Git: tt.git}
+		if got := g.SigningKey(); got != tt.want {
+			t.Errorf("SigningKey(%v) = %q, want %q", tt.git, got, tt.want)
+		}
+	}
+}

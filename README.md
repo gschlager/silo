@@ -298,6 +298,11 @@ project_mounts:
 git:
   user.name: Dev
   user.email: dev@example.com
+  # Sign commits with an SSH key from the host's agent (1Password), see
+  # "Commit signing". The key is the public key itself.
+  # gpg.format: ssh
+  # user.signingkey: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... me@example.com
+  # commit.gpgsign: "true"
 
 # Override an agent's launch command, install step, mode, links, or per-mode env
 agents:
@@ -732,6 +737,30 @@ Each container gets its own directory from the host, mounted at `/var/lib/silo/h
 
 - **Notifications**: `silo-notify "message"` shows a desktop notification on the host, when `notifications: true` is set in the global config and herdr isn't handling the container. Hook it into your agent, e.g. Claude Code's `Notification` hook. It works for every agent in the container, also those started through herdr or `silo connect`, not only while a `silo ra` runs.
 - **Opening URLs**: `silo-open URL` opens an http(s) URL in the host's browser. `BROWSER` points to it and `xdg-open` in the container calls it, so `gh pr view --web` and agent logins just work. Every URL needs a click on the notification first ("myapp wants to open …"); otherwise an agent could open whatever it wants in a browser where you're logged in everywhere. A container can only have one URL waiting at a time. A `localhost` URL goes to where that port is forwarded on the host, or is refused when the port isn't forwarded.
+
+- **Commit signing**: `ssh-agent.sock`, see below.
+
+### Commit signing
+
+To sign commits in containers with an SSH key from 1Password (or any other SSH agent on the host), set it up with the usual git settings in the global config:
+
+```yaml
+# ~/.config/silo/config.yml
+git:
+  gpg.format: ssh
+  user.signingkey: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... me@example.com
+  commit.gpgsign: "true"
+```
+
+On `silo up`, silo points git's `gpg.ssh.program` to `silo-ssh-sign`, which runs `ssh-keygen` against the container's `ssh-agent.sock`. The service passes requests on to the host's agent (`~/.1password/agent.sock`, otherwise `SSH_AUTH_SOCK`), but only:
+
+- it lists the configured key and no other key
+- it signs only git signatures (the `SSHSIG` format with the namespace `git`, which is what `git commit -S` asks for). An SSH login challenge can't look like that, so the key can't be used to log in anywhere from a container.
+- it refuses everything else: adding or removing keys, locking, extensions
+
+Only the global config counts for the key; a project's `.silo.yml` can't pick another one. `SSH_AUTH_SOCK` is only set for `ssh-keygen`, so `ssh` in the container doesn't see the socket. 1Password sees the silo service as the application, so you approve once per unlock, not per container. Every signature is logged: `journalctl --user -u silo`.
+
+What can't be avoided: while 1Password's approval lasts, an agent in a container can get any commit signed. "Verified" on GitHub then means "made by me or in one of my silo containers". Use a separate key that you add on GitHub only as a **signing** key, never as an authentication key.
 
 ### Secrets cache
 
