@@ -47,8 +47,7 @@ func loadConfig() (*config.MergedConfig, error) {
 }
 
 // sessionEnv returns environment variables for an interactive container session:
-// host terminal env (PassEnv) plus resolved credentials (central secrets file,
-// tool credentials, and git.credential).
+// host terminal env (PassEnv) plus the project's secrets from secrets.yml.
 func sessionEnv(cfg *config.MergedConfig) (map[string]string, error) {
 	env := cfg.HostEnv()
 	creds, err := provision.ResolveSessionEnv(cfg)

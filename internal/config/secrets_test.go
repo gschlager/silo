@@ -147,4 +147,3 @@ func TestSecretsFallbackSkipsEmptyStub(t *testing.T) {
 		t.Fatalf("fallback secret = %q, want fallback", got)
 	}
 }
-

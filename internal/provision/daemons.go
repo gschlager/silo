@@ -107,8 +107,8 @@ chown %s:%s %s`, unitPath, unitContent, username, username, unitPath),
 }
 
 // daemonEnv resolves the environment daemons should run with: the project's
-// configured env: vars plus resolved secrets (central secrets file, tool
-// credentials, git credential). Secrets are resolved on the host; they are
+// configured env: vars plus the project's secrets from secrets.yml. Secrets
+// are resolved on the host; they are
 // injected into the systemd user manager and never written to disk.
 //
 // Per-daemon env: blocks are resolved too, but under prefixed names
