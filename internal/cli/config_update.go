@@ -27,6 +27,8 @@ this silo version, show each change as a diff and apply it when you agree:
   - mounts:, which project files can't declare anymore; they move to
     project_mounts in the global config
   - git.credential and tools.<name>.credential, which move to secrets.yml
+  - port forwards on a usual web server port (3000, 4200, 8080, ...)
+    without http: true, which gives them a <project>.localhost name
   - keys silo doesn't know (anymore), e.g. docker: true becomes nesting: true
     and a typo like deamons: becomes daemons:
 

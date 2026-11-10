@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gschlager/silo/internal/config"
 )
 
 const projectYAML = `# my project
@@ -229,5 +231,69 @@ func TestApplyAllLeavesCarefulOnes(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(dir, ".silo.yml"))
 	if !strings.Contains(string(data), "fedora/45") || !strings.Contains(string(data), "nesting: true") {
 		t.Errorf(".silo.yml after ApplyAll:\n%s", data)
+	}
+}
+
+func TestHTTPPorts(t *testing.T) {
+	dir := setup(t, `ports:
+  - 5432:15432
+  - "3000"   # rails
+  - name: admin
+    port: 9292
+daemons:
+  rails:
+    cmd: bin/rails s
+    ports: ["3000"]
+  ember:
+    cmd: bin/ember-cli
+    ports: ["4200", {name: live, port: 8080}]
+  web:
+    cmd: python -m http.server
+    ports:
+      - port: 8000
+        http: true
+`)
+	ss, err := Check(dir, "myapp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, s := range ss {
+		if strings.HasPrefix(s.ID, "http-") {
+			got = append(got, strings.Split(s.ID, ":")[0])
+		}
+	}
+	want := []string{"http-ports-3000", "http-ports-9292", "http-daemons.ember.ports-4200", "http-daemons.ember.ports-8080"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("suggestions = %v, want %v", got, want)
+	}
+
+	if _, _, err := ApplyAll(dir, "myapp"); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, ".silo.yml"))
+	for _, s := range []string{
+		"  - port: \"3000\"   # rails\n    http: true\n",
+		"  - name: admin\n    port: 9292\n    http: true\n",
+		`ports: [{port: "4200", http: true}, {name: live, port: 8080, http: true}]`,
+		"  - 5432:15432\n",
+		"    ports: [\"3000\"]\n",
+	} {
+		if !strings.Contains(string(data), s) {
+			t.Errorf("missing %q in:\n%s", s, data)
+		}
+	}
+	p, err := config.LoadProjectConfig(dir)
+	if err != nil {
+		t.Fatalf("result doesn't load: %v", err)
+	}
+	n := 0
+	for _, pf := range p.Ports {
+		if pf.HTTP {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Errorf("%d top-level http ports, want 2", n)
 	}
 }

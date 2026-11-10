@@ -151,6 +151,21 @@ func (d *doc) replaceToken(n *yaml.Node, s string) error {
 	return nil
 }
 
+// tokenText returns a scalar node's text as written, quotes included.
+func (d *doc) tokenText(n *yaml.Node) (string, error) {
+	line := d.lines[n.Line-1]
+	end, err := tokenEnd(line, n.Column-1, n)
+	if err != nil {
+		return "", err
+	}
+	return line[n.Column-1 : end], nil
+}
+
+// insertLine inserts a line after line number after (1-based).
+func (d *doc) insertLine(after int, text string) {
+	d.lines = append(d.lines[:after], append([]string{text}, d.lines[after:]...)...)
+}
+
 // tokenEnd finds where the scalar starting at start ends on the line.
 func tokenEnd(line string, start int, n *yaml.Node) (int, error) {
 	if start >= len(line) {

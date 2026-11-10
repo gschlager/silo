@@ -228,6 +228,7 @@ All fields are optional. Setup commands run as the `dev` user with a login shell
 - an older release of the default image (`fedora/44` while the default is `fedora/45`)
 - `mounts:`, which project files can't declare anymore: they move to `project_mounts` in the global config
 - `git.credential` and `tools.<name>.credential`: they move to [secrets.yml](#secrets) as the same environment variables, which keeps them out of the repo and out of the agent's reach
+- port forwards on a usual web server port (3000, 4200, 5173, 8080, ...) without `http: true`, so they get a [`.localhost` name](#the-silo-service)
 - keys silo doesn't know (anymore): `docker: true` becomes `nesting: true`, a typo like `deamons:` becomes `daemons:`, and anything else is offered for removal (default no)
 
 Comments and formatting stay as they are; only the affected lines change. `--dry-run` only shows the suggestions, `--yes` applies them without asking (except removing unknown keys). `silo up` prints one line when there's something to update.

@@ -86,6 +86,7 @@ func Check(dir, projectKey string) ([]Suggestion, error) {
 				(*checker).image,
 				(*checker).mounts,
 				(*checker).credentials,
+				(*checker).httpPorts,
 				(*checker).unknownKeys,
 			} {
 				s, err := rule(c)
@@ -322,6 +323,136 @@ func (c *checker) credentials() ([]Suggestion, error) {
 		out = append(out, s)
 	}
 	return out, nil
+}
+
+// webPorts are container ports that dev web servers usually listen on: Rails,
+// Ember, Vite, Django, webpack, Rack, Storybook, MailHog, MailCatcher, ...
+var webPorts = []int{1080, 3000, 3001, 4000, 4200, 4321, 4567, 5000, 5173, 6006, 8000, 8025, 8080, 8888, 9292}
+
+// httpPorts: port forwards on a usual web server port without http: true.
+// With it, the silo service serves them at <project>.localhost.
+func (c *checker) httpPorts() ([]Suggestion, error) {
+	type item struct {
+		index int // in its list
+		port  int
+		where string // "ports" or "daemons.rails.ports"
+	}
+	var items []item
+	forwarded := map[int]bool{}
+	collect := func(seq *yaml.Node, where string, top bool) {
+		if seq == nil || seq.Kind != yaml.SequenceNode {
+			return
+		}
+		for i, n := range seq.Content {
+			spec, http := portItem(n)
+			cp, ok := config.PortForward{Spec: spec}.ContainerPort()
+			if !ok {
+				continue
+			}
+			if top {
+				forwarded[cp] = true
+			} else if forwarded[cp] {
+				continue // the top-level entry is the one to mark
+			}
+			if !http && slices.Contains(webPorts, cp) {
+				items = append(items, item{i, cp, where})
+			}
+		}
+	}
+	if e, ok := c.doc.get("ports"); ok {
+		collect(e.val, "ports", true)
+	}
+	if e, ok := c.doc.get("daemons"); ok {
+		for _, dm := range entries(e.val) {
+			if p, ok := c.doc.get("daemons", dm.key.Value, "ports"); ok {
+				collect(p.val, "daemons."+dm.key.Value+".ports", false)
+			}
+		}
+	}
+
+	var out []Suggestion
+	for _, it := range items {
+		label := strconv.Itoa(it.port)
+		if strings.HasPrefix(it.where, "daemons.") {
+			label += " (" + strings.Split(it.where, ".")[1] + ")"
+		}
+		s, err := c.suggestion("http-"+it.where+"-"+strconv.Itoa(it.port),
+			"Mark port "+label+" as http: true",
+			"It looks like a web server. With http: true the silo service serves it at a <project>.localhost name, with HTTPS, and the web UI links to it. "+
+				"The first http: port of a project gets <project>.localhost itself.",
+			func(d *doc) error { return d.markHTTP(it.where, it.index) })
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+// portItem returns a port list item's spec and whether it has http: true.
+func portItem(n *yaml.Node) (string, bool) {
+	switch n.Kind {
+	case yaml.ScalarNode:
+		return n.Value, false
+	case yaml.MappingNode:
+		var spec string
+		var http bool
+		for _, f := range entries(n) {
+			switch f.key.Value {
+			case "port":
+				spec = f.val.Value
+			case "http":
+				http = f.val.Value == "true"
+			}
+		}
+		return spec, http
+	}
+	return "", false
+}
+
+// markHTTP adds http: true to the index-th item of the port list at where
+// ("ports" or "daemons.<name>.ports").
+func (d *doc) markHTTP(where string, index int) error {
+	e, ok := d.get(strings.Split(where, ".")...)
+	if !ok || e.val.Kind != yaml.SequenceNode || index >= len(e.val.Content) {
+		return fmt.Errorf("%s: port %d not found", where, index)
+	}
+	n := e.val.Content[index]
+	flow := e.val.Style&yaml.FlowStyle != 0
+	switch n.Kind {
+	case yaml.ScalarNode:
+		text, err := d.tokenText(n)
+		if err != nil {
+			return err
+		}
+		if flow {
+			return d.replaceToken(n, "{port: "+text+", http: true}")
+		}
+		// "- 3000" becomes "- port: 3000" with "http: true" below it.
+		if err := d.replaceToken(n, "port: "+text); err != nil {
+			return err
+		}
+		d.insertLine(n.Line, strings.Repeat(" ", n.Column-1)+"http: true")
+		return nil
+	case yaml.MappingNode:
+		last := n.Content[len(n.Content)-1]
+		if n.Style&yaml.FlowStyle != 0 || flow {
+			// {name: web, port: 9292} gets ", http: true" after the last value.
+			line := d.lines[last.Line-1]
+			end, err := tokenEnd(line, last.Column-1, last)
+			if err != nil {
+				return err
+			}
+			d.lines[last.Line-1] = line[:end] + ", http: true" + line[end:]
+			return nil
+		}
+		if last.Kind != yaml.ScalarNode {
+			return fmt.Errorf("line %d: can't add http: here", n.Line)
+		}
+		d.insertLine(last.Line, strings.Repeat(" ", n.Content[0].Column-1)+"http: true")
+		return nil
+	}
+	return fmt.Errorf("line %d: not a port", n.Line)
 }
 
 // unknownKeys: top-level keys silo doesn't know (anymore). It ignores them,
