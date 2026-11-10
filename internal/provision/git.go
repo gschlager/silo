@@ -98,7 +98,7 @@ func ResolveSessionEnv(cfg *config.MergedConfig) (map[string]string, error) {
 		return nil, err
 	}
 
-	tools, err := ResolveToolEnv(cfg.Tools)
+	tools, err := ResolveToolEnv(cfg.ContainerName, cfg.Tools)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +107,7 @@ func ResolveSessionEnv(cfg *config.MergedConfig) (map[string]string, error) {
 	}
 
 	if cfg.GitCredential != nil {
-		val, err := resolveCredential(cfg.GitCredential)
+		val, err := resolveCredential(cfg.ContainerName, cfg.GitCredential)
 		if err != nil {
 			return nil, fmt.Errorf("resolving git credential: %w", err)
 		}
@@ -122,20 +122,22 @@ func ResolveSessionEnv(cfg *config.MergedConfig) (map[string]string, error) {
 // agent env layered on top. Values are literals or op:// references, resolved
 // from 1Password on the host at launch time and passed as exec env — never
 // written to disk, matching how secrets are handled elsewhere.
-func ResolveAgentEnv(agent config.MergedAgentConfig) (map[string]string, error) {
-	raw := map[string]string{}
+//
+// container scopes the cache for the project's own entries (see readOp);
+// the mode env comes from the global config and isn't scoped.
+func ResolveAgentEnv(container string, agent config.MergedAgentConfig) (map[string]string, error) {
+	resolved := map[string]string{}
 	if mc, ok := agent.Modes[agent.Mode]; ok {
-		for k, v := range mc.Env {
-			raw[k] = v
+		for k, ref := range mc.Env {
+			val, err := resolveSecret(hostScope, ref)
+			if err != nil {
+				return nil, fmt.Errorf("resolving agent env %q: %w", k, err)
+			}
+			resolved[k] = val
 		}
 	}
-	for k, v := range agent.Env {
-		raw[k] = v
-	}
-
-	resolved := make(map[string]string, len(raw))
-	for k, ref := range raw {
-		val, err := resolveSecret(ref)
+	for k, ref := range agent.Env {
+		val, err := resolveSecret(container, ref)
 		if err != nil {
 			return nil, fmt.Errorf("resolving agent env %q: %w", k, err)
 		}
@@ -156,7 +158,7 @@ func resolveSecretsInto(env, secrets map[string]string, what string) error {
 	sort.Strings(names)
 
 	for _, name := range names {
-		val, err := resolveSecret(secrets[name])
+		val, err := resolveSecret(hostScope, secrets[name])
 		if err != nil {
 			return fmt.Errorf("resolving %s %q: %w", what, name, err)
 		}
@@ -170,22 +172,21 @@ func resolveSecretsInto(env, secrets map[string]string, what string) error {
 	return nil
 }
 
-// resolveSecret resolves a secrets-file value: a 1Password reference (op://…) is
-// read via the op CLI on the host; anything else is treated as a literal.
-func resolveSecret(ref string) (string, error) {
+// hostScope is the cache scope of references from files only the host can
+// write (secrets.yml, the global config). Those are shared between projects.
+// References from a project's .silo.yml are cached per container instead:
+// the agent can write that file, and it mustn't get a value another project
+// caused to be cached without anyone being asked.
+const hostScope = ""
+
+// resolveSecret resolves a value: a 1Password reference (op://…) is read via
+// the op CLI on the host; anything else is treated as a literal.
+func resolveSecret(scope, ref string) (string, error) {
 	if strings.HasPrefix(ref, "op://") {
-		return readOp(ref)
+		return readOp(scope, ref)
 	}
 	return ref, nil
 }
-
-// opValues remembers what op read returned in this process. One `silo up`
-// resolves the same secrets for setup, the clone and the daemons, and each op
-// call is a separate process that 1Password may want to approve.
-var (
-	opMu     sync.Mutex
-	opValues = map[string]string{}
-)
 
 // SecretStore is a cache readOp asks before running op, and fills after.
 type SecretStore interface {
@@ -193,36 +194,55 @@ type SecretStore interface {
 	Put(ref svcapi.SecretRef, value string)
 }
 
-// Secrets is the cache of the silo service, reached over its control socket.
-// The service itself replaces it with its in-memory cache.
-var Secrets SecretStore = serviceSecrets{}
+// Secrets is where readOp caches values. In the CLI it's this process's
+// memory plus the silo service's cache. The service replaces it with its own
+// cache, which it clears on screen lock; a second copy in this package would
+// outlive that.
+var Secrets SecretStore = &cliSecrets{memo: map[svcapi.SecretRef]string{}}
 
-type serviceSecrets struct{}
+// cliSecrets remembers values for the rest of the process (one `silo up`
+// resolves the same secrets for setup, the clone and the daemons) and asks
+// the silo service's cache.
+type cliSecrets struct {
+	mu   sync.Mutex
+	memo map[svcapi.SecretRef]string
+}
 
-func (serviceSecrets) Get(ref svcapi.SecretRef) (string, bool) {
-	if c := svcapi.Connect(); c != nil {
-		return c.CachedSecret(ref)
+func (c *cliSecrets) Get(ref svcapi.SecretRef) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if v, ok := c.memo[ref]; ok {
+		return v, true
+	}
+	if svc := svcapi.Connect(); svc != nil {
+		if v, ok := svc.CachedSecret(ref); ok {
+			c.memo[ref] = v
+			return v, true
+		}
 	}
 	return "", false
 }
 
-func (serviceSecrets) Put(ref svcapi.SecretRef, value string) {
-	if c := svcapi.Connect(); c != nil {
-		c.CacheSecret(ref, value)
+func (c *cliSecrets) Put(ref svcapi.SecretRef, value string) {
+	c.mu.Lock()
+	c.memo[ref] = value
+	c.mu.Unlock()
+	if svc := svcapi.Connect(); svc != nil {
+		svc.CacheSecret(ref, value)
 	}
 }
 
-// readOp reads a 1Password reference: from this process's memory, then from
-// the silo service's cache, and only then with the op CLI.
-func readOp(ref string) (string, error) {
+// opMu serializes op calls, so two lookups of the same reference don't both
+// ask 1Password.
+var opMu sync.Mutex
+
+// readOp reads a 1Password reference: from the cache (see Secrets), and only
+// then with the op CLI.
+func readOp(scope, ref string) (string, error) {
 	opMu.Lock()
 	defer opMu.Unlock()
-	if v, ok := opValues[ref]; ok {
-		return v, nil
-	}
-	key := svcapi.SecretRef{Ref: ref, Account: os.Getenv("OP_ACCOUNT")}
+	key := svcapi.SecretRef{Ref: ref, Account: os.Getenv("OP_ACCOUNT"), Scope: scope}
 	if v, ok := Secrets.Get(key); ok {
-		opValues[ref] = v
 		return v, nil
 	}
 	out, err := exec.Command("op", "read", ref).Output()
@@ -230,20 +250,20 @@ func readOp(ref string) (string, error) {
 		return "", fmt.Errorf("reading from 1Password (%s): %w", ref, err)
 	}
 	v := strings.TrimSpace(string(out))
-	opValues[ref] = v
 	Secrets.Put(key, v)
 	return v, nil
 }
 
 // resolveCredential resolves a credential from its configured source.
-// This runs on the HOST, not inside the container.
-func resolveCredential(cred *config.CredentialConfig) (string, error) {
+// This runs on the HOST, not inside the container. Credentials are set in the
+// project's .silo.yml, so they're cached per container.
+func resolveCredential(container string, cred *config.CredentialConfig) (string, error) {
 	switch cred.Source {
 	case "1password":
 		if cred.Ref == "" {
 			return "", fmt.Errorf("1password credential requires 'ref' field")
 		}
-		return readOp(cred.Ref)
+		return readOp(container, cred.Ref)
 
 	case "token":
 		if cred.Value != "" {

@@ -175,6 +175,10 @@ func (c *Client) Stream(ctx context.Context, path string) (io.ReadCloser, error)
 type SecretRef struct {
 	Ref     string `json:"ref"`
 	Account string `json:"account,omitempty"`
+	// Scope is the container for references from a project's .silo.yml,
+	// "" for references from host-owned files. A cached value is only
+	// returned for the same scope.
+	Scope string `json:"scope,omitempty"`
 }
 
 // SecretValue answers a cache lookup.

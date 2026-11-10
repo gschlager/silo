@@ -132,7 +132,7 @@ func runAutoInit(ctx context.Context, cwd, agentName string) error {
 	// Build env and base command.
 	baseCmd := agentLaunchCmd(agentCfg, agentName)
 	env := cfg.HostEnv()
-	agentEnv, err := provision.ResolveAgentEnv(agentCfg)
+	agentEnv, err := provision.ResolveAgentEnv(cfg.ContainerName, agentCfg)
 	if err != nil {
 		return err
 	}

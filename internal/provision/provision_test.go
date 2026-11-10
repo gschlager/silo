@@ -150,7 +150,7 @@ func TestResolveAgentEnv_ModeBaseWithOverride(t *testing.T) {
 		Env: map[string]string{"AWS_REGION": "eu-central-1"},
 	}
 
-	env, err := ResolveAgentEnv(agent)
+	env, err := ResolveAgentEnv("silo-test", agent)
 	if err != nil {
 		t.Fatalf("ResolveAgentEnv: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestResolveAgentEnv_ModeBaseWithOverride(t *testing.T) {
 
 func TestResolveAgentEnv_NoModes(t *testing.T) {
 	// An agent with no modes block and no env resolves to an empty map.
-	env, err := ResolveAgentEnv(config.MergedAgentConfig{Mode: "oauth"})
+	env, err := ResolveAgentEnv("silo-test", config.MergedAgentConfig{Mode: "oauth"})
 	if err != nil {
 		t.Fatalf("ResolveAgentEnv: %v", err)
 	}

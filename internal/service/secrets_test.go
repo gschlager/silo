@@ -83,3 +83,17 @@ func TestLockReason(t *testing.T) {
 		}
 	}
 }
+
+func TestSecretCacheScopes(t *testing.T) {
+	c := newSecretCache()
+	host := svcapi.SecretRef{Ref: "op://Work/db/password"}
+	projectA := svcapi.SecretRef{Ref: "op://Work/db/password", Scope: "silo-a"}
+	c.put(host, "from secrets.yml")
+	if _, ok := c.get(projectA); ok {
+		t.Error("a project's .silo.yml got a value cached for a host-owned reference")
+	}
+	c.put(projectA, "a")
+	if _, ok := c.get(svcapi.SecretRef{Ref: "op://Work/db/password", Scope: "silo-b"}); ok {
+		t.Error("project b got project a's value")
+	}
+}

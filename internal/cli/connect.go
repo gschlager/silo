@@ -69,7 +69,7 @@ stdout.`,
 				if err := agents.EnsureModeDir(name, agentCfg.Mode); err != nil {
 					return err
 				}
-				agentEnv, err := provision.ResolveAgentEnv(agentCfg)
+				agentEnv, err := provision.ResolveAgentEnv(cfg.ContainerName, agentCfg)
 				if err != nil {
 					return err
 				}

@@ -131,7 +131,7 @@ func daemonEnv(cfg *config.MergedConfig) (map[string]string, error) {
 
 	for _, name := range sortedDaemonNames(cfg.Daemons) {
 		for _, key := range sortedKeys(cfg.Daemons[name].Env) {
-			val, err := resolveSecret(cfg.Daemons[name].Env[key])
+			val, err := resolveSecret(cfg.ContainerName, cfg.Daemons[name].Env[key])
 			if err != nil {
 				return nil, fmt.Errorf("resolving env %q for daemon %q: %w", key, name, err)
 			}

@@ -343,14 +343,14 @@ func runCommands(ctx context.Context, server incuscli.InstanceServer, container 
 // Runs on the host — suitable for passing as env to exec sessions.
 // Returns an error on the first credential that fails to resolve, so callers
 // don't launch sessions (especially agents) with silently missing tokens.
-func ResolveToolEnv(tools map[string]config.ToolConfig) (map[string]string, error) {
+func ResolveToolEnv(container string, tools map[string]config.ToolConfig) (map[string]string, error) {
 	env := make(map[string]string)
 	for name, tool := range tools {
 		if tool.Credential == nil {
 			continue
 		}
 
-		token, err := resolveCredential(tool.Credential)
+		token, err := resolveCredential(container, tool.Credential)
 		if err != nil {
 			return nil, fmt.Errorf("resolving credential for tool %q: %w", name, err)
 		}

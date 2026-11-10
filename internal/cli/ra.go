@@ -134,7 +134,7 @@ func execAgent(ctx context.Context, server incuscli.InstanceServer, cfg *config.
 	}
 	// Agent env: active mode's env block plus explicit overrides, with any
 	// op:// references resolved from 1Password on the host.
-	agentEnv, err := provision.ResolveAgentEnv(agentCfg)
+	agentEnv, err := provision.ResolveAgentEnv(cfg.ContainerName, agentCfg)
 	if err != nil {
 		return err
 	}
