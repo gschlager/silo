@@ -224,3 +224,17 @@ func (c *Client) RefreshBase(image string) error {
 	defer cancel()
 	return c.Do(ctx, "POST", "/v1/base/refresh", BaseRefresh{Image: image}, nil)
 }
+
+// ContainerRef names a container.
+type ContainerRef struct {
+	Name string `json:"name"`
+}
+
+// StartingContainer tells the service that silo itself is about to start a
+// container and takes care of its daemons, so the service leaves that start
+// alone.
+func (c *Client) StartingContainer(name string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	c.Do(ctx, "POST", "/v1/containers/starting", ContainerRef{Name: name}, nil)
+}

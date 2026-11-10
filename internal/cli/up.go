@@ -98,6 +98,7 @@ Subsequent: start the stopped container (~1 second).`,
 				color.Warn("could not sync port forwards: %v", err)
 			}
 			color.Status("Starting %s...", name)
+			provision.MarkStarting(name)
 			if err := incus.Start(ctx, server, name); err != nil {
 				return err
 			}

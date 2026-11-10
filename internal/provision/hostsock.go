@@ -8,6 +8,7 @@ import (
 
 	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/incus"
+	"github.com/gschlager/silo/internal/svcapi"
 	incuscli "github.com/lxc/incus/v7/client"
 )
 
@@ -157,4 +158,14 @@ func SetupSigning(ctx context.Context, server incuscli.InstanceServer, container
 		}
 	}
 	return ConfigureGit(ctx, server, container, username, settings)
+}
+
+// MarkStarting tells the silo service that this command starts the container
+// and handles its daemons itself (provisioning, `silo up`). Any other start
+// (a lazy start by `silo ra`, `incus start`) has the service inject the
+// environment and start the autostart daemons.
+func MarkStarting(container string) {
+	if c := svcapi.Connect(); c != nil {
+		c.StartingContainer(container)
+	}
 }

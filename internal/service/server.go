@@ -35,6 +35,7 @@ type Server struct {
 	hub     *hub
 	opening openPending
 	base    *baseJobs
+	starts  startMarks
 	// containerConfig loads a container's project config; configFor, or a
 	// stub in tests.
 	containerConfig func(name string) (*config.MergedConfig, error)
@@ -81,6 +82,7 @@ func runWith(ctx context.Context, opts Options) error {
 	s.routes()
 	s.secretRoutes()
 	s.baseRoutes()
+	s.lifecycleRoutes()
 	if !opts.NoIncus {
 		go s.runIncus(ctx)
 		go s.every(ctx, time.Minute, s.hub.reconcile)

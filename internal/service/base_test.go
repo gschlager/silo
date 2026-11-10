@@ -45,3 +45,22 @@ func TestBaseRefreshEndpoint(t *testing.T) {
 		t.Error("a refresh without an image was accepted")
 	}
 }
+
+func TestStartMarks(t *testing.T) {
+	var m startMarks
+	if m.take("silo-a") {
+		t.Error("unmarked container counted as marked")
+	}
+	m.mark("silo-a")
+	if !m.take("silo-a") {
+		t.Error("marked container not seen")
+	}
+	if m.take("silo-a") {
+		t.Error("a mark counts only once")
+	}
+	m.mark("silo-b")
+	m.marks["silo-b"] = time.Now().Add(-startMarkTTL - time.Second)
+	if m.take("silo-b") {
+		t.Error("an old mark still counted")
+	}
+}

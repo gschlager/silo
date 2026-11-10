@@ -481,6 +481,7 @@ func runBaseSteps(ctx context.Context, server incuscli.InstanceServer, name stri
 }
 
 func startAndWaitForNetwork(ctx context.Context, server incuscli.InstanceServer, name string) error {
+	MarkStarting(name)
 	if err := incus.Start(ctx, server, name); err != nil {
 		return err
 	}
