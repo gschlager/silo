@@ -238,3 +238,46 @@ func (c *Client) StartingContainer(name string) {
 	defer cancel()
 	c.Do(ctx, "POST", "/v1/containers/starting", ContainerRef{Name: name}, nil)
 }
+
+// ProxyInfo describes the .localhost proxy.
+type ProxyInfo struct {
+	// HTTPPort and HTTPSPort are where the proxy listens on loopback; 0 when
+	// it doesn't (80 and 443 normally, 7080 and 7443 when silo can't bind
+	// ports below 1024).
+	HTTPPort  int          `json:"http_port"`
+	HTTPSPort int          `json:"https_port"`
+	Routes    []ProxyRoute `json:"routes"`
+}
+
+// ProxyRoute is a name the proxy serves.
+type ProxyRoute struct {
+	Host          string `json:"host"`
+	Container     string `json:"container"`
+	ContainerPort int    `json:"container_port"`
+	HostPort      int    `json:"host_port"`
+}
+
+// URL returns the URL for a host name, with the port when it isn't the
+// default one. Without HTTPS it's an http URL.
+func (p ProxyInfo) URL(host string, https bool) string {
+	scheme, port, def := "http", p.HTTPPort, 80
+	if https {
+		scheme, port, def = "https", p.HTTPSPort, 443
+	}
+	if port == 0 {
+		return ""
+	}
+	if port == def {
+		return scheme + "://" + host + "/"
+	}
+	return fmt.Sprintf("%s://%s:%d/", scheme, host, port)
+}
+
+// Proxy returns how the .localhost proxy is set up.
+func (c *Client) Proxy() (ProxyInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var p ProxyInfo
+	err := c.Do(ctx, "GET", "/v1/proxy", nil, &p)
+	return p, err
+}

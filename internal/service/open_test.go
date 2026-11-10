@@ -47,7 +47,7 @@ func TestHostURL(t *testing.T) {
 }
 
 func TestHostURLPrefersProxy(t *testing.T) {
-	proxy := func(cport int, _ []config.PortForward) string {
+	proxy := func(cport int) string {
 		if cport == 3000 {
 			return "https://myapp.localhost"
 		}

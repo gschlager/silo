@@ -30,12 +30,14 @@ import (
 
 // Server is the running service.
 type Server struct {
-	opts    Options
-	secrets *secretCache
-	hub     *hub
-	opening openPending
-	base    *baseJobs
-	starts  startMarks
+	opts     Options
+	secrets  *secretCache
+	hub      *hub
+	opening  openPending
+	base     *baseJobs
+	starts   startMarks
+	proxy    *proxy
+	activity activity
 	// containerConfig loads a container's project config; configFor, or a
 	// stub in tests.
 	containerConfig func(name string) (*config.MergedConfig, error)
@@ -77,6 +79,7 @@ func runWith(ctx context.Context, opts Options) error {
 	s.containerConfig = s.configFor
 	s.hub = newHub(s)
 	s.base = newBaseJobs()
+	s.proxy = newProxy(s)
 	defer s.hub.closeAll()
 	provision.Secrets = s.secrets
 	s.routes()
@@ -85,8 +88,14 @@ func runWith(ctx context.Context, opts Options) error {
 	s.lifecycleRoutes()
 	if !opts.NoIncus {
 		go s.runIncus(ctx)
-		go s.every(ctx, time.Minute, s.hub.reconcile)
+		go s.every(ctx, time.Minute, func() {
+			s.hub.reconcile()
+			s.proxy.rebuild()
+		})
 		go s.every(ctx, 6*time.Hour, s.refreshOldBases)
+	}
+	if !opts.NoProxy {
+		go s.proxy.listen(ctx)
 	}
 	if !opts.NoDBus {
 		go watchSession(ctx, func(reason string) { s.secrets.forget(reason) })
@@ -104,9 +113,13 @@ func runWith(ctx context.Context, opts Options) error {
 		return err
 	}
 	s.secrets.forget("stopping")
-	shutdownCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
+	// Requests to the service are short; don't wait for connections a client
+	// opened but hasn't used yet (Shutdown would wait 5s for those).
+	shutdownCtx, done := context.WithTimeout(context.Background(), time.Second)
 	defer done()
-	srv.Shutdown(shutdownCtx)
+	if srv.Shutdown(shutdownCtx) != nil {
+		srv.Close()
+	}
 	log.Printf("silo service stopped")
 	return nil
 }
@@ -160,18 +173,15 @@ func (s *Server) routes() {
 	handle(s.mux, "GET /v1/status", func(r *http.Request, _ *none) (svcapi.StatusInfo, error) {
 		return s.status(), nil
 	})
+	handle(s.mux, "GET /v1/proxy", func(r *http.Request, _ *none) (svcapi.ProxyInfo, error) {
+		return s.proxy.info(), nil
+	})
 	handle(s.mux, "POST /v1/shutdown", func(r *http.Request, _ *none) (none, error) {
 		log.Printf("asked to stop")
 		// Answer first, then stop.
 		time.AfterFunc(50*time.Millisecond, s.stopOnce)
 		return none{}, nil
 	})
-}
-
-// proxyURL returns the .localhost URL for a container port, or "" when the
-// proxy doesn't serve it. The proxy sets this up; without it there's none.
-func (s *Server) proxyURL(containerPort int, ports []config.PortForward) string {
-	return ""
 }
 
 // every calls fn every interval until ctx is done.

@@ -156,7 +156,8 @@ ports:
   - 5432:15432   # PostgreSQL
   # Forwards can be named — the name shows up in `silo status` and is used for
   # the Incus device name (handy when a forward fails to start). `http: true`
-  # marks a web server, so `silo status --json` reports a URL for it:
+  # marks a web server: it gets http(s)://<project>.localhost (see ".localhost
+  # URLs") and `silo status --json` reports the URL:
   - name: web
     port: 9292:9292
     http: true
@@ -762,6 +763,21 @@ Only the global config counts for the key; a project's `.silo.yml` can't pick an
 
 What can't be avoided: while 1Password's approval lasts, an agent in a container can get any commit signed. "Verified" on GitHub then means "made by me or in one of my silo containers". Use a separate key that you add on GitHub only as a **signing** key, never as an authentication key.
 
+### .localhost URLs
+
+Every `http: true` port forward gets a name under `.localhost`, served by the service's proxy:
+
+- the first one is `http://<project>.localhost` (and `https://`)
+- the others get the forward's name (or container port) appended: `http://<project>-admin.localhost`
+
+Browsers resolve every name under `.localhost` to the loopback address on their own, and so does systemd-resolved, so there's no DNS to set up. The proxy keeps the `.localhost` name in the `Host` header (Rails, Vite and others allow `.localhost` by default) and supports WebSockets and streaming, so HMR works. It connects to the forward's host port, which reaches the container's own localhost, so dev servers that only listen on 127.0.0.1 work too.
+
+A request for a stopped container starts it (with its autostart daemons) and waits for the port, so a bookmark is enough to bring a project back. `silo status` and `silo status --json` show the URLs, and a `localhost` URL opened with `silo-open` goes to the `.localhost` name.
+
+**HTTPS**: no public CA issues certificates for `.localhost`, so silo has its own local CA. `silo setup` creates it and adds it to the system trust store and to Chrome's and Firefox's NSS databases (with `certutil` from `nss-tools`). The CA is name-constrained: it can only issue certificates for `localhost` and names under it, only for TLS servers, and browsers enforce that. Even if its key (`~/.config/silo/ca`, readable only by you) leaked, it couldn't be used to fake any other site. Plain `http://<project>.localhost` already counts as a secure context in browsers, so service workers, `crypto.subtle` and secure cookies work there too.
+
+**Ports**: the proxy listens on 80 and 443 on loopback only. The service runs as your user, so the silo binary has `cap_net_bind_service` for that (set by the RPM, and by `silo setup` for other installs; a rebuilt binary loses it). Without it, the proxy uses 7080 and 7443 and the URLs include the port.
+
 ### Secrets cache
 
 Every `op read` is a separate process, and 1Password asks you to approve the op CLI per terminal session. herdr reconnecting to a container, a `silo ra` in a new tab or a lazy start each asked again. Now the first silo command that reads a secret asks `op` (you approve as before), stores the value in the service's memory, and later commands get it from there.
@@ -801,6 +817,8 @@ Run `silo setup` once on a new machine (it's safe to run again, every step check
 - **First-time init**: if Incus has no storage pool yet, it runs `incus admin init` with a NAT bridge (`incusbr0`), a default storage pool (a btrfs subvolume when `/var/lib/incus` is on btrfs, a plain directory otherwise) and a default profile using both. An existing Incus setup is never changed.
 - **Firewall**: when firewalld is running, puts `incusbr0` into the trusted zone so containers get DHCP, DNS and internet access.
 - **Memory cap**: see below.
+- **Ports 80 and 443**: gives the silo binary `cap_net_bind_service` for the [.localhost proxy](#localhost-urls).
+- **Local CA**: creates silo's CA for `https://<project>.localhost` and trusts it in the system and the browsers, see [.localhost URLs](#localhost-urls).
 - **silo service**: installs, enables and starts it, see [The silo service](#the-silo-service).
 
 The RPM also installs `silo-incus-docker-fix.service`. Docker's firewall rules drop forwarded traffic, which cuts Incus containers off from the network; this unit lets the `incusbr0` traffic through whenever Docker starts. On hosts without Docker it does nothing.

@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/gschlager/silo/internal/config"
+	"github.com/gschlager/silo/internal/svcapi"
 )
 
 // statusReport is the `silo status --json` output. It's meant for tools (e.g.
@@ -32,13 +33,19 @@ type portReport struct {
 	Daemon    *string `json:"daemon"`
 	HTTP      bool    `json:"http"`
 	URL       *string `json:"url"` // set when http: true
+	// HTTPSURL is the https://<project>.localhost URL, when the silo service's
+	// proxy serves this forward.
+	HTTPSURL *string `json:"https_url"`
 }
 
 // buildStatusReport assembles the report from the merged config and the
 // container/daemon state already looked up. A daemon's ports are the forwards
 // that actually exist for it, so a daemon port that a top-level ports: entry
 // already forwards is listed with that entry's host port.
-func buildStatusReport(cfg *config.MergedConfig, exists, running bool, states map[string]string) statusReport {
+//
+// With the silo service running (proxy not nil), an http: forward's URL is
+// its <project>.localhost name.
+func buildStatusReport(cfg *config.MergedConfig, exists, running bool, states map[string]string, proxy *svcapi.ProxyInfo) statusReport {
 	r := statusReport{
 		Container: cfg.ContainerName,
 		State:     "missing",
@@ -62,6 +69,14 @@ func buildStatusReport(cfg *config.MergedConfig, exists, running bool, states ma
 		pr := portReport{Container: cp, Host: hp, Name: optString(p.Name), Daemon: optString(p.Daemon), HTTP: p.HTTP}
 		if p.HTTP {
 			pr.URL = optString(fmt.Sprintf("http://localhost:%d/", hp))
+			if proxy != nil {
+				if host, ok := routeHost(cfg, cp); ok {
+					if u := proxy.URL(host, false); u != "" {
+						pr.URL = optString(u)
+					}
+					pr.HTTPSURL = optString(proxy.URL(host, true))
+				}
+			}
 		}
 		r.Ports = append(r.Ports, pr)
 		if p.Daemon != "" {
@@ -88,10 +103,35 @@ func buildStatusReport(cfg *config.MergedConfig, exists, running bool, states ma
 	return r
 }
 
-func writeStatusJSON(w io.Writer, cfg *config.MergedConfig, exists, running bool, states map[string]string) error {
+func writeStatusJSON(w io.Writer, cfg *config.MergedConfig, exists, running bool, states map[string]string, proxy *svcapi.ProxyInfo) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	return enc.Encode(buildStatusReport(cfg, exists, running, states))
+	return enc.Encode(buildStatusReport(cfg, exists, running, states, proxy))
+}
+
+// routeHost returns the .localhost name of the http: forward of a container
+// port.
+func routeHost(cfg *config.MergedConfig, containerPort int) (string, bool) {
+	for _, r := range cfg.HTTPRoutes() {
+		if r.ContainerPort == containerPort {
+			return r.Host, true
+		}
+	}
+	return "", false
+}
+
+// proxyInfo returns how the silo service's .localhost proxy is set up, or nil
+// when the service doesn't run.
+func proxyInfo() *svcapi.ProxyInfo {
+	c := svcapi.Connect()
+	if c == nil {
+		return nil
+	}
+	info, err := c.Proxy()
+	if err != nil || (info.HTTPPort == 0 && info.HTTPSPort == 0) {
+		return nil
+	}
+	return &info
 }
 
 func optString(s string) *string {

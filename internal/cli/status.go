@@ -48,7 +48,7 @@ func newStatusCmd() *cobra.Command {
 			}
 
 			if asJSON {
-				return writeStatusJSON(os.Stdout, cfg, exists, running, states)
+				return writeStatusJSON(os.Stdout, cfg, exists, running, states, proxyInfo())
 			}
 
 			// Container info — always shown.
@@ -101,6 +101,7 @@ func newStatusCmd() *cobra.Command {
 			// Port mappings — from config.
 			if len(cfg.Ports) > 0 {
 				fmt.Printf("\n%s\n", statusSection.Render("Ports"))
+				proxy := proxyInfo()
 				for _, p := range cfg.Ports {
 					label := p.Name
 					if p.Daemon != "" && p.Daemon != p.Name {
@@ -112,6 +113,15 @@ func newStatusCmd() *cobra.Command {
 					suffix := ""
 					if label != "" {
 						suffix = "  (" + label + ")"
+					}
+					if cp, ok := p.ContainerPort(); ok && p.HTTP && proxy != nil {
+						if host, ok := routeHost(cfg, cp); ok {
+							if u := proxy.URL(host, true); u != "" {
+								suffix += "  " + u
+							} else if u := proxy.URL(host, false); u != "" {
+								suffix += "  " + u
+							}
+						}
 					}
 					parts := strings.SplitN(p.Spec, ":", 2)
 					if len(parts) == 2 {

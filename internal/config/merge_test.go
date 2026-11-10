@@ -482,3 +482,29 @@ func TestMerge_DaemonPortHTTPOnTopLevelEntry(t *testing.T) {
 		t.Errorf("merge modified the project config: %#v", project.Ports[0])
 	}
 }
+
+func TestHTTPRoutes(t *testing.T) {
+	m := &MergedConfig{
+		ContainerName: "silo-MyApp",
+		Ports: []PortForward{
+			{Spec: "5432:15432"},
+			{Spec: "3000", HTTP: true, Name: "web"},
+			{Spec: "9292:19292", HTTP: true, Name: "Admin UI"},
+			{Spec: "4000", HTTP: true},
+		},
+	}
+	got := m.HTTPRoutes()
+	want := []HTTPRoute{
+		{Host: "myapp.localhost", Name: "web", ContainerPort: 3000, HostPort: 3000},
+		{Host: "myapp-admin-ui.localhost", Name: "Admin UI", ContainerPort: 9292, HostPort: 19292},
+		{Host: "myapp-4000.localhost", ContainerPort: 4000, HostPort: 4000},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("routes = %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("route %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}

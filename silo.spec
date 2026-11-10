@@ -15,6 +15,8 @@ BuildRequires:  golang >= 1.27.3
 BuildRequires:  systemd-rpm-macros
 Requires:       incus
 Requires:       nftables
+# certutil, to trust silo's local CA in Chrome's and Firefox's NSS databases
+Recommends:     nss-tools
 
 %description
 Silo creates and manages secure, isolated local development environments
@@ -58,7 +60,9 @@ fi
 
 %files
 %license LICENSE
-%{_bindir}/%{name}
+# Lets the silo service's .localhost proxy listen on ports 80 and 443. Only
+# this capability; silo can bind low ports and nothing else.
+%caps(cap_net_bind_service=ep) %{_bindir}/%{name}
 %{_unitdir}/silo-incus-docker-fix.service
 %{_presetdir}/80-silo.preset
 %{_userunitdir}/silo.socket

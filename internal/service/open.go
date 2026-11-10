@@ -66,7 +66,7 @@ func (s *Server) handleOpen(container string, w http.ResponseWriter, r *http.Req
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	target, err := hostURL(raw, cfg.Ports, s.proxyURL)
+	target, err := hostURL(raw, cfg.Ports, s.proxyURLFor(cfg))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -95,7 +95,7 @@ func (s *Server) handleOpen(container string, w http.ResponseWriter, r *http.Req
 // the host. Only http and https are allowed. A URL for the container's own
 // localhost is rewritten to where that port is forwarded on the host
 // (through the .localhost proxy for http: forwards, when it runs).
-func hostURL(raw string, ports []config.PortForward, proxyURL func(container int, ports []config.PortForward) string) (string, error) {
+func hostURL(raw string, ports []config.PortForward, proxyURL func(containerPort int) string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return "", fmt.Errorf("not a URL: %v", err)
@@ -116,7 +116,7 @@ func hostURL(raw string, ports []config.PortForward, proxyURL func(container int
 	}
 	cport, _ := strconv.Atoi(port)
 	if proxyURL != nil {
-		if base := proxyURL(cport, ports); base != "" {
+		if base := proxyURL(cport); base != "" {
 			pu, _ := url.Parse(base)
 			u.Scheme, u.Host = pu.Scheme, pu.Host
 			return u.String(), nil
@@ -135,6 +135,23 @@ func hostURL(raw string, ports []config.PortForward, proxyURL func(container int
 
 // isLoopbackHost reports whether h means the container itself. Names under
 // .localhost are left alone: on the host they reach the .localhost proxy.
+// proxyURLFor returns a function that gives the .localhost URL for a port of
+// the container, or "" when the proxy doesn't serve it.
+func (s *Server) proxyURLFor(cfg *config.MergedConfig) func(int) string {
+	return func(containerPort int) string {
+		if s.proxy == nil {
+			return ""
+		}
+		info := s.proxy.info()
+		for _, r := range cfg.HTTPRoutes() {
+			if r.ContainerPort == containerPort {
+				return info.URL(r.Host, false)
+			}
+		}
+		return ""
+	}
+}
+
 func isLoopbackHost(h string) bool {
 	if h == "localhost" || h == "0.0.0.0" {
 		return true

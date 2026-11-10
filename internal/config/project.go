@@ -429,3 +429,42 @@ func mergePortLists(base, local []PortForward) []PortForward {
 	}
 	return m
 }
+
+// HTTPRoute is a name under .localhost that the silo service's proxy serves
+// for an `http: true` port forward.
+type HTTPRoute struct {
+	Host          string // e.g. "myapp.localhost"
+	Name          string // the forward's name, may be empty
+	ContainerPort int
+	HostPort      int
+}
+
+// HTTPRoutes returns the .localhost names of the project's http: forwards.
+// The first one is <project>.localhost; the others get the forward's name
+// (or container port) appended: <project>-<name>.localhost. The names have a
+// single label in front of the domain, so they also work with one wildcard
+// certificate.
+func (m *MergedConfig) HTTPRoutes() []HTTPRoute {
+	label := strings.ToLower(strings.TrimPrefix(m.ContainerName, "silo-"))
+	var routes []HTTPRoute
+	for _, p := range m.Ports {
+		if !p.HTTP {
+			continue
+		}
+		cp, ok1 := p.ContainerPort()
+		hp, ok2 := p.HostPort()
+		if !ok1 || !ok2 {
+			continue
+		}
+		host := label
+		if len(routes) > 0 {
+			suffix := sanitizeDeviceSuffix(p.Name)
+			if suffix == "" {
+				suffix = strconv.Itoa(cp)
+			}
+			host = label + "-" + suffix
+		}
+		routes = append(routes, HTTPRoute{Host: host + ".localhost", Name: p.Name, ContainerPort: cp, HostPort: hp})
+	}
+	return routes
+}

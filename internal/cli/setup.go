@@ -42,6 +42,11 @@ func newSetupCmd() *cobra.Command {
     created inside the delegated incus.service cgroup, and sets MemoryMax on
     incus.service. A runaway process or a tmpfs fill hits this shared limit
     and gets OOM-killed inside a container, sparing the host.
+  - Gives the silo binary cap_net_bind_service, so the silo service's
+    .localhost proxy can use ports 80 and 443.
+  - Creates silo's local CA for https://<project>.localhost and adds it to
+    the system trust store and the browsers' NSS databases. The CA can only
+    issue certificates for names under .localhost.
   - Installs and starts the silo service (a systemd user service), see
     ` + "`silo service`" + `.
 
@@ -73,10 +78,17 @@ Steps that need root shell out to sudo.`,
 				return err
 			}
 
+			color.Status("Letting silo use ports 80 and 443 for the .localhost proxy...")
+			ensureBindCapability()
+
+			color.Status("Trusting silo's local CA for https://<project>.localhost...")
+			ensureCATrusted()
+
 			color.Status("Checking the silo service...")
 			if err := installService(); err != nil {
 				return fmt.Errorf("installing the silo service: %w", err)
 			}
+			restartServiceForProxyPorts()
 
 			// Container cgroup placement (needs API access).
 			color.Status("Configuring container cgroup placement...")
