@@ -330,7 +330,7 @@ Analyze the project in %s and generate a complete .silo.yml.`, wsPath) + `
 
 The file format (all fields are optional):
 
-  image: fedora/44          # Base image (default: fedora/44)
+  image: fedora/45          # Base image (default: fedora/45)
   use:                      # Built-in presets — prefer these over installing runtimes by hand
     ruby:                   #   Ruby via rv; jruby/truffleruby are valid version entries
       versions: ["3.4"]

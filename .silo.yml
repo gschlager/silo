@@ -1,5 +1,5 @@
 # silo development environment
-image: fedora/44
+image: fedora/45
 
 # Bootstrap: install Go toolchain and build dependencies.
 setup:

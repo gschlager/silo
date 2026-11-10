@@ -1,12 +1,12 @@
 # silo project configuration for Discourse
 # https://github.com/discourse/discourse
 #
-# Uses Fedora 44 for PostgreSQL 18 (builtin C.UTF-8 locale), ImageMagick 7,
+# Uses Fedora 45 for PostgreSQL 18 (builtin C.UTF-8 locale), ImageMagick 7,
 # and Valkey (Redis-compatible). Ruby and Node.js come from silo's built-in
 # presets — no hand-written rv/mise activation needed.
-# (fedora/44 is the default, so this image: line could be omitted.)
+# (fedora/45 is the default, so this image: line could be omitted.)
 
-image: fedora/44
+image: fedora/45
 
 # Built-in presets: Ruby via rv (Discourse requires ~> 3.4) and Node.js with
 # corepack. Their setup commands run before the setup: list below.

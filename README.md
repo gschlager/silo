@@ -73,7 +73,7 @@ On other distributions, [install Incus](https://linuxcontainers.org/incus/docs/m
 
 ### Base templates
 
-New containers are copied from a base template instead of being built from the bare image. A template is a stopped container per image (e.g. `silo-base-fedora-44`) where `default_setup`, the login shell, the dev user and the globally enabled agents are already set up. A new project container only runs the project-specific steps: mounts, ports, git config, env, `setup:` and daemons.
+New containers are copied from a base template instead of being built from the bare image. A template is a stopped container per image (e.g. `silo-base-fedora-45`) where `default_setup`, the login shell, the dev user and the globally enabled agents are already set up. A new project container only runs the project-specific steps: mounts, ports, git config, env, `setup:` and daemons.
 
 silo builds the template the first time it's needed and rebuilds it when one of those inputs changes (image, `default_setup`, user, shell, or an agent's `deps`/`install`). Agents a project enables on top of the global ones are installed per container. Templates don't show up in `silo list`; use `silo base` to see them.
 
@@ -103,8 +103,8 @@ Create a `.silo.yml` in your project root (or run `silo init` to generate one):
 # silo project configuration
 # https://github.com/gschlager/silo#project-configuration
 
-# Base image (default: fedora/44)
-image: fedora/44
+# Base image (default: fedora/45)
+image: fedora/45
 
 # Built-in presets install common stacks so you don't copy-paste the same
 # setup steps between projects. Preset commands run before your own setup:
@@ -248,8 +248,8 @@ Silo uses sensible defaults for everything. The config file (`~/.config/silo/con
 The default login shell is `bash` (always present, including on images without zsh). Set `shell: zsh` to use zsh instead — silo installs it if the image doesn't ship it. Tool activations (rv, mise, …) live in a shell-neutral `~/.silo/env.sh`, so they work for either shell, for daemons, and — via `BASH_ENV` — for non-interactive bash shells like agent tool calls and git hooks.
 
 ```yaml
-# Base image used when a project doesn't set image: (default: fedora/44)
-default_image: fedora/44
+# Base image used when a project doesn't set image: (default: fedora/45)
+default_image: fedora/45
 
 # Packages installed in every container before project setup runs (they end
 # up in the base template). This replaces the built-in list below, so copy it

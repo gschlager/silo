@@ -64,7 +64,7 @@ func AssignContainerName(projectDir string) (name string, err error) {
 	}
 
 	assigned := ContainerName(projectDir)
-	// silo-base-* is reserved for base templates (e.g. silo-base-fedora-44).
+	// silo-base-* is reserved for base templates (e.g. silo-base-fedora-45).
 	taken := strings.HasPrefix(assigned, "silo-base-")
 	for _, used := range registry.Projects {
 		if used == assigned {
