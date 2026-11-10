@@ -128,6 +128,9 @@ func (s *Server) containerAPI(name string) http.Handler {
 		}
 		s.notify(name, msg)
 	})
+	mux.HandleFunc("POST /v1/open", func(w http.ResponseWriter, r *http.Request) {
+		s.handleOpen(name, w, r)
+	})
 	return mux
 }
 

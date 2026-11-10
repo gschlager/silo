@@ -731,6 +731,7 @@ Logs go to the journal: `journalctl --user -u silo`.
 Each container gets its own directory from the host, mounted at `/var/lib/silo/host`, where the service listens on the container's sockets. The service knows which container asks by the socket the request comes in on, and a container can only ask for the few things listed here. `silo up` adds the mount to containers created before the service existed.
 
 - **Notifications**: `silo-notify "message"` shows a desktop notification on the host, when `notifications: true` is set in the global config and herdr isn't handling the container. Hook it into your agent, e.g. Claude Code's `Notification` hook. It works for every agent in the container, also those started through herdr or `silo connect`, not only while a `silo ra` runs.
+- **Opening URLs**: `silo-open URL` opens an http(s) URL in the host's browser. `BROWSER` points to it and `xdg-open` in the container calls it, so `gh pr view --web` and agent logins just work. Every URL needs a click on the notification first ("myapp wants to open …"); otherwise an agent could open whatever it wants in a browser where you're logged in everywhere. A container can only have one URL waiting at a time. A `localhost` URL goes to where that port is forwarded on the host, or is refused when the port isn't forwarded.
 
 ### Secrets cache
 

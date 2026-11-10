@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gschlager/silo/internal/config"
 	"github.com/gschlager/silo/internal/provision"
 	"github.com/gschlager/silo/internal/svcapi"
 	incuscli "github.com/lxc/incus/v7/client"
@@ -32,6 +33,10 @@ type Server struct {
 	opts    Options
 	secrets *secretCache
 	hub     *hub
+	opening openPending
+	// containerConfig loads a container's project config; configFor, or a
+	// stub in tests.
+	containerConfig func(name string) (*config.MergedConfig, error)
 
 	incusMu  sync.RWMutex
 	incusSrv incuscli.InstanceServer
@@ -67,6 +72,7 @@ func runWith(ctx context.Context, opts Options) error {
 	s := &Server{opts: opts, secrets: newSecretCache(), started: time.Now(), mux: http.NewServeMux(), stop: make(chan struct{})}
 	var once sync.Once
 	s.stopOnce = func() { once.Do(func() { close(s.stop) }) }
+	s.containerConfig = s.configFor
 	s.hub = newHub(s)
 	defer s.hub.closeAll()
 	provision.Secrets = s.secrets
@@ -154,6 +160,12 @@ func (s *Server) routes() {
 		time.AfterFunc(50*time.Millisecond, s.stopOnce)
 		return none{}, nil
 	})
+}
+
+// proxyURL returns the .localhost URL for a container port, or "" when the
+// proxy doesn't serve it. The proxy sets this up; without it there's none.
+func (s *Server) proxyURL(containerPort int, ports []config.PortForward) string {
+	return ""
 }
 
 // every calls fn every interval until ctx is done.
